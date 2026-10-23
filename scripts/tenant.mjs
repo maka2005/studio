@@ -56,7 +56,7 @@ if (cmd === 'new') {
     const icons = [192, 512]
       .filter((n) => fs.existsSync(path.join('tenants', d, 'images', `icon-${n}.png`)))
       .map((n) => ({
-        src: `/tenants/${d}/icon-${n}.png`,
+        src: `/tenants/${d}/images/icon-${n}.png`,
         sizes: `${n}x${n}`,
         type: 'image/png',
         purpose: 'any',
