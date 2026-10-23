@@ -11,6 +11,7 @@ import { duration, money } from '../lib/format';
 import type { Business, Ctx } from '../lib/tenant';
 import { Sheet } from '../components/Sheet';
 import { AssistantSheet } from '../components/AssistantSheet';
+import './owner-login.css';
 
 const TABS = ['Записи', 'Услуги', 'Студия', 'Помощник'] as const;
 const STATUS: Record<string, string> = { booked: 'Записан', arrived: 'Принята', done: 'Готова', cancelled: 'Отменена' };
@@ -25,14 +26,18 @@ export function Owner() {
   return <Cabinet b={b} onLogout={logout} />;
 }
 
+const LockIcon = () => (<svg width="30" height="30" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 11V8a4 4 0 018 0v3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /><rect x="5" y="11" width="14" height="10" rx="2.5" fill="currentColor" /><circle cx="12" cy="15.5" r="1.4" fill="#141518" /><path d="M12 16v2" stroke="#141518" strokeWidth="1.6" strokeLinecap="round" /></svg>);
+
 function Login() {
   const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [err, setErr] = useState<string | null>(null); const [busy, setBusy] = useState(false);
-  const submit = async () => { setBusy(true); setErr(null); const { error } = await supabase.auth.signInWithPassword({ email, password }); setBusy(false); if (error) setErr('Неверная почта или пароль.'); };
-  return (<section className="pad"><h2>Кабинет владельца</h2>
-    <label className="muted small" htmlFor="em">Почта</label><input id="em" className="field" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} />
-    <label className="muted small" htmlFor="pw">Пароль</label><input id="pw" className="field" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void submit(); }} />
+  const submit = async () => { setBusy(true); setErr(null); const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password }); setBusy(false); if (error) setErr('Неверная почта или пароль.'); };
+  return (<div className="page"><div className="login-wrap">
+    <div className="login-ico"><LockIcon /></div>
+    <h1>Кабинет студии</h1><p className="muted">Войдите, чтобы управлять записями</p>
+    <label className="muted small" htmlFor="em">Почта</label><input id="em" className="field" type="email" autoComplete="username" inputMode="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+    <label className="muted small" htmlFor="pw">Пароль</label><input id="pw" className="field" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && email && password) void submit(); }} />
     {err && <p role="alert" className="err">{err}</p>}
-    <button className="btn" disabled={busy || !email || !password} onClick={() => void submit()}>{busy ? 'Входим…' : 'Войти'}</button></section>);
+    <button className="btn" disabled={busy || !email || !password} onClick={() => void submit()}>{busy ? 'Входим…' : 'Войти'}</button></div></div>);
 }
 
 function Cabinet({ b, onLogout }: { b: Business; onLogout: () => void }) {

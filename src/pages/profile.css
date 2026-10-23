@@ -6,3 +6,6 @@
 .owner-link{display:flex;gap:10px;align-items:center;margin-top:20px;color:var(--muted)}
 .owner-link a{color:var(--fg);text-decoration:underline;text-underline-offset:4px;font-weight:600}
 .bk-row{display:flex;flex-direction:column;gap:6px;margin:12px 0 0;padding:14px;border:1px solid var(--line);border-radius:20px;background:#101216}
+.head-row{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:6px}.head-row h1{font-size:38px;margin:0}
+.okcard{display:flex;align-items:center;gap:14px;margin:18px 0 0}.okcard p{margin:2px 0 0}
+.prof-foot{border-top:1px solid var(--line);margin-top:48px;padding:16px 0}
