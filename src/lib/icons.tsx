@@ -1,5 +1,5 @@
-const P = (d: string) => (p: { size?: number }) => (
-  <svg width={p.size ?? 20} height={p.size ?? 20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={d} /></svg>);
+const P = (d: string) => (p: { size?: number; className?: string }) => (
+  <svg className={p.className} width={p.size ?? 20} height={p.size ?? 20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={d} /></svg>);
 export const Arrow = P('M7 17L17 7M8 7h9v9');
 export const ArrowRight = P('M5 12h14M13 6l6 6-6 6');
 export const ArrowLeft = P('M19 12H5M11 6l-6 6 6 6');
@@ -16,3 +16,9 @@ export const Tag = P('M3 12V4h8l10 10-8 8z');
 export const Download = P('M12 4v11M7 11l5 5 5-5M5 20h14');
 export const User = P('M12 12a4 4 0 100-8 4 4 0 000 8zM4 21a8 8 0 0116 0');
 export const Close = P('M6 6l12 12M18 6L6 18');
+export const Drop = P('M12 3s6 6.5 6 11a6 6 0 01-12 0c0-4.5 6-11 6-11z');
+export const Car = P('M5 16v-5l2-5h10l2 5v5M3 16h18M7.5 13h.01M16.5 13h.01');
+export const Shield = P('M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z');
+export const Copy = P('M9 9h11v11H9zM5 15V4h11');
+export const Bell = P('M6 16v-5a6 6 0 1112 0v5l2 2H4zM10 21h4');
+export const Check = P('M5 12l5 5 9-10');
