@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react';
 import { Link, useOutletContext } from 'react-router-dom';
 import { assetUrl, type Ctx } from '../lib/tenant';
 import { money, plural } from '../lib/format';
@@ -6,17 +5,12 @@ import { Arrow, ArrowRight, Car, Clock, Download, Phone, Photo, Pin, Sparkle, Ta
 import { Reveal } from '../components/Reveal';
 import { ServiceList } from './ServiceList';
 import { useServices } from '../lib/useServices';
-type BIP = Event & { prompt: () => Promise<void> };
+import '../lib/install';   // ловит событие установки с самого запуска
 export function Home() {
   const { b, openBooking, openAI } = useOutletContext<Ctx>(); const services = useServices(b);
   const img = (p: string) => `url(${assetUrl(b.slug, p)})`;
   const ranges = [...new Set(Object.values(b.hours).filter(Boolean).map((h) => `${h![0]}–${h![1]}`))];
   const minPrice = Math.min(...services.map((x) => x.price));
-  const [evt, setEvt] = useState<BIP | null>(null); const [hint, setHint] = useState(false);
-  useEffect(() => {
-    const h = (e: Event) => { e.preventDefault(); setEvt(e as BIP); };
-    window.addEventListener('beforeinstallprompt', h); return () => window.removeEventListener('beforeinstallprompt', h);
-  }, []);
   return (<div className="page">
     <div className="hero" style={{ backgroundImage: img(b.images.hero) }}>
       <button className="glass-btn" onClick={() => openBooking()}><b>Записаться</b><Arrow /></button></div>
@@ -38,11 +32,10 @@ export function Home() {
             <a className="icon-btn big-btn" href={`tel:${b.phone}`} aria-label="Позвонить"><Phone /></a></div></div></Reveal>
       <Reveal className="col-main"><div className="row between"><h2>Услуги</h2><Link className="muted" to={`/s/${b.slug}/services`}>Все услуги <ArrowRight size={16} /></Link></div><ServiceList limit={4} />
         {b.gallery.length > 0 && <><h2 style={{ marginTop: 24 }}>Работы студии</h2>
-          <div className="gallery">{b.gallery.map((g) => <figure key={g.image} style={{ backgroundImage: img(g.image) }}><figcaption>{g.caption}</figcaption></figure>)}</div></>}</Reveal></div>
+          <div className="gallery">{b.gallery.map((g) => <figure key={g.image}><div className="shot" style={{ backgroundImage: img(g.image) }} /><figcaption>{g.caption}</figcaption></figure>)}</div></>}</Reveal></div>
     <Reveal><div className="card install"><div className="row"><img src={assetUrl(b.slug, b.images.logo)} alt="" width={48} height={48} /><div><b>{b.short_name}</b><p className="muted small">Приложение студии</p></div></div>
       <h2 className="xl">{b.cards.install.title}</h2><p className="muted">{b.cards.install.text}</p>
-      <button className="btn" onClick={() => (evt ? void evt.prompt() : setHint(true))}><Download /> Добавить на экран <ArrowRight /></button>
-      {hint && <p className="muted small">Откройте меню браузера и выберите «Добавить на главный экран» (iPhone: Safari → «Поделиться»).</p>}
+      <Link className="btn" to={`/s/${b.slug}/install`}><Download /> Добавить на экран <ArrowRight /></Link>
       <p className="muted small">Бесплатно. Установка через браузер.</p></div></Reveal>
     <footer className="row between muted" style={{ padding: '16px 0' }}><span>{b.short_name}</span><a href={`tel:${b.phone}`}>Связаться <Arrow size={14} /></a></footer>
   </div>);
