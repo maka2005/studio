@@ -23,7 +23,7 @@ export function Shell() {
   const ctx: Ctx = { b, openBooking: (service) => setBooking({ service }), openAI: () => setAi(true) };
   return (<>
     <header className="top"><Link to={base} className="brand"><img src={assetUrl(slug, b.images.logo)} alt="" width={40} height={40} />{b.short_name}</Link>
-      <Link to={`${base}/owner`} className="icon-btn" aria-label="Кабинет владельца"><User /></Link></header>
+      <Link to={`${base}/profile`} className="icon-btn" aria-label="Профиль"><User /></Link></header>
     <main><Outlet context={ctx} /></main>
     <button className="fab" aria-label="Помощник" onClick={ctx.openAI}><Sparkle /></button>
     <nav className="tabs" aria-label="Разделы">
