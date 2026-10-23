@@ -1,0 +1,32 @@
+{
+  "name": "studio-booking",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/tenant.mjs build && vite",
+    "build": "node scripts/tenant.mjs build && tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "tenant:new": "node scripts/tenant.mjs new",
+    "tenant:validate": "node scripts/tenant.mjs validate",
+    "tenant:build": "node scripts/tenant.mjs build",
+    "tenant:sql": "node scripts/tenant.mjs sql"
+  },
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router-dom": "^7.0.0",
+    "@tanstack/react-query": "^5.0.0",
+    "@supabase/supabase-js": "^2.45.0",
+    "zod": "^3.23.0",
+    "date-fns": "^4.1.0",
+    "date-fns-tz": "^3.2.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vite": "^6.0.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0"
+  }
+}
