@@ -10,6 +10,7 @@ import { MyBooking } from './pages/MyBooking'
 import { Owner } from './pages/Owner'
 import { Profile } from './pages/Profile'
 import { Install } from './pages/Install'
+import { Legal } from './pages/Legal' // <--- 1. Импортируйте компонент Legal
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -29,6 +30,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="profile" element={<Profile />} />
             <Route path="install" element={<Install />} />
             <Route path="owner/*" element={<Owner />} />
+            <Route path="legal/:type" element={<Legal />}
           </Route>
         </Routes>
       </BrowserRouter>
