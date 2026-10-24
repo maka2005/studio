@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useOutletContext } from 'react-router-dom';
 import { z } from 'zod';
@@ -8,12 +8,14 @@ import { formatInTimeZone, fromZonedTime } from 'date-fns-tz';
 import { supabase } from '../lib/supabase';
 import { errText, fetchServices, fetchSlots, owner, type OwnerBooking } from '../lib/api';
 import { duration, money } from '../lib/format';
-import type { Business, Ctx } from '../lib/tenant';
+import { assetUrl, type Business, type Ctx } from '../lib/tenant';
+import { prepareImage, removeByUrl, uploadImage } from '../lib/media';
 import { Sheet } from '../components/Sheet';
 import { AssistantSheet } from '../components/AssistantSheet';
 import './owner-login.css';
+import './owner-media.css';
 
-const TABS = ['Записи', 'Услуги', 'Студия', 'Помощник'] as const;
+const TABS = ['Записи', 'Услуги', 'Студия', 'Фото', 'Помощник'] as const;
 const STATUS: Record<string, string> = { booked: 'Записан', arrived: 'Принята', done: 'Готова', cancelled: 'Отменена' };
 
 export function Owner() {
@@ -48,7 +50,7 @@ function Cabinet({ b, onLogout }: { b: Business; onLogout: () => void }) {
   if (!me.data) return <section className="pad"><h2>Нет доступа</h2><p className="muted">Эта учётная запись не привязана к студии.</p><button className="btn ghost" onClick={onLogout}>Выйти</button></section>;
   return (<section className="pad"><div className="row between"><h2>Кабинет</h2><button className="link" onClick={onLogout}>Выйти</button></div>
     <div className="tabs2" role="tablist">{TABS.map((t) => <button key={t} role="tab" aria-selected={tab === t} onClick={() => (t === 'Помощник' ? setAi(true) : setTab(t))}>{t}</button>)}</div>
-    {tab === 'Записи' && <Bookings b={b} />}{tab === 'Услуги' && <Services b={b} />}{tab === 'Студия' && <Settings b={b} />}
+    {tab === 'Записи' && <Bookings b={b} />}{tab === 'Услуги' && <Services b={b} />}{tab === 'Студия' && <Settings b={b} />}{tab === 'Фото' && <Media b={b} />}
     {ai && <AssistantSheet slug={b.slug} scope="owner" onClose={() => setAi(false)} />}</section>);
 }
 
@@ -168,10 +170,11 @@ const DAYS: [string, string][] = [['mon', 'Пн'], ['tue', 'Вт'], ['wed', 'С�
 const Time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 function Settings({ b }: { b: Business }) {
   const qc = useQueryClient(); const [msg, setMsg] = useState<string | null>(null); const [ok, setOk] = useState(false);
-  const [f, setF] = useState({ phone: b.phone, address: b.address, description: b.description, cards: b.cards, hours: b.hours });
+  const [f, setF] = useState({ phone: b.phone, address: b.address, route_url: b.route_url ?? '', description: b.description, cards: b.cards, hours: b.hours });
   const m = useMutation({ mutationFn: () => owner.updateConfig(b.slug, f), onSuccess: () => { setMsg(null); setOk(true); void qc.invalidateQueries({ queryKey: ['business', b.slug] }); }, onError: (e) => { setOk(false); setMsg(errText(e)); } });
   const save = () => {
     for (const [, h] of Object.entries(f.hours)) if (h && (!Time.safeParse(h[0]).success || !Time.safeParse(h[1]).success || h[0] >= h[1])) { setOk(false); setMsg('Проверьте часы работы: начало раньше конца, формат ЧЧ:ММ.'); return; }
+    if (f.route_url && !/^https:\/\//.test(f.route_url)) { setOk(false); setMsg('Ссылка 2ГИС должна начинаться с https://'); return; }
     if (!f.phone.trim() || !f.address.trim()) { setOk(false); setMsg('Телефон и адрес обязательны.'); return; }
     m.mutate();
   };
@@ -181,6 +184,8 @@ function Settings({ b }: { b: Business }) {
   return (<><Err m={msg} />{ok && <p className="muted" role="status">Сохранено.</p>}
     <label className="muted small" htmlFor="ph">Телефон</label><input id="ph" className="field" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} />
     <label className="muted small" htmlFor="ad">Адрес</label><input id="ad" className="field" value={f.address} onChange={(e) => setF({ ...f, address: e.target.value })} />
+    <label className="muted small" htmlFor="ru">Ссылка 2ГИС для кнопки «Маршрут»</label><input id="ru" className="field" placeholder="https://go.2gis.com/…" value={f.route_url} onChange={(e) => setF({ ...f, route_url: e.target.value })} />
+    <p className="muted small">Найдите студию в 2ГИС, нажмите «Поделиться» и вставьте ссылку сюда. Без неё кнопка откроет поиск 2ГИС по адресу.</p>
     <label className="muted small" htmlFor="ds">Описание</label><textarea id="ds" className="field" rows={3} value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} />
     <h3>Часы работы</h3>
     {DAYS.map(([k, l]) => { const h = f.hours[k] ?? null; const set = (v: [string, string] | null) => setF({ ...f, hours: { ...f.hours, [k]: v } });
@@ -188,5 +193,51 @@ function Settings({ b }: { b: Business }) {
         {h && <><input aria-label={`${l} с`} className="field" style={{ width: 100 }} value={h[0]} onChange={(e) => set([e.target.value, h[1]])} /><input aria-label={`${l} до`} className="field" style={{ width: 100 }} value={h[1]} onChange={(e) => set([h[0], e.target.value])} /></>}</div>; })}
     <h3>Карточки на главной</h3>{card('booking', 'Запись')}{card('ai', 'ИИ')}{card('install', 'Установка')}
     <button className="btn" disabled={m.isPending} onClick={save}>{m.isPending ? 'Сохраняем…' : 'Сохранить'}</button>
-    <p className="muted small">Логотип, главное фото и фотографии работ пока меняются только в папке tenants/ и повторной публикацией.</p></>);
+    <p className="muted small">Логотип, главное фото и фотографии работ меняются на вкладке «Фото».</p></>);
+}
+
+type Work = { image: string; caption: string };
+const ACCEPT = 'image/jpeg,image/png,image/webp';
+function Media({ b }: { b: Business }) {
+  const qc = useQueryClient();
+  const tid = useQuery({ queryKey: ['owner', 'tid', b.slug], queryFn: async () => { const { data, error } = await supabase.from('tenants').select('id').eq('slug', b.slug).single(); if (error) throw error; return data.id as string; } });
+  const [logo, setLogo] = useState(b.images.logo); const [hero, setHero] = useState(b.images.hero); const [works, setWorks] = useState<Work[]>(b.gallery);
+  const [busy, setBusy] = useState<string | null>(null); const [msg, setMsg] = useState<string | null>(null); const [saved, setSaved] = useState(false);
+  const [newCap, setNewCap] = useState(''); const trash = useRef<string[]>([]);
+  const upload = async (file: File | undefined, kind: 'logo' | 'hero' | 'work', done: (url: string) => void) => {
+    if (!file) return;
+    if (!tid.data) { setMsg('Данные студии ещё загружаются. Повторите через секунду.'); return; }
+    setBusy(kind); setMsg(null); setSaved(false);
+    try {
+      const isLogo = kind === 'logo';
+      const blob = await prepareImage(file, isLogo ? 512 : 1600, isLogo ? 'image/png' : 'image/jpeg');
+      done(await uploadImage(tid.data, blob, isLogo ? 'png' : 'jpg'));
+    } catch (e) { setMsg(`Не удалось загрузить фото: ${e instanceof Error ? e.message : 'ошибка'}`); }
+    finally { setBusy(null); }
+  };
+  const save = useMutation({
+    mutationFn: () => owner.updateConfig(b.slug, { images: { logo, hero }, gallery: works }),
+    onSuccess: () => { setSaved(true); setMsg(null); const old = trash.current; trash.current = []; old.forEach((u) => void removeByUrl(u)); void qc.invalidateQueries({ queryKey: ['business', b.slug] }); },
+    onError: (e) => { setSaved(false); setMsg(errText(e)); },
+  });
+  const onFile = (fn: (f: File | undefined) => void) => (e: ChangeEvent<HTMLInputElement>) => { const f = e.target.files?.[0]; e.target.value = ''; fn(f); };
+  return (<><Err m={msg} />{saved && <p className="muted" role="status">Сохранено. Фото на сайте обновились.</p>}
+    <div className="card col"><b>Логотип</b><div className="row"><img className="thumb sq" src={assetUrl(b.slug, logo)} alt="" />
+      <label className="btn ghost mini filebtn">{busy === 'logo' ? 'Загружаем…' : 'Заменить'}<input type="file" accept={ACCEPT} hidden disabled={!!busy} onChange={onFile((f) => void upload(f, 'logo', (u) => { trash.current.push(logo); setLogo(u); }))} /></label></div>
+      <p className="muted small">Квадратное изображение, лучше PNG. Размер подгонится автоматически.</p></div>
+    <div className="card col"><b>Главное фото</b><img className="thumb wide" src={assetUrl(b.slug, hero)} alt="" />
+      <label className="btn ghost mini filebtn">{busy === 'hero' ? 'Загружаем…' : 'Заменить'}<input type="file" accept={ACCEPT} hidden disabled={!!busy} onChange={onFile((f) => void upload(f, 'hero', (u) => { trash.current.push(hero); setHero(u); }))} /></label></div>
+    <h3>Работы студии</h3>
+    {works.length === 0 && <p className="muted">Пока нет ни одной работы.</p>}
+    {works.map((w, i) => (<div className="card col" key={w.image + i}><img className="thumb wide" src={assetUrl(b.slug, w.image)} alt="" />
+      <input className="field" aria-label="Подпись под фото" maxLength={80} value={w.caption} onChange={(e) => setWorks((p) => p.map((x, j) => (j === i ? { ...x, caption: e.target.value } : x)))} />
+      <div className="row wrap"><label className="btn ghost mini filebtn">{busy === 'work' ? 'Загружаем…' : 'Заменить фото'}<input type="file" accept={ACCEPT} hidden disabled={!!busy}
+          onChange={onFile((f) => void upload(f, 'work', (u) => { trash.current.push(w.image); setWorks((p) => p.map((x, j) => (j === i ? { ...x, image: u } : x))); }))} /></label>
+        <button className="btn ghost mini" onClick={() => { trash.current.push(w.image); setWorks((p) => p.filter((_, j) => j !== i)); }}>Удалить</button></div></div>))}
+    {works.length < 12 && <div className="card col"><b>Новая работа</b>
+      <input className="field" placeholder="Подпись" maxLength={80} value={newCap} onChange={(e) => setNewCap(e.target.value)} />
+      <label className="btn ghost mini filebtn">{busy === 'work' ? 'Загружаем…' : 'Выбрать фото и добавить'}<input type="file" accept={ACCEPT} hidden disabled={!!busy}
+        onChange={onFile((f) => void upload(f, 'work', (u) => { setWorks((p) => [...p, { image: u, caption: newCap.trim() || 'Работа студии' }]); setNewCap(''); }))} /></label></div>}
+    <button className="btn" disabled={save.isPending || !!busy} onClick={() => save.mutate()}>{save.isPending ? 'Сохраняем…' : 'Сохранить'}</button>
+    <p className="muted small">До нажатия «Сохранить» клиенты изменений не видят.</p></>);
 }

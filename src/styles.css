@@ -76,3 +76,6 @@ a.card.contact{display:flex;align-items:center;gap:14px;justify-content:flex-sta
 .gallery figcaption{padding:10px 4px 0;color:var(--muted);font-size:14px}
 @media (min-width:700px){.gallery{grid-template-columns:1fr 1fr}}
 .install h2.xl{margin:18px 0 10px}.install .btn{margin-top:18px}
+html,body{overflow-x:hidden}
+.page,.top,.pad{width:100%}
+main{display:block;min-width:0}

@@ -10,6 +10,8 @@ export function Home() {
   const { b, openBooking, openAI } = useOutletContext<Ctx>(); const services = useServices(b);
   const img = (p: string) => `url(${assetUrl(b.slug, p)})`;
   const ranges = [...new Set(Object.values(b.hours).filter(Boolean).map((h) => `${h![0]}–${h![1]}`))];
+  // «Маршрут» открывает 2ГИС: по ссылке владельца, а без неё по поиску адреса.
+  const routeHref = b.route_url && /^https:\/\//.test(b.route_url) ? b.route_url : `https://2gis.ru/search/${encodeURIComponent(b.address)}`;
   const minPrice = Math.min(...services.map((x) => x.price));
   return (<div className="page">
     <div className="hero" style={{ backgroundImage: img(b.images.hero) }}>
@@ -28,7 +30,7 @@ export function Home() {
           <button className="btn ghost" onClick={openAI}>Подобрать услугу <Arrow size={16} /></button></div>
         <div className="card col"><div className="row"><Pin /><b>{b.address}</b></div>
           <div className="row"><Clock /><div>{ranges.length === 1 ? <b>{ranges[0]}</b> : <b>по графику</b>}<p className="muted small">по времени студии</p></div></div>
-          <div className="row"><a className="btn ghost inline" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(b.address)}`} target="_blank" rel="noreferrer">Маршрут <Arrow size={16} /></a>
+          <div className="row"><a className="btn ghost inline" href={routeHref} target="_blank" rel="noreferrer">Маршрут <Arrow size={16} /></a>
             <a className="icon-btn big-btn" href={`tel:${b.phone}`} aria-label="Позвонить"><Phone /></a></div></div></Reveal>
       <Reveal className="col-main"><div className="row between"><h2>Услуги</h2><Link className="muted" to={`/s/${b.slug}/services`}>Все услуги <ArrowRight size={16} /></Link></div><ServiceList limit={4} />
         {b.gallery.length > 0 && <><h2 style={{ marginTop: 24 }}>Работы студии</h2>
