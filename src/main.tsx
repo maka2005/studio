@@ -30,7 +30,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="profile" element={<Profile />} />
             <Route path="install" element={<Install />} />
             <Route path="owner/*" element={<Owner />} />
-            <Route path="legal/:type" element={<Legal />} />
+            <Route path="legal/:doc" element={<Legal />} />
           </Route>
         </Routes>
       </BrowserRouter>
