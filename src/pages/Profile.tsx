@@ -7,8 +7,9 @@ import { ru } from 'date-fns/locale';
 import { supabase } from '../lib/supabase';
 import type { Business, Ctx } from '../lib/tenant';
 import { Arrow, ArrowLeft, Check, User } from '../lib/icons';
-import { money } from '../lib/format';
+import { money, telHref } from '../lib/format';
 import { allTokens } from '../lib/tokens';
+import { LEGAL_VERSION } from '../lib/legal';
 import './profile.css';
 
 const STATUS: Record<string, string> = { booked: 'Подтверждена', arrived: 'Машина принята', done: 'Выполнена', cancelled: 'Отменена' };
@@ -24,27 +25,45 @@ export function Profile() {
     <Link to={`/s/${b.slug}`} className="back-link"><ArrowLeft size={18} /> На главную</Link>
     {sess.isPending ? <p className="muted">Загрузка…</p>
       : sess.data ? <><Signed b={b} email={sess.data.user.email ?? ''} confirmed={!!sess.data.user.email_confirmed_at} />
-          <footer className="row between muted prof-foot"><span>{b.short_name}</span><a href={`tel:${b.phone}`}>Связаться <Arrow size={14} /></a></footer></>
+          <footer className="row between muted prof-foot"><span>{b.short_name}</span><a href={telHref(b.phone)}>Связаться <Arrow size={14} /></a></footer></>
       : <><SignIn slug={b.slug} /><p className="owner-link"><MailIcon />Вы владелец студии? <Link to={`/s/${b.slug}/owner`}>Открыть кабинет студии</Link></p></>}</div></div>);
 }
 
 function SignIn({ slug }: { slug: string }) {
-  const [email, setEmail] = useState(''); const [state, setState] = useState<'idle' | 'sending' | 'sent'>('idle'); const [err, setErr] = useState<string | null>(null);
+  const [email, setEmail] = useState(''); const [code, setCode] = useState('');
+  const [sent, setSent] = useState(false); const [sending, setSending] = useState(false); const [verifying, setVerifying] = useState(false);
+  const [err, setErr] = useState<string | null>(null); const [wait, setWait] = useState(0); const [agree, setAgree] = useState(false);
   const ok = z.string().trim().email().safeParse(email).success;
+  useEffect(() => { if (wait <= 0) return; const t = setTimeout(() => setWait(wait - 1), 1000); return () => clearTimeout(t); }, [wait]);
   const send = async () => {
-    if (!ok) return; setState('sending'); setErr(null);
-    const { error } = await supabase.auth.signInWithOtp({ email: email.trim(), options: { emailRedirectTo: `${window.location.origin}/s/${slug}/profile` } });
-    if (error) { setState('idle'); setErr(/rate|limit/i.test(error.message) ? 'Слишком много запросов. Повторите через несколько минут.' : 'Не удалось отправить ссылку. Проверьте почту и повторите.'); return; }
-    setState('sent');
+    if (!ok || !agree || wait > 0 || sending) return; setSending(true); setErr(null);
+    const { error } = await supabase.auth.signInWithOtp({ email: email.trim(), options: { emailRedirectTo: `${window.location.origin}/s/${slug}/profile`, data: { consent_version: LEGAL_VERSION, consent_at: new Date().toISOString() } } });
+    setSending(false);
+    if (error) { setErr(/rate|limit/i.test(error.message) ? 'Слишком много запросов. Повторите через несколько минут.' : 'Не удалось отправить письмо. Проверьте почту и повторите.'); return; }
+    setSent(true); setWait(60); setCode('');
+  };
+  const verify = async () => {
+    if (!/^\d{6,10}$/.test(code.trim()) || verifying) return; setVerifying(true); setErr(null);
+    const { error } = await supabase.auth.verifyOtp({ email: email.trim(), token: code.trim(), type: 'email' });
+    setVerifying(false);
+    if (error) setErr('Неверный или просроченный код. Запросите новый.');
   };
   return (<div className="profile-card"><div className="profile-ico"><User size={26} /></div>
     <h1>Профиль клиента</h1><p className="muted">Сохраняйте новые записи в одном месте и открывайте их с любого устройства.</p>
-    {state === 'sent' ? <p role="status">Мы отправили ссылку для входа на <b>{email.trim()}</b>. Откройте письмо на этом устройстве. Если его нет, проверьте «Спам».</p> : <>
+    {sent ? <>
+      <p role="status">Мы отправили письмо на <b>{email.trim()}</b>. Откройте ссылку из письма или введите код. Если письма нет, проверьте «Спам».</p>
+      <label className="muted small" htmlFor="pc">Код из письма</label>
+      <input id="pc" className="field" inputMode="numeric" autoComplete="one-time-code" maxLength={10} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} onKeyDown={(e) => { if (e.key === 'Enter') void verify(); }} />
+      {err && <p role="alert" className="err">{err}</p>}
+      <button className="btn" disabled={!/^\d{6,10}$/.test(code) || verifying} onClick={() => void verify()}>{verifying ? 'Проверяем…' : 'Войти'}</button>
+      <button className="btn ghost" disabled={wait > 0 || sending} onClick={() => void send()}>{wait > 0 ? `Отправить ещё раз через ${wait} с` : 'Отправить ещё раз'}</button>
+      <button className="link" style={{ marginTop: 12 }} onClick={() => { setSent(false); setErr(null); }}>Изменить почту</button></> : <>
       <label className="muted small" htmlFor="pe">Почта</label>
       <input id="pe" className="field" type="email" autoComplete="email" inputMode="email" value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void send(); }} />
       <p className="muted small">Пароль не нужен. Отправим ссылку для входа.</p>
+      <label className="check"><input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} /><span className="small">Я принимаю <a href={`/s/${slug}/legal/terms`} target="_blank" rel="noreferrer">Условия использования</a> и даю <a href={`/s/${slug}/legal/consent`} target="_blank" rel="noreferrer">согласие на обработку персональных данных</a>.</span></label>
       {err && <p role="alert" className="err">{err}</p>}
-      <button className="btn" disabled={!ok || state === 'sending'} onClick={() => void send()}>{state === 'sending' ? 'Отправляем…' : 'Получить ссылку'}</button></>}
+      <button className="btn" disabled={!ok || !agree || sending} onClick={() => void send()}>{sending ? 'Отправляем…' : 'Получить ссылку'}</button></>}
   </div>);
 }
 

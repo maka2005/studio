@@ -23,8 +23,9 @@ export function Shell() {
   const ctx: Ctx = { b, openBooking: (service) => setBooking({ service }), openAI: () => setAi(true) };
   return (<>
     <header className="top"><Link to={base} className="brand"><img src={assetUrl(slug, b.images.logo)} alt="" width={40} height={40} />{b.short_name}</Link>
-      <Link to={`${base}/profile`} className="icon-btn" aria-label="Профиль"><User /></Link></header>
+      {b.client_profile && <Link to={`${base}/profile`} className="icon-btn" aria-label="Профиль"><User /></Link>}</header>
     <main><Outlet context={ctx} /></main>
+    <div className="page legal-links"><Link to={`${base}/legal/privacy`}>Политика конфиденциальности</Link><Link to={`${base}/legal/terms`}>Условия использования</Link><Link to={`${base}/legal/consent`}>Согласие на обработку данных</Link><Link to={`${base}/legal/storage`}>Локальное хранилище</Link></div>
     <button className="fab" aria-label="Помощник" onClick={ctx.openAI}><Sparkle /></button>
     <nav className="tabs" aria-label="Разделы">
       <NavLink end to={base}><Home />Главная</NavLink><NavLink to={`${base}/services`}><Grid />Услуги</NavLink><NavLink to={`${base}/booking`}><Calendar />Моя запись</NavLink></nav>

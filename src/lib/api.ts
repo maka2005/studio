@@ -14,9 +14,9 @@ export async function fetchSlots(slug: string, service: string, day: string): Pr
   if (error) throw error;
   return (data ?? []) as Slot[];
 }
-export async function createBooking(a: { slug: string; service: string; start: string; name: string; phone: string; car: string; key: string; token: string }) {
+export async function createBooking(a: { slug: string; service: string; start: string; name: string; phone: string; car: string; key: string; token: string; consent: string }) {
   const { data, error } = await supabase.rpc('create_booking', { p_slug: a.slug, p_service: a.service, p_start: a.start,
-    p_name: a.name, p_phone: a.phone, p_car: a.car, p_key: a.key, p_token: a.token });
+    p_name: a.name, p_phone: a.phone, p_car: a.car, p_key: a.key, p_token: a.token, p_consent: a.consent });
   if (error) throw error;
   return (data as { booking_id: string; starts_at: string; ends_at: string }[])[0];
 }
@@ -40,6 +40,7 @@ export const owner = {
   stats: async (slug: string, from: string, to: string) => (await rpc<OwnerStats[]>('owner_stats', { p_slug: slug, p_from: from, p_to: to }))[0]!,
   setStatus: (id: string, status: 'arrived' | 'done') => rpc<void>('owner_set_status', { p_booking: id, p_status: status }),
   cancel: (id: string) => rpc<void>('owner_cancel', { p_booking: id }),
+  erase: (id: string) => rpc<void>('owner_erase_customer', { p_booking: id }),
   reschedule: (id: string, start: string) => rpc<boolean>('owner_reschedule', { p_booking: id, p_start: start }),
   create: (slug: string, a: { service: string; start: string; name: string; phone: string; car: string }) =>
     rpc<string>('owner_create_booking', { p_slug: slug, p_service: a.service, p_start: a.start, p_name: a.name, p_phone: a.phone, p_car: a.car }),
@@ -55,5 +56,5 @@ export const owner = {
 };
 const MSG: [string, string][] = [['slot_taken', 'Это время занято.'], ['exclusion', 'Это время занято.'], ['invalid_slot', 'На это время приём не ведётся.'],
   ['past_start', 'Это время уже прошло.'], ['refund_exceeds', 'Возврат больше полученной суммы.'], ['bad_transition', 'Это действие недоступно для текущего статуса.'],
-  ['forbidden', 'Нет прав для этого действия.'], ['rate_limited', 'Слишком много попыток. Повторите позже.']];
+  ['forbidden', 'Нет прав для этого действия.'], ['rate_limited', 'Слишком много попыток. Повторите позже.'], ['consent_required', 'Нужно согласие на обработку данных.']];
 export const errText = (e: unknown) => { const m = String((e as Error)?.message ?? e); return MSG.find(([k]) => m.includes(k))?.[1] ?? 'Не удалось выполнить действие. Повторите.'; };

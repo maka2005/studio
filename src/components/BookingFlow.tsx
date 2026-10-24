@@ -10,6 +10,7 @@ import { createBooking, fetchServices, fetchSlots } from '../lib/api';
 import { duration, money, randomToken } from '../lib/format';
 import { ArrowLeft, ArrowRight } from '../lib/icons';
 import { Sheet } from './Sheet';
+import { LEGAL_VERSION } from '../lib/legal';
 import { supabase } from '../lib/supabase';
 import { saveToken } from '../lib/tokens';
 
@@ -20,7 +21,7 @@ const Contact = z.object({
 });
 const TITLES = ['Услуга', 'Дата и время', 'Ваши данные', 'Подтверждение'];
 const ERR: Record<string, string> = { slot_taken: 'Это время только что заняли. Выберите другое.', invalid_slot: 'Это время недоступно для записи.',
-  past_start: 'Это время уже прошло.' };
+  past_start: 'Это время уже прошло.', consent_required: 'Нужно согласие на обработку данных.' };
 
 export function BookingFlow({ b, initialService, onClose }: { b: Business; initialService?: string; onClose: () => void }) {
   const svcQ = useQuery({ queryKey: ['services', b.slug], queryFn: () => fetchServices(b.slug) });
@@ -31,7 +32,7 @@ export function BookingFlow({ b, initialService, onClose }: { b: Business; initi
   const [slot, setSlot] = useState<string | null>(null);
   const [form, setForm] = useState({ name: '', phone: '', car: '' });
   const [errs, setErrs] = useState<Record<string, string>>({});
-  const [msg, setMsg] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null); const [agree, setAgree] = useState(false);
   const key = useRef(crypto.randomUUID()); const token = useRef(randomToken());
   const preset = useRef(false);
   useEffect(() => {
@@ -47,7 +48,7 @@ export function BookingFlow({ b, initialService, onClose }: { b: Business; initi
   const slotsQ = useQuery({ queryKey: ['slots', b.slug, serviceId, day], queryFn: () => fetchSlots(b.slug, serviceId!, day), enabled: !!serviceId && step === 2 });
   const fmt = (iso: string, f: string) => formatInTimeZone(new Date(iso), b.timezone, f, { locale: ru });
   const mut = useMutation({
-    mutationFn: () => createBooking({ slug: b.slug, service: serviceId!, start: slot!, ...form, key: key.current, token: token.current }),
+    mutationFn: () => createBooking({ slug: b.slug, service: serviceId!, start: slot!, ...form, key: key.current, token: token.current, consent: LEGAL_VERSION }),
     onSuccess: () => {
       saveToken(b.slug, token.current);   // если клиент уже вошёл, запись сразу привязывается к профилю
       void supabase.auth.getSession().then(({ data }) => { if (data.session) void supabase.rpc('claim_booking', { p_token: token.current }); });
@@ -68,7 +69,7 @@ export function BookingFlow({ b, initialService, onClose }: { b: Business; initi
     }
     setStep(step + 1);
   };
-  const canNext = step === 1 ? !!serviceId : step === 2 ? !!slot : true;
+  const canNext = step === 1 ? !!serviceId : step === 2 ? !!slot : step === 3 ? agree : true;
 
   if (step === 5 && svc && slot) return (
     <Sheet title="Запись подтверждена" onClose={onClose}>
@@ -105,6 +106,9 @@ export function BookingFlow({ b, initialService, onClose }: { b: Business; initi
           <input id={f} className="field" value={form[f]} inputMode={f === 'phone' ? 'tel' : 'text'} autoComplete={{ name: 'name', phone: 'tel', car: 'off' }[f]}
             onChange={(e) => setForm({ ...form, [f]: e.target.value })} aria-invalid={!!errs[f]} />
           {errs[f] && <p className="err small">{errs[f]}</p>}</div>))}
+
+      {step === 3 && (<label className="check"><input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
+        <span className="small">Я принимаю <a href={`/s/${b.slug}/legal/terms`} target="_blank" rel="noreferrer">Условия использования</a> и даю <a href={`/s/${b.slug}/legal/consent`} target="_blank" rel="noreferrer">согласие на обработку персональных данных</a>. С <a href={`/s/${b.slug}/legal/privacy`} target="_blank" rel="noreferrer">Политикой конфиденциальности</a> ознакомлен(а).</span></label>)}
 
       {step === 4 && svc && slot && <div className="card col">
         <b>{svc.name}</b><span>{fmt(slot, "d MMMM 'в' HH:mm")} · {duration(svc.duration_minutes)}</span>

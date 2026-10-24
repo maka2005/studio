@@ -79,3 +79,9 @@ a.card.contact{display:flex;align-items:center;gap:14px;justify-content:flex-sta
 html,body{overflow-x:hidden}
 .page,.top,.pad{width:100%}
 main{display:block;min-width:0}
+
+.check{display:flex;gap:12px;align-items:flex-start;margin:14px 0}.check input{width:22px;height:22px;margin-top:1px;flex:none;accent-color:var(--accent)}
+.check a,.legal a{color:var(--accent);text-decoration:underline;text-underline-offset:3px}
+.legal-links{display:flex;flex-wrap:wrap;gap:6px 18px;padding-top:0;padding-bottom:8px;color:var(--muted);font-size:14px}
+.legal{max-width:760px;margin:0 auto;padding-bottom:24px}.legal h1{font-size:30px;margin:0 0 6px}.legal h2{font-size:19px;margin:26px 0 8px}
+.legal p,.legal li{color:#d5d8de}.legal ul{padding-left:20px;margin:0 0 10px}.legal li{margin-bottom:6px}

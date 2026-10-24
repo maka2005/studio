@@ -7,7 +7,7 @@ import { ru } from 'date-fns/locale';
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz';
 import { supabase } from '../lib/supabase';
 import { errText, fetchServices, fetchSlots, owner, type OwnerBooking } from '../lib/api';
-import { duration, money } from '../lib/format';
+import { duration, money, telHref } from '../lib/format';
 import { assetUrl, type Business, type Ctx } from '../lib/tenant';
 import { prepareImage, removeByUrl, uploadImage } from '../lib/media';
 import { Sheet } from '../components/Sheet';
@@ -109,12 +109,13 @@ function Actions({ b, bk, onClose, onDone }: { b: Business; bk: OwnerBooking; on
   const sid = svc.data?.find((s) => s.name === bk.service_name)?.id ?? null;
   const cents = Math.round(Number(amount.replace(',', '.')) * 100); const okAmt = Number.isFinite(cents) && cents > 0;
   return (<Sheet title={bk.service_name} sub={`${fmtT(b, bk.starts_at, "d MMMM, HH:mm")} · ${bk.car}`} onClose={onClose}><Err m={a.msg} />
-    <p className="muted small">{bk.customer_name}, <a href={`tel:${bk.customer_phone}`}>{bk.customer_phone}</a><br />{money(bk.price_cents / 100, b.currency)} · оплачено {money(bk.paid_cents / 100, b.currency)}</p>
+    <p className="muted small">{bk.customer_name}, <a href={telHref(bk.customer_phone)}>{bk.customer_phone}</a><br />{money(bk.price_cents / 100, b.currency)} · оплачено {money(bk.paid_cents / 100, b.currency)}</p>
     <div className="row wrap">{bk.status === 'booked' && <button className="btn mini" disabled={a.busy} onClick={() => a.run(() => owner.setStatus(bk.id, 'arrived'))}>Машина принята</button>}
       {(bk.status === 'booked' || bk.status === 'arrived') && <button className="btn mini" disabled={a.busy} onClick={() => a.run(() => owner.setStatus(bk.id, 'done'))}>Готова</button>}</div>
     <label className="muted small" htmlFor="amt">Сумма оплаты или возврата, {b.currency}</label><input id="amt" className="field" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
     <div className="row wrap"><button className="btn ghost mini" disabled={a.busy || !okAmt} onClick={() => a.run(() => owner.payment(bk.id, cents, 'payment'))}>Внести оплату</button>
       <button className="btn ghost mini" disabled={a.busy || !okAmt} onClick={() => a.run(() => owner.payment(bk.id, cents, 'refund'))}>Вернуть</button></div>
+    <button className="btn ghost" disabled={a.busy} onClick={() => { if (window.confirm('Удалить имя, телефон и автомобиль клиента из этой записи? Действие необратимо.')) a.run(() => owner.erase(bk.id)); }}>Удалить данные клиента</button>
     {bk.status === 'booked' && <>
       <button className="btn ghost" onClick={() => setMove(!move)}>Перенести</button>
       {move && <><SlotPicker b={b} service={sid} picked={slot} onPick={setSlot} />
@@ -171,11 +172,12 @@ const Time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 function Settings({ b }: { b: Business }) {
   const qc = useQueryClient(); const [msg, setMsg] = useState<string | null>(null); const [ok, setOk] = useState(false);
   const [f, setF] = useState({ phone: b.phone, address: b.address, route_url: b.route_url ?? '', description: b.description, cards: b.cards, hours: b.hours });
-  const m = useMutation({ mutationFn: () => owner.updateConfig(b.slug, f), onSuccess: () => { setMsg(null); setOk(true); void qc.invalidateQueries({ queryKey: ['business', b.slug] }); }, onError: (e) => { setOk(false); setMsg(errText(e)); } });
+  const m = useMutation({ mutationFn: () => owner.updateConfig(b.slug, { ...f, phone: f.phone.trim(), address: f.address.trim() }), onSuccess: () => { setMsg(null); setOk(true); void qc.invalidateQueries({ queryKey: ['business', b.slug] }); }, onError: (e) => { setOk(false); setMsg(errText(e)); } });
   const save = () => {
     for (const [, h] of Object.entries(f.hours)) if (h && (!Time.safeParse(h[0]).success || !Time.safeParse(h[1]).success || h[0] >= h[1])) { setOk(false); setMsg('Проверьте часы работы: начало раньше конца, формат ЧЧ:ММ.'); return; }
     if (f.route_url && !/^https:\/\//.test(f.route_url)) { setOk(false); setMsg('Ссылка 2ГИС должна начинаться с https://'); return; }
-    if (!f.phone.trim() || !f.address.trim()) { setOk(false); setMsg('Телефон и адрес обязательны.'); return; }
+    if (!/^\+?[0-9\s()-]{7,20}$/.test(f.phone.trim())) { setOk(false); setMsg('Проверьте номер телефона, например +7 700 000 00 00.'); return; }
+    if (!f.address.trim()) { setOk(false); setMsg('Укажите адрес.'); return; }
     m.mutate();
   };
   const card = (k: 'booking' | 'ai' | 'install', label: string): ReactNode => (<div className="card col"><b>{label}</b>

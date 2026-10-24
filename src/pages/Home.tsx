@@ -1,6 +1,6 @@
 import { Link, useOutletContext } from 'react-router-dom';
 import { assetUrl, type Ctx } from '../lib/tenant';
-import { money, plural } from '../lib/format';
+import { money, plural, telHref } from '../lib/format';
 import { Arrow, ArrowRight, Car, Clock, Download, Phone, Photo, Pin, Sparkle, Tag, Wrench } from '../lib/icons';
 import { Reveal } from '../components/Reveal';
 import { ServiceList } from './ServiceList';
@@ -31,7 +31,7 @@ export function Home() {
         <div className="card col"><div className="row"><Pin /><b>{b.address}</b></div>
           <div className="row"><Clock /><div>{ranges.length === 1 ? <b>{ranges[0]}</b> : <b>по графику</b>}<p className="muted small">по времени студии</p></div></div>
           <div className="row"><a className="btn ghost inline" href={routeHref} target="_blank" rel="noreferrer">Маршрут <Arrow size={16} /></a>
-            <a className="icon-btn big-btn" href={`tel:${b.phone}`} aria-label="Позвонить"><Phone /></a></div></div></Reveal>
+            <a className="icon-btn big-btn" href={telHref(b.phone)} aria-label="Позвонить"><Phone /></a></div></div></Reveal>
       <Reveal className="col-main"><div className="row between"><h2>Услуги</h2><Link className="muted" to={`/s/${b.slug}/services`}>Все услуги <ArrowRight size={16} /></Link></div><ServiceList limit={4} />
         {b.gallery.length > 0 && <><h2 style={{ marginTop: 24 }}>Работы студии</h2>
           <div className="gallery">{b.gallery.map((g) => <figure key={g.image}><div className="shot" style={{ backgroundImage: img(g.image) }} /><figcaption>{g.caption}</figcaption></figure>)}</div></>}</Reveal></div>
@@ -39,6 +39,6 @@ export function Home() {
       <h2 className="xl">{b.cards.install.title}</h2><p className="muted">{b.cards.install.text}</p>
       <Link className="btn" to={`/s/${b.slug}/install`}><Download /> Добавить на экран <ArrowRight /></Link>
       <p className="muted small">Бесплатно. Установка через браузер.</p></div></Reveal>
-    <footer className="row between muted" style={{ padding: '16px 0' }}><span>{b.short_name}</span><a href={`tel:${b.phone}`}>Связаться <Arrow size={14} /></a></footer>
+    <footer className="row between muted" style={{ padding: '16px 0' }}><span>{b.short_name} · <Link to={`/s/${b.slug}/owner`}>Вход для студии</Link></span><a href={telHref(b.phone)}>Связаться <Arrow size={14} /></a></footer>
   </div>);
 }
