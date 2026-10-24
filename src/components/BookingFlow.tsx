@@ -10,6 +10,8 @@ import { createBooking, fetchServices, fetchSlots } from '../lib/api';
 import { duration, money, randomToken } from '../lib/format';
 import { ArrowLeft, ArrowRight } from '../lib/icons';
 import { Sheet } from './Sheet';
+import { supabase } from '../lib/supabase';
+import { saveToken } from '../lib/tokens';
 
 const Contact = z.object({
   name: z.string().trim().min(1, 'Введите имя').max(80),
@@ -46,7 +48,11 @@ export function BookingFlow({ b, initialService, onClose }: { b: Business; initi
   const fmt = (iso: string, f: string) => formatInTimeZone(new Date(iso), b.timezone, f, { locale: ru });
   const mut = useMutation({
     mutationFn: () => createBooking({ slug: b.slug, service: serviceId!, start: slot!, ...form, key: key.current, token: token.current }),
-    onSuccess: () => { try { localStorage.setItem(`booking:${b.slug}`, token.current); } catch { /* приватный режим */ } setStep(5); },
+    onSuccess: () => {
+      saveToken(b.slug, token.current);   // если клиент уже вошёл, запись сразу привязывается к профилю
+      void supabase.auth.getSession().then(({ data }) => { if (data.session) void supabase.rpc('claim_booking', { p_token: token.current }); });
+      setStep(5);
+    },
     onError: (e: Error) => {
       const code = Object.keys(ERR).find((c) => e.message.includes(c));
       setMsg(code ? ERR[code]! : 'Не удалось записаться. Проверьте соединение и повторите.');

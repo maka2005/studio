@@ -6,6 +6,7 @@ import { ru } from 'date-fns/locale';
 import type { Ctx } from '../lib/tenant';
 import { cancelBooking, getBooking } from '../lib/api';
 import { money } from '../lib/format';
+import { saveToken } from '../lib/tokens';
 import { Bell, Calendar, Check, Copy, Phone } from '../lib/icons';
 const STATUS: Record<string, string> = { booked: 'Подтверждена', arrived: 'Машина принята', done: 'Работа выполнена', cancelled: 'Отменена' };
 
@@ -13,7 +14,7 @@ const STATUS: Record<string, string> = { booked: 'Подтверждена', arr
 function readToken(slug: string): string | null {
   const m = /[#&]t=([0-9a-f]{20,})/.exec(window.location.hash);
   if (m) {
-    try { localStorage.setItem(`booking:${slug}`, m[1]!); } catch { /* приватный режим */ }
+    saveToken(slug, m[1]!);
     history.replaceState(null, '', window.location.pathname);
     return m[1]!;
   }

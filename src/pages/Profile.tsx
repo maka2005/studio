@@ -8,6 +8,7 @@ import { supabase } from '../lib/supabase';
 import type { Business, Ctx } from '../lib/tenant';
 import { Arrow, ArrowLeft, Check, User } from '../lib/icons';
 import { money } from '../lib/format';
+import { allTokens } from '../lib/tokens';
 import './profile.css';
 
 const STATUS: Record<string, string> = { booked: 'Подтверждена', arrived: 'Машина принята', done: 'Выполнена', cancelled: 'Отменена' };
@@ -48,12 +49,15 @@ function SignIn({ slug }: { slug: string }) {
 }
 
 function Signed({ b, email, confirmed }: { b: Business; email: string; confirmed: boolean }) {
-  const qc = useQueryClient(); const claimed = useRef(false); const [sure, setSure] = useState<string | null>(null);
+  const qc = useQueryClient(); const claimed = useRef(false); const [sure, setSure] = useState<string | null>(null); const [claimErr, setClaimErr] = useState<string | null>(null);
   const list = useQuery({ queryKey: ['client', 'bookings', b.slug], queryFn: async () => { const { data, error } = await supabase.rpc('my_bookings', { p_slug: b.slug }); if (error) throw error; return (data ?? []) as Row[]; } });
   useEffect(() => {   // записи, сделанные на этом устройстве до входа, привязываются к аккаунту
     if (claimed.current) return; claimed.current = true;
-    let t: string | null = null; try { t = localStorage.getItem(`booking:${b.slug}`); } catch { /* недоступно */ }
-    if (t) void supabase.rpc('claim_booking', { p_token: t }).then(() => qc.invalidateQueries({ queryKey: ['client', 'bookings'] }));
+    const tokens = allTokens(b.slug); if (!tokens.length) return;
+    void Promise.all(tokens.map((t) => supabase.rpc('claim_booking', { p_token: t }))).then((rs) => {
+      const bad = rs.find((r) => r.error); if (bad?.error) setClaimErr(bad.error.message);
+      void qc.invalidateQueries({ queryKey: ['client', 'bookings'] });
+    });
   }, [b.slug, qc]);
   const cancel = useMutation({ mutationFn: async (id: string) => { const { error } = await supabase.rpc('cancel_my_booking', { p_booking: id }); if (error) throw error; },
     onSuccess: () => { setSure(null); void qc.invalidateQueries({ queryKey: ['client', 'bookings'] }); } });
@@ -71,6 +75,7 @@ function Signed({ b, email, confirmed }: { b: Business; email: string; confirmed
           <b>{r.service_name}</b><span>{f(r.starts_at)}</span><span className="muted small">{STATUS[r.status] ?? r.status} · {r.car} · {money(r.price_cents / 100, b.currency)}</span>
           {r.can_cancel && (sure === r.id ? <button className="btn danger mini" disabled={cancel.isPending} onClick={() => cancel.mutate(r.id)}>{cancel.isPending ? 'Отменяем…' : 'Да, отменить'}</button>
             : <button className="btn ghost mini" onClick={() => setSure(r.id)}>Отменить запись</button>)}</div>))}
+    {claimErr && <p className="err small">Не удалось привязать записи с этого устройства ({claimErr}).</p>}
     {cancel.isError && <p className="err">Не удалось отменить. Повторите позже.</p>}
   </>);
 }
