@@ -50,6 +50,9 @@ export const owner = {
     rpc<string>('owner_upsert_service', { p_slug: slug, p_id: s.id, p_name: s.name, p_price_cents: s.cents, p_duration: s.minutes, p_active: s.active }),
   updateConfig: (slug: string, patch: Record<string, unknown>) => rpc<void>('owner_update_config', { p_slug: slug, p_patch: patch }),
   updateLegal: (slug: string, legal: Record<string, unknown>) => rpc<void>('owner_update_legal', { p_slug: slug, p_legal: legal }),
+  telegramCode: (slug: string) => rpc<string>('owner_telegram_code', { p_slug: slug }),
+  telegramLinks: (slug: string) => rpc<{ id: string; created_at: string }[]>('owner_telegram_links', { p_slug: slug }),
+  telegramUnlink: (id: string) => rpc<void>('owner_telegram_unlink', { p_id: id }),
   resources: async (slug: string) => {
     const { data, error } = await supabase.from('resources').select('id,name,tenants!inner(slug)').eq('tenants.slug', slug); if (error) throw error;
     return (data ?? []) as unknown as { id: string; name: string }[];

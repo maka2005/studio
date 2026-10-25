@@ -8,7 +8,7 @@ const MISSING = '[не заполнено]';
 function ops(b: Business) {
   const l = b.legal ?? {};
   return { name: l.name || MISSING, bin: l.bin || MISSING, address: l.address || b.address, email: l.email || MISSING, phone: b.phone,
-    storage: l.storage || 'в облачной базе данных поставщика Supabase Inc.', processors: l.processors || 'Vercel Inc. (хостинг сайта) и Supabase Inc. (база данных, вход по почте)', retention: l.retention || 'до достижения целей обработки', cancel: b.cancel_hours ?? 24 };
+    storage: l.storage || 'в облачной базе данных поставщика Supabase Inc.', processors: l.processors || 'Vercel Inc. (хостинг сайта), Supabase Inc. (база данных, вход по почте) и Telegram (уведомления сотрудникам студии о новых записях)', retention: l.retention || 'до достижения целей обработки', cancel: b.cancel_hours ?? 24 };
 }
 type O = ReturnType<typeof ops>;
 const S = ({ t, children }: { t: string; children: ReactNode }) => (<><h2>{t}</h2>{children}</>);

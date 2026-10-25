@@ -16,7 +16,7 @@ import './owner-login.css';
 import './owner-media.css';
 import { AI_ENABLED } from '../lib/features';
 
-const TABS = ['Записи', 'Услуги', 'Студия', 'Фото', 'Документы', 'Помощник'] as const;
+const TABS = ['Записи', 'Услуги', 'Студия', 'Фото', 'Уведомления', 'Документы', 'Помощник'] as const;
 const STATUS: Record<string, string> = { booked: 'Записан', arrived: 'Принята', done: 'Готова', cancelled: 'Отменена' };
 
 export function Owner() {
@@ -51,7 +51,7 @@ function Cabinet({ b, onLogout }: { b: Business; onLogout: () => void }) {
   if (!me.data) return <section className="pad"><h2>Нет доступа</h2><p className="muted">Эта учётная запись не привязана к студии.</p><button className="btn ghost" onClick={onLogout}>Выйти</button></section>;
   return (<section className="pad"><div className="row between"><h2>Кабинет</h2><button className="link" onClick={onLogout}>Выйти</button></div>
     <div className="tabs2" role="tablist">{TABS.map((t) => <button key={t} role="tab" aria-selected={tab === t} disabled={t === 'Помощник' && !AI_ENABLED} onClick={() => (t === 'Помощник' ? setAi(true) : setTab(t))}>{t === 'Помощник' && !AI_ENABLED ? 'Помощник · скоро' : t}</button>)}</div>
-    {tab === 'Записи' && <Bookings b={b} />}{tab === 'Услуги' && <Services b={b} />}{tab === 'Студия' && <Settings b={b} />}{tab === 'Фото' && <Media b={b} />}{tab === 'Документы' && <Docs b={b} />}
+    {tab === 'Записи' && <Bookings b={b} />}{tab === 'Услуги' && <Services b={b} />}{tab === 'Студия' && <Settings b={b} />}{tab === 'Фото' && <Media b={b} />}{tab === 'Уведомления' && <Notify b={b} />}{tab === 'Документы' && <Docs b={b} />}
     {ai && <AssistantSheet slug={b.slug} scope="owner" onClose={() => setAi(false)} />}</section>);
 }
 
@@ -267,4 +267,25 @@ function Docs({ b }: { b: Business }) {
       {([['privacy', 'Политика конфиденциальности'], ['terms', 'Условия использования'], ['consent', 'Согласие на обработку данных'], ['storage', 'Локальное хранилище']] as const).map(([k, t]) =>
         <a key={k} href={`/s/${b.slug}/legal/${k}`} target="_blank" rel="noreferrer">{t}</a>)}</div>
     <p className="muted small">Место хранения данных и поставщиков инфраструктуры указывает платформа, эти поля здесь не меняются.</p></>);
+}
+
+const BOT = import.meta.env.VITE_TELEGRAM_BOT as string | undefined;
+function Notify({ b }: { b: Business }) {
+  const qc = useQueryClient(); const [code, setCode] = useState<string | null>(null); const [start, setStart] = useState(0); const [msg, setMsg] = useState<string | null>(null);
+  const links = useQuery({ queryKey: ['owner', 'tg', b.slug], queryFn: () => owner.telegramLinks(b.slug), refetchInterval: code ? 4000 : false });
+  const gen = useMutation({ mutationFn: () => owner.telegramCode(b.slug), onSuccess: (c) => { setCode(c); setStart(links.data?.length ?? 0); setMsg(null); }, onError: (e) => setMsg(errText(e)) });
+  const unlink = useMutation({ mutationFn: (id: string) => owner.telegramUnlink(id), onSuccess: () => { void qc.invalidateQueries({ queryKey: ['owner', 'tg', b.slug] }); }, onError: (e) => setMsg(errText(e)) });
+  useEffect(() => { if (code && (links.data?.length ?? 0) > start) setCode(null); }, [links.data, code, start]);
+  if (!BOT) return <p className="muted">Telegram-уведомления пока не подключены платформой.</p>;
+  return (<><Err m={msg} />
+    <p className="muted small">В Telegram приходят сообщения о новой записи и об отмене записи клиентом: услуга, время, имя, телефон и автомобиль клиента. Сообщения передаются через Telegram.</p>
+    {links.isPending ? <p className="muted">Загрузка…</p> : links.isError ? <p className="err">Не удалось загрузить список. <button className="link" onClick={() => links.refetch()}>Повторить</button></p>
+      : links.data.length === 0 ? <p className="muted">Telegram пока не подключён.</p>
+      : links.data.map((l) => (<div className="card row between" key={l.id}><span>Telegram подключён<br /><span className="muted small">с {formatInTimeZone(new Date(l.created_at), b.timezone, 'd MMMM yyyy', { locale: ru })}</span></span>
+          <button className="btn ghost mini" disabled={unlink.isPending} onClick={() => { if (window.confirm('Отключить уведомления в этом чате?')) unlink.mutate(l.id); }}>Отключить</button></div>))}
+    {code ? <div className="card col"><b>Осталось нажать Start</b>
+        <a className="btn" href={`https://t.me/${BOT}?start=${code}`} target="_blank" rel="noreferrer">Открыть Telegram</a>
+        <p className="muted small">В Telegram нажмите «Start» (или «Запустить»). Ссылка действует 15 минут. Эта страница сама увидит подключение.</p></div>
+      : <button className="btn" disabled={gen.isPending} onClick={() => gen.mutate()}>{gen.isPending ? 'Готовим ссылку…' : links.data?.length ? 'Подключить ещё один чат' : 'Подключить Telegram'}</button>}
+    <p className="muted small">Отключить уведомления можно и в самом Telegram командой /stop.</p></>);
 }

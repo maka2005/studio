@@ -1,1 +1,6 @@
-{"rewrites":[{"source":"/s/:slug/(.*)","destination":"/index.html"},{"source":"/s/:slug","destination":"/index.html"}]}
+{
+  "rewrites": [
+    { "source": "/s/:slug/:path*", "destination": "/api/shell?slug=:slug" },
+    { "source": "/s/:slug", "destination": "/api/shell?slug=:slug" }
+  ]
+}
