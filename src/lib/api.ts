@@ -49,6 +49,7 @@ export const owner = {
   upsertService: (slug: string, s: { id: string | null; name: string; cents: number; minutes: number; active: boolean }) =>
     rpc<string>('owner_upsert_service', { p_slug: slug, p_id: s.id, p_name: s.name, p_price_cents: s.cents, p_duration: s.minutes, p_active: s.active }),
   updateConfig: (slug: string, patch: Record<string, unknown>) => rpc<void>('owner_update_config', { p_slug: slug, p_patch: patch }),
+  updateLegal: (slug: string, legal: Record<string, unknown>) => rpc<void>('owner_update_legal', { p_slug: slug, p_legal: legal }),
   resources: async (slug: string) => {
     const { data, error } = await supabase.from('resources').select('id,name,tenants!inner(slug)').eq('tenants.slug', slug); if (error) throw error;
     return (data ?? []) as unknown as { id: string; name: string }[];

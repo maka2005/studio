@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { assetUrl, loadBusiness, type Ctx } from '../lib/tenant';
 import { Calendar, Grid, Home, Sparkle, User } from '../lib/icons';
 import { BookingFlow } from '../components/BookingFlow';
+import { AI_ENABLED } from '../lib/features';
 import { AssistantSheet } from '../components/AssistantSheet';
 export function Shell() {
   const { slug = '' } = useParams();
@@ -26,7 +27,7 @@ export function Shell() {
       {b.client_profile && <Link to={`${base}/profile`} className="icon-btn" aria-label="Профиль"><User /></Link>}</header>
     <main><Outlet context={ctx} /></main>
     <div className="page legal-links"><Link to={`${base}/legal/privacy`}>Политика конфиденциальности</Link><Link to={`${base}/legal/terms`}>Условия использования</Link><Link to={`${base}/legal/consent`}>Согласие на обработку данных</Link><Link to={`${base}/legal/storage`}>Локальное хранилище</Link></div>
-    <button className="fab" aria-label="Помощник" onClick={ctx.openAI}><Sparkle /></button>
+    {AI_ENABLED && <button className="fab" aria-label="Помощник" onClick={ctx.openAI}><Sparkle /></button>}
     <nav className="tabs" aria-label="Разделы">
       <NavLink end to={base}><Home />Главная</NavLink><NavLink to={`${base}/services`}><Grid />Услуги</NavLink><NavLink to={`${base}/booking`}><Calendar />Моя запись</NavLink></nav>
     {booking && <BookingFlow b={b} initialService={booking.service} onClose={() => setBooking(null)} />}

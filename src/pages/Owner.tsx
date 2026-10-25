@@ -14,8 +14,9 @@ import { Sheet } from '../components/Sheet';
 import { AssistantSheet } from '../components/AssistantSheet';
 import './owner-login.css';
 import './owner-media.css';
+import { AI_ENABLED } from '../lib/features';
 
-const TABS = ['Записи', 'Услуги', 'Студия', 'Фото', 'Помощник'] as const;
+const TABS = ['Записи', 'Услуги', 'Студия', 'Фото', 'Документы', 'Помощник'] as const;
 const STATUS: Record<string, string> = { booked: 'Записан', arrived: 'Принята', done: 'Готова', cancelled: 'Отменена' };
 
 export function Owner() {
@@ -49,8 +50,8 @@ function Cabinet({ b, onLogout }: { b: Business; onLogout: () => void }) {
   if (me.isError) return <p className="pad err">Не удалось проверить доступ. <button className="link" onClick={() => me.refetch()}>Повторить</button></p>;
   if (!me.data) return <section className="pad"><h2>Нет доступа</h2><p className="muted">Эта учётная запись не привязана к студии.</p><button className="btn ghost" onClick={onLogout}>Выйти</button></section>;
   return (<section className="pad"><div className="row between"><h2>Кабинет</h2><button className="link" onClick={onLogout}>Выйти</button></div>
-    <div className="tabs2" role="tablist">{TABS.map((t) => <button key={t} role="tab" aria-selected={tab === t} onClick={() => (t === 'Помощник' ? setAi(true) : setTab(t))}>{t}</button>)}</div>
-    {tab === 'Записи' && <Bookings b={b} />}{tab === 'Услуги' && <Services b={b} />}{tab === 'Студия' && <Settings b={b} />}{tab === 'Фото' && <Media b={b} />}
+    <div className="tabs2" role="tablist">{TABS.map((t) => <button key={t} role="tab" aria-selected={tab === t} disabled={t === 'Помощник' && !AI_ENABLED} onClick={() => (t === 'Помощник' ? setAi(true) : setTab(t))}>{t === 'Помощник' && !AI_ENABLED ? 'Помощник · скоро' : t}</button>)}</div>
+    {tab === 'Записи' && <Bookings b={b} />}{tab === 'Услуги' && <Services b={b} />}{tab === 'Студия' && <Settings b={b} />}{tab === 'Фото' && <Media b={b} />}{tab === 'Документы' && <Docs b={b} />}
     {ai && <AssistantSheet slug={b.slug} scope="owner" onClose={() => setAi(false)} />}</section>);
 }
 
@@ -242,4 +243,28 @@ function Media({ b }: { b: Business }) {
         onChange={onFile((f) => void upload(f, 'work', (u) => { setWorks((p) => [...p, { image: u, caption: newCap.trim() || 'Работа студии' }]); setNewCap(''); }))} /></label></div>}
     <button className="btn" disabled={save.isPending || !!busy} onClick={() => save.mutate()}>{save.isPending ? 'Сохраняем…' : 'Сохранить'}</button>
     <p className="muted small">До нажатия «Сохранить» клиенты изменений не видят.</p></>);
+}
+
+const LegalForm = z.object({ name: z.string().trim().min(2).max(200), bin: z.string().trim().regex(/^\d{12}$/), address: z.string().trim().min(5).max(200),
+  email: z.string().trim().email().max(200), retention: z.string().trim().min(3).max(200) });
+function Docs({ b }: { b: Business }) {
+  const qc = useQueryClient(); const l = b.legal ?? {};
+  const [f, setF] = useState({ name: l.name ?? '', bin: l.bin ?? '', address: l.address ?? b.address, email: l.email ?? '', retention: l.retention ?? 'до достижения целей обработки' });
+  const [msg, setMsg] = useState<string | null>(null); const [ok, setOk] = useState(false);
+  const m = useMutation({ mutationFn: () => owner.updateLegal(b.slug, f),
+    onSuccess: () => { setMsg(null); setOk(true); void qc.invalidateQueries({ queryKey: ['business', b.slug] }); }, onError: (e) => { setOk(false); setMsg(errText(e)); } });
+  const save = () => { if (!LegalForm.safeParse(f).success) { setOk(false); setMsg('Проверьте поля: БИН/ИИН это 12 цифр, почта должна быть действительным адресом, остальные поля не должны быть пустыми.'); return; } m.mutate(); };
+  const set = (k: keyof typeof f) => (e: ChangeEvent<HTMLInputElement>) => setF({ ...f, [k]: e.target.value });
+  return (<><Err m={msg} />{ok && <p className="muted" role="status">Сохранено. Документы на сайте обновлены.</p>}
+    <p className="muted small">Эти данные подставляются в политику конфиденциальности, согласие и условия использования. Они нужны по закону о персональных данных: без них на сайте видно предупреждение.</p>
+    <label className="muted small" htmlFor="ln">Наименование (ТОО, ИП) или ФИО</label><input id="ln" className="field" value={f.name} onChange={set('name')} />
+    <label className="muted small" htmlFor="lb">БИН / ИИН (12 цифр)</label><input id="lb" className="field" inputMode="numeric" maxLength={12} value={f.bin} onChange={set('bin')} />
+    <label className="muted small" htmlFor="la">Юридический адрес</label><input id="la" className="field" value={f.address} onChange={set('address')} />
+    <label className="muted small" htmlFor="le">Почта для обращений по персональным данным</label><input id="le" className="field" type="email" value={f.email} onChange={set('email')} />
+    <label className="muted small" htmlFor="lr">Срок обработки данных</label><input id="lr" className="field" value={f.retention} onChange={set('retention')} />
+    <button className="btn" disabled={m.isPending} onClick={save}>{m.isPending ? 'Сохраняем…' : 'Сохранить'}</button>
+    <div className="card col" style={{ marginTop: 16 }}><b>Документы на сайте</b>
+      {([['privacy', 'Политика конфиденциальности'], ['terms', 'Условия использования'], ['consent', 'Согласие на обработку данных'], ['storage', 'Локальное хранилище']] as const).map(([k, t]) =>
+        <a key={k} href={`/s/${b.slug}/legal/${k}`} target="_blank" rel="noreferrer">{t}</a>)}</div>
+    <p className="muted small">Место хранения данных и поставщиков инфраструктуры указывает платформа, эти поля здесь не меняются.</p></>);
 }

@@ -5,7 +5,7 @@ import { formatInTimeZone } from 'date-fns-tz';
 import { ru } from 'date-fns/locale';
 import type { Ctx } from '../lib/tenant';
 import { cancelBooking, getBooking } from '../lib/api';
-import { money } from '../lib/format';
+import { money, telHref } from '../lib/format';
 import { saveToken } from '../lib/tokens';
 import { Bell, Calendar, Check, Copy, Phone } from '../lib/icons';
 const STATUS: Record<string, string> = { booked: 'Подтверждена', arrived: 'Машина принята', done: 'Работа выполнена', cancelled: 'Отменена' };
@@ -50,7 +50,7 @@ export function MyBooking() {
     <div className="kv"><span className="muted">Стоимость</span><b>{money(d.price_cents / 100, b.currency)}</b></div>
     <div className="kv"><span className="muted">Выдача, ориентир</span><b>{f(d.ends_at, "d MMMM 'в' HH:mm")}</b></div>
     <p><b>{d.car}</b></p><p className="muted">{b.address}</p>
-    <a className="card contact" href={`tel:${b.phone}`}><span className="ico accent" style={{ width: 52, height: 52 }}><Phone /></span><span><b>Связаться со студией</b><br /><span className="muted small">{b.phone}</span></span></a>
+    <a className="card contact" href={telHref(b.phone)}><span className="ico accent" style={{ width: 52, height: 52 }}><Phone /></span><span><b>Связаться со студией</b><br /><span className="muted small">{b.phone}</span></span></a>
     <div className="acts">
       <button className="act" onClick={() => void copy()}><span className="ico"><Copy size={16} /></span>Ссылка</button>
       <button className="act" disabled={d.status === 'cancelled'} onClick={() => download(false)}><span className="ico"><Calendar size={16} /></span>Календарь</button>

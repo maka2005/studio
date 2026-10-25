@@ -8,7 +8,7 @@ const MISSING = '[не заполнено]';
 function ops(b: Business) {
   const l = b.legal ?? {};
   return { name: l.name || MISSING, bin: l.bin || MISSING, address: l.address || b.address, email: l.email || MISSING, phone: b.phone,
-    storage: l.storage || MISSING, processors: l.processors || MISSING, retention: l.retention || 'до достижения целей обработки', cancel: b.cancel_hours ?? 24 };
+    storage: l.storage || 'в облачной базе данных поставщика Supabase Inc.', processors: l.processors || 'Vercel Inc. (хостинг сайта) и Supabase Inc. (база данных, вход по почте)', retention: l.retention || 'до достижения целей обработки', cancel: b.cancel_hours ?? 24 };
 }
 type O = ReturnType<typeof ops>;
 const S = ({ t, children }: { t: string; children: ReactNode }) => (<><h2>{t}</h2>{children}</>);
@@ -66,11 +66,11 @@ const DOCS: Record<string, { title: string; body: (b: Business, o: O) => ReactNo
 
 export function Legal() {
   const { b } = useOutletContext<Ctx>(); const { doc = '' } = useParams(); const d = DOCS[doc]; const o = ops(b);
-  const incomplete = !b.legal?.name || !b.legal?.bin || !b.legal?.email || !b.legal?.storage || !b.legal?.processors;
+  const incomplete = !b.legal?.name || !b.legal?.bin || !b.legal?.email;
   return (<div className="page"><div className="legal">
     <Link to={`/s/${b.slug}`} className="back-link"><ArrowLeft size={18} /> На главную</Link>
     {!d ? <><h1>Страница не найдена</h1></> : <><h1>{d.title}</h1><p className="muted small">Редакция от {LEGAL_DATE}</p>
-      {incomplete && <p className="note err">Реквизиты оператора заполнены не полностью. Перед запуском студии заполните блок legal в настройках студии.</p>}
+      {incomplete && <p className="note err">Реквизиты оператора не заполнены. Владельцу студии: заполните их в кабинете, вкладка «Документы».</p>}
       {d.body(b, o)}</>}
   </div></div>);
 }

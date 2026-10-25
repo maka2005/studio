@@ -5,6 +5,7 @@ import { Arrow, ArrowRight, Car, Clock, Download, Phone, Photo, Pin, Sparkle, Ta
 import { Reveal } from '../components/Reveal';
 import { ServiceList } from './ServiceList';
 import { useServices } from '../lib/useServices';
+import { AI_ENABLED } from '../lib/features';
 import '../lib/install';   // ловит событие установки с самого запуска
 export function Home() {
   const { b, openBooking, openAI } = useOutletContext<Ctx>(); const services = useServices(b);
@@ -27,7 +28,7 @@ export function Home() {
         <div className="card promo"><Car className="car" /><h3>{b.cards.booking.title}</h3><p className="muted">{b.cards.booking.text}</p>
           <button className="btn" onClick={() => openBooking()}>Выбрать время <Arrow /></button></div>
         <div className="card col"><div className="row"><span className="ico accent"><Sparkle /></span><div><b>{b.cards.ai.title}</b><p className="muted small">{b.cards.ai.text}</p></div></div>
-          <button className="btn ghost" onClick={openAI}>Подобрать услугу <Arrow size={16} /></button></div>
+          <button className="btn ghost" disabled={!AI_ENABLED} onClick={openAI}>{AI_ENABLED ? <>Подобрать услугу <Arrow size={16} /></> : 'Скоро будет доступно'}</button></div>
         <div className="card col"><div className="row"><Pin /><b>{b.address}</b></div>
           <div className="row"><Clock /><div>{ranges.length === 1 ? <b>{ranges[0]}</b> : <b>по графику</b>}<p className="muted small">по времени студии</p></div></div>
           <div className="row"><a className="btn ghost inline" href={routeHref} target="_blank" rel="noreferrer">Маршрут <Arrow size={16} /></a>
@@ -35,7 +36,7 @@ export function Home() {
       <Reveal className="col-main"><div className="row between"><h2>Услуги</h2><Link className="muted" to={`/s/${b.slug}/services`}>Все услуги <ArrowRight size={16} /></Link></div><ServiceList limit={4} />
         {b.gallery.length > 0 && <><h2 style={{ marginTop: 24 }}>Работы студии</h2>
           <div className="gallery">{b.gallery.map((g) => <figure key={g.image}><div className="shot" style={{ backgroundImage: img(g.image) }} /><figcaption>{g.caption}</figcaption></figure>)}</div></>}</Reveal></div>
-    <Reveal><div className="card install"><div className="row"><img src={assetUrl(b.slug, b.images.logo)} alt="" width={48} height={48} /><div><b>{b.short_name}</b><p className="muted small">Приложение студии</p></div></div>
+    <Reveal className="install-block"><div className="card install"><div className="row"><img src={assetUrl(b.slug, b.images.logo)} alt="" width={48} height={48} /><div><b>{b.short_name}</b><p className="muted small">Приложение студии</p></div></div>
       <h2 className="xl">{b.cards.install.title}</h2><p className="muted">{b.cards.install.text}</p>
       <Link className="btn" to={`/s/${b.slug}/install`}><Download /> Добавить на экран <ArrowRight /></Link>
       <p className="muted small">Бесплатно. Установка через браузер.</p></div></Reveal>

@@ -85,3 +85,11 @@ main{display:block;min-width:0}
 .legal-links{display:flex;flex-wrap:wrap;gap:6px 18px;padding-top:0;padding-bottom:8px;color:var(--muted);font-size:14px}
 .legal{max-width:760px;margin:0 auto;padding-bottom:24px}.legal h1{font-size:30px;margin:0 0 6px}.legal h2{font-size:19px;margin:26px 0 8px}
 .legal p,.legal li{color:#d5d8de}.legal ul{padding-left:20px;margin:0 0 10px}.legal li{margin-bottom:6px}
+
+img,svg{max-width:100%}.row>*{min-width:0}
+.chips{grid-template-columns:repeat(auto-fill,minmax(72px,1fr))}.chips.col{grid-template-columns:1fr}
+.cols{gap:28px}.legal-links{margin-top:12px}
+.install-block{margin-top:36px}
+.install{padding:24px}.install .row{margin-bottom:8px}.install h2.xl{margin:22px 0 10px}.install p{margin:0 0 14px}.install .btn{margin:8px 0 14px}
+.tabs2 button:disabled{opacity:.5;cursor:not-allowed}
+@media (max-width:420px){h1{font-size:26px}h2{font-size:22px}.tiles3 .big{font-size:20px}.sheet{padding-left:16px;padding-right:16px}.acts{gap:8px}.act{padding:12px 4px;font-size:13px}.stats b{font-size:20px}.page{padding-left:14px;padding-right:14px}.top{padding-left:14px;padding-right:14px}}

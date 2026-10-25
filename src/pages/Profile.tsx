@@ -17,7 +17,7 @@ type Row = { id: string; service_name: string; starts_at: string; ends_at: strin
 const LogoutIcon = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 4H5v16h4M16 8l4 4-4 4M20 12H9" /></svg>);
 const MailIcon = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 6h16v12H4zM4 7l8 6 8-6" /></svg>);
 
-export function Profile() {
+function ProfileInner() {
   const { b } = useOutletContext<Ctx>(); const qc = useQueryClient();
   const sess = useQuery({ queryKey: ['client', 'session'], queryFn: async () => (await supabase.auth.getSession()).data.session });
   useEffect(() => { const { data } = supabase.auth.onAuthStateChange(() => { void qc.invalidateQueries({ queryKey: ['client'] }); }); return () => data.subscription.unsubscribe(); }, [qc]);
@@ -97,4 +97,15 @@ function Signed({ b, email, confirmed }: { b: Business; email: string; confirmed
     {claimErr && <p className="err small">Не удалось привязать записи с этого устройства ({claimErr}).</p>}
     {cancel.isError && <p className="err">Не удалось отменить. Повторите позже.</p>}
   </>);
+}
+
+export function Profile() {
+  const { b } = useOutletContext<Ctx>();
+  if (b.client_profile) return <ProfileInner />;
+  return (<div className="page"><div className="profile-wrap">
+    <Link to={`/s/${b.slug}`} className="back-link"><ArrowLeft size={18} /> На главную</Link>
+    <div className="profile-card"><div className="profile-ico"><User size={26} /></div>
+      <h1>Профиль клиента</h1><p className="muted">Личный профиль появится позже: в нём можно будет сохранять записи и открывать их с любого устройства. Сейчас записаться можно без регистрации, а свою запись найти в разделе «Моя запись».</p>
+      <Link className="btn" to={`/s/${b.slug}/booking`}>Моя запись</Link></div>
+    <p className="owner-link">Вы владелец студии? <Link to={`/s/${b.slug}/owner`}>Открыть кабинет студии</Link></p></div></div>);
 }
