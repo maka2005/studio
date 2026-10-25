@@ -1,6 +1,3 @@
 {
-  "rewrites": [
-    { "source": "/s/:slug/:path*", "destination": "/api/shell?slug=:slug" },
-    { "source": "/s/:slug", "destination": "/api/shell?slug=:slug" }
-  ]
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
 }
