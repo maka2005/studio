@@ -93,11 +93,13 @@ const rpc = async <T,>(fn: string, args: Record<string, unknown>): Promise<T> =>
 export type OwnerBooking = { id: string; service_id: string; service_name: string; starts_at: string; ends_at: string; status: string; customer_name: string;
   customer_phone: string; car: string; price_cents: number; paid_cents: number; resource_name: string };
 export type OwnerStats = { visits: number; done: number; booked: number; received_cents: number; expected_cents: number };
+export type OwnerRepeatStats = { completed_visits: number; unique_clients: number; returning_clients: number; returning_visits: number; average_check_cents: number };
 export type OwnerNotificationStatus = { pending: number; failed: number; last_sent_at: string | null };
 export const owner = {
   me: (slug: string) => rpc<boolean>('owner_me', { p_slug: slug }),
   bookings: (slug: string, from: string, to: string) => rpc<OwnerBooking[]>('owner_bookings', { p_slug: slug, p_from: from, p_to: to }),
   stats: async (slug: string, from: string, to: string) => (await rpc<OwnerStats[]>('owner_stats', { p_slug: slug, p_from: from, p_to: to }))[0]!,
+  repeatStats: async (slug: string, from: string, to: string) => (await rpc<OwnerRepeatStats[]>('owner_repeat_stats', { p_slug: slug, p_from: from, p_to: to }))[0]!,
   setStatus: (id: string, status: 'arrived' | 'done') => rpc<void>('owner_set_status', { p_booking: id, p_status: status }),
   cancel: (id: string) => rpc<void>('owner_cancel', { p_booking: id }),
   erase: (id: string) => rpc<void>('owner_erase_customer', { p_booking: id }),
