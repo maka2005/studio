@@ -100,6 +100,18 @@ Deno.serve(async (req) => {
       if (error) throw error;
       return json({ code: data ?? null });
     }
+    if (p.action === 'customer_telegram_status') {
+      const token = typeof p.token === 'string' ? p.token : '';
+      if (!/^[a-f0-9]{32,128}$/i.test(token)) return json({ error: 'not_found' }, 404);
+      const [ipAllowed, tokenAllowed] = await Promise.all([
+        rate('customer_telegram_status', ip, 120, 3600),
+        rate('customer_telegram_status', `token:${await sha(token)}`, 120, 3600),
+      ]);
+      if (!ipAllowed || !tokenAllowed) return json({ error: 'rate_limited' }, 429);
+      const { data, error } = await admin.rpc('customer_telegram_status', { p_token: token });
+      if (error) throw error;
+      return json({ connected: data === true });
+    }
     return json({ error: 'unknown_action' }, 400);
   } catch (e) {
     console.error('public api error:', (e as Error).message);

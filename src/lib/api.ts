@@ -77,6 +77,16 @@ export async function createCustomerTelegramLink(token: string): Promise<string 
   if (data?.error) throw new Error(String(data.error));
   return typeof data?.code === 'string' ? data.code : null;
 }
+export async function getCustomerTelegramStatus(token: string): Promise<boolean> {
+  const { data, error } = await supabase.functions.invoke('public-api', { body: { action: 'customer_telegram_status', token } });
+  if (error) {
+    const body = await (error as { context?: Response }).context?.clone().json().catch(() => null);
+    if (body?.error) throw new Error(String(body.error));
+    throw error;
+  }
+  if (data?.error) throw new Error(String(data.error));
+  return data?.connected === true;
+}
 
 const rpc = async <T,>(fn: string, args: Record<string, unknown>): Promise<T> => { const { data, error } = await supabase.rpc(fn, args); if (error) throw error; return data as T; };
 export type OwnerBooking = { id: string; service_id: string; service_name: string; starts_at: string; ends_at: string; status: string; customer_name: string;
