@@ -744,6 +744,7 @@ function ServiceRow({
   const a = useAct(onSaved)
   const [name, setName] = useState(s.name)
   const [category, setCategory] = useState(s.category || 'Другое')
+  const [creatingCategory, setCreatingCategory] = useState(false)
   const [price, setPrice] = useState(String(s.price_cents / 100))
   const [min, setMin] = useState(String(s.duration_minutes))
   const [active, setActive] = useState(s.active ?? true)
@@ -757,9 +758,12 @@ function ServiceRow({
       <Err m={a.msg} />
       <div className="admin-service-main">
         <div><label className="muted small" htmlFor={`${categoryListId}-name`}>Название услуги</label><input id={`${categoryListId}-name`} aria-label="Название" className="field" value={name} onChange={(e) => setName(e.target.value)} /></div>
-        <div><label className="muted small" htmlFor={`${categoryListId}-input`}>Категория</label><select id={`${categoryListId}-input`} aria-label="Категория услуги" className="field" value={category} onChange={(e) => setCategory(e.target.value)}>
-          {[...new Set([...SERVICE_CATEGORIES, ...categoryOptions])].map((item) => <option key={item} value={item}>{item}</option>)}
-        </select></div>
+        <div><label className="muted small" htmlFor={`${categoryListId}-input`}>Категория</label>{creatingCategory
+          ? <div className="admin-new-category-control"><input id={`${categoryListId}-input`} aria-label="Название новой категории" className="field" maxLength={60} autoFocus placeholder="Например, Стёкла" value={category} onChange={(e) => setCategory(e.target.value)} /><button type="button" className="link" onClick={() => { setCreatingCategory(false); setCategory(s.category || 'Другое'); }}>Отмена</button></div>
+          : <select id={`${categoryListId}-input`} aria-label="Категория услуги" className="field" value={category} onChange={(e) => { if (e.target.value === '__create_category__') { setCreatingCategory(true); setCategory(''); } else setCategory(e.target.value); }}>
+            {[...new Set([...SERVICE_CATEGORIES, ...categoryOptions])].map((item) => <option key={item} value={item}>{item}</option>)}
+            <option value="__create_category__">＋ Создать новую категорию…</option>
+          </select>}</div>
         <div><label className="muted small" htmlFor={`${categoryListId}-price`}>Цена, {b.currency}</label><input id={`${categoryListId}-price`} className="field" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} /></div>
         <div><label className="muted small" htmlFor={`${categoryListId}-duration`}>Длительность</label><input id={`${categoryListId}-duration`} className="field" inputMode="numeric" value={min} onChange={(e) => setMin(e.target.value)} /><span className="muted small">{ok ? duration(minutes) : 'Укажите минуты'}</span></div>
       </div>
