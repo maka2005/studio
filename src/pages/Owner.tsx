@@ -776,6 +776,8 @@ function Services({ b }: { b: Business }) {
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('Все услуги')
   const [visibilityFilter, setVisibilityFilter] = useState<'Все' | 'Активные' | 'Скрытые'>('Все')
+  const [servicePage, setServicePage] = useState(1)
+  const pageSize = 10
   const saved = () => {
     void qc.invalidateQueries({ queryKey: ['services', b.slug] })
     void qc.invalidateQueries({ queryKey: ['owner', 'services', b.slug] })
@@ -793,7 +795,7 @@ function Services({ b }: { b: Business }) {
       ) : (
         <>
           <label className="sr-only" htmlFor={`admin-service-search-${b.slug}`}>Найти услугу</label>
-          <input id={`admin-service-search-${b.slug}`} className="field" type="search" placeholder="Поиск по названию или категории" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <input id={`admin-service-search-${b.slug}`} className="field" type="search" placeholder="Поиск по названию или категории" value={search} onChange={(e) => { setSearch(e.target.value); setServicePage(1); }} />
           {(() => {
             const needle = search.trim().toLocaleLowerCase('ru').replaceAll('ё', 'е')
             const options = [...new Set([...SERVICE_CATEGORIES, ...serviceCategories(q.data)])]
@@ -803,17 +805,25 @@ function Services({ b }: { b: Business }) {
               const matchesVisibility = visibilityFilter === 'Все' || (visibilityFilter === 'Активные' ? service.active : !service.active)
               return matchesSearch && matchesCategory && matchesVisibility
             })
+            const pageCount = Math.max(1, Math.ceil(rows.length / pageSize))
+            const currentPage = Math.min(servicePage, pageCount)
+            const visibleRows = rows.slice((currentPage - 1) * pageSize, currentPage * pageSize)
             return <>
               <div className="admin-service-filters">
-                <label><span className="muted small">Категория</span><select className="field" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}><option>Все услуги</option>{options.map((item) => <option key={item}>{item}</option>)}</select></label>
-                <label><span className="muted small">Показ</span><select className="field" value={visibilityFilter} onChange={(e) => setVisibilityFilter(e.target.value as typeof visibilityFilter)}><option>Все</option><option>Активные</option><option>Скрытые</option></select></label>
+                <label><span className="muted small">Категория</span><select className="field" value={categoryFilter} onChange={(e) => { setCategoryFilter(e.target.value); setServicePage(1); }}><option>Все услуги</option>{options.map((item) => <option key={item}>{item}</option>)}</select></label>
+                <label><span className="muted small">Показ</span><select className="field" value={visibilityFilter} onChange={(e) => { setVisibilityFilter(e.target.value as typeof visibilityFilter); setServicePage(1); }}><option>Все</option><option>Активные</option><option>Скрытые</option></select></label>
                 <span className="admin-service-result-count">Найдено <b>{rows.length}</b> из {q.data.length}</span>
               </div>
               <div className="admin-service-table">
                 <div className="admin-service-table-head"><span>Услуга</span><span>Цена</span><span>Время</span><span>Статус</span><span>Действия</span></div>
-                {rows.map((s) => <ServiceRow key={s.id + s.name} b={b} s={s} categoryOptions={options} onSaved={saved} />)}
+                {visibleRows.map((s) => <ServiceRow key={s.id + s.name} b={b} s={s} categoryOptions={options} onSaved={saved} />)}
               </div>
               {rows.length === 0 && <p className="muted">По этому запросу услуги не найдены.</p>}
+              {rows.length > pageSize && <nav className="admin-service-pagination" aria-label="Страницы списка услуг">
+                <button className="admin-page-button" disabled={currentPage === 1} onClick={() => setServicePage(currentPage - 1)}>Назад</button>
+                <span className="muted small">Страница <b>{currentPage}</b> из {pageCount}</span>
+                <button className="admin-page-button" disabled={currentPage === pageCount} onClick={() => setServicePage(currentPage + 1)}>Далее</button>
+              </nav>}
             </>
           })()}
         </>
