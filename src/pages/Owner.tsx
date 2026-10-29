@@ -1345,6 +1345,7 @@ function Notify({ b }: { b: Business }) {
   const [link, setLink] = useState<{ url: string; code: string } | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
   const bot = BOT?.trim().replace(/^@/, '')
+  const botReady = !!bot && /^[A-Za-z0-9_]{5,32}$/.test(bot)
   const links = useQuery({
     queryKey: ['owner', 'telegram', b.slug],
     queryFn: () => owner.telegramLinks(b.slug),
@@ -1353,6 +1354,10 @@ function Notify({ b }: { b: Business }) {
     queryKey: ['owner', 'notification-status', b.slug],
     queryFn: () => owner.notificationStatus(b.slug),
     refetchInterval: 30_000,
+  })
+  const clientToggle = useMutation({
+    mutationFn: (enabled: boolean) => owner.updateConfig(b.slug, { client_telegram_enabled: enabled }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['business', b.slug] }),
   })
   const connect = useMutation({
     mutationFn: async () => {
@@ -1391,6 +1396,12 @@ function Notify({ b }: { b: Business }) {
         {health.isError && <button className="link" onClick={() => void health.refetch()}>Повторить</button>}
       </div> : null}
       <button className="link" onClick={() => void links.refetch()}>Обновить статус подключения</button>
+      <label className="check">
+        <input type="checkbox" checked={!!b.client_telegram_enabled} disabled={clientToggle.isPending || (!b.client_telegram_enabled && !botReady)} onChange={(e) => clientToggle.mutate(e.target.checked)} />
+        <span>Разрешить клиентам подключать уведомления в Telegram</span>
+      </label>
+      <p className="muted small">Клиент сам подключает Telegram после записи — аккаунт на сайте не нужен. Сообщения отправляются только по выбранной записи; отключить их можно командой /stop.</p>
+      {clientToggle.isError && <p className="err small">Не удалось изменить настройку. Попробуйте ещё раз.</p>}
       {link && <div className="card col">
         <b>Шаг 1. Откройте бота и нажмите «Запустить»</b>
         <a className="btn" href={link.url} target="_blank" rel="noreferrer">Открыть Telegram</a>
@@ -1399,11 +1410,11 @@ function Notify({ b }: { b: Business }) {
         <code style={{ overflowWrap: 'anywhere' }}>/start {link.code}</code>
         <p className="muted small">Код действует 15 минут. Успешное подключение подтвердит бот сообщением «Готово! Уведомления … подключены».</p>
       </div>}
-      {!bot && <p className="muted small">Для кнопки подключения задайте публичную переменную VITE_TELEGRAM_BOT с именем бота.</p>}
-      <button className="btn" disabled={!bot || connect.isPending} onClick={() => connect.mutate()}>
+      {!botReady && <p className="muted small">Подключение Telegram пока недоступно. Обратитесь к владельцу сайта.</p>}
+      <button className="btn" disabled={!botReady || connect.isPending} onClick={() => connect.mutate()}>
         {connect.isPending ? 'Создаём ссылку…' : 'Подключить чат'}
       </button>
-      <p className="muted small">Если бот подтвердил привязку, но уведомлений о тестовой клиентской записи нет, проверьте настройку webhook и расписание `notify-dispatch` в Supabase. Одной переменной Vercel недостаточно.</p>
+      <p className="muted small">Уведомления о новых записях и отменах будут приходить в подключённый чат автоматически.</p>
     </div>
   )
 }

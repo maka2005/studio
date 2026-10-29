@@ -17,15 +17,31 @@ Deno.serve(async (req) => {
     const { data, error } = await admin.rpc('telegram_link_consume', { p_code: text.split(/\s+/)[1], p_chat: chat.id });
     if (error) {
       console.error('telegram_link_consume failed:', error.message);
-      await reply(chat.id, 'Не удалось подключить чат из-за ошибки сервера. Проверьте миграции Supabase и попробуйте ещё раз.');
+      await reply(chat.id, 'Не удалось подключить чат. Попробуйте позже или свяжитесь со студией.');
       return ok();
     }
-    await reply(chat.id, data ? `Готово! Уведомления о записях «${data}» подключены. Отключить: /stop` : 'Код недействителен или истёк. Создайте новый в кабинете студии.');
+    if (data) {
+      await reply(chat.id, `🔔 Уведомления для студии «${data}» подключены.\n\nЧтобы отключить уведомления, отправьте /stop.`);
+      return ok();
+    }
+    const { data: customer, error: customerError } = await admin.rpc('customer_telegram_link_consume', { p_code: text.split(/\s+/)[1], p_chat: chat.id });
+    if (customerError) {
+      console.error('customer_telegram_link_consume failed:', customerError.message);
+      await reply(chat.id, 'Не удалось подключить уведомления. Попробуйте ещё раз позже.');
+      return ok();
+    }
+    if (customer) {
+      const d = customer as { studio: string; service: string; starts_at: string; timezone: string; address: string };
+      const when = new Intl.DateTimeFormat('ru-RU', { timeZone: d.timezone, weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }).format(new Date(d.starts_at));
+      await reply(chat.id, `✅ Запись подключена\n\n🏁 ${d.studio}\n🧽 ${d.service}\n📅 ${when}${d.address ? `\n📍 ${d.address}` : ''}\n\nНапомним о визите за сутки и сообщим, если запись изменится. Отключить все уведомления: /stop`);
+      return ok();
+    }
+    await reply(chat.id, 'Ссылка уже использована, устарела или запись больше не активна. Создайте новую ссылку на странице «Моя запись».');
   } else if (text === '/stop') {
     await admin.rpc('telegram_unlink_chat', { p_chat: chat.id });
     await reply(chat.id, 'Уведомления отключены.');
   } else {
-    await reply(chat.id, 'Это бот уведомлений студии. Чтобы подключить его, откройте кабинет студии, вкладка «Уведомления», кнопка «Подключить Telegram».');
+    await reply(chat.id, 'Это бот уведомлений. Чтобы получать сообщения о записи, подключите Telegram на странице «Моя запись». Если вы владелец студии, подключите чат в кабинете студии.');
   }
   return ok();
 });

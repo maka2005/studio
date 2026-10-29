@@ -8,6 +8,7 @@ import { cancelBooking, getBooking, submitReview } from '../lib/api';
 import { money, telHref } from '../lib/format';
 import { saveToken } from '../lib/tokens';
 import { Bell, Calendar, Check, Copy, Phone } from '../lib/icons';
+import { CustomerTelegramOptIn } from '../components/CustomerTelegramOptIn';
 const STATUS: Record<string, string> = { booked: 'Подтверждена', arrived: 'Машина принята', done: 'Работа выполнена', cancelled: 'Отменена' };
 
 // Токен берётся из приватной ссылки (#t=...) либо из хранилища этого устройства. Фрагмент не уходит на сервер.
@@ -59,6 +60,7 @@ export function MyBooking() {
     <div className="kv"><span className="muted">Стоимость</span><b>{money(d.price_cents / 100, b.currency)}</b></div>
     <div className="kv"><span className="muted">Автомобиль будет готов примерно</span><b>{f(d.ends_at, "d MMMM 'в' HH:mm")}</b></div>
     <p><b>{d.car}</b></p><p className="muted">{b.address}</p>
+    {b.client_telegram_enabled && d.status === 'booked' && new Date(d.starts_at).getTime() > Date.now() && <CustomerTelegramOptIn slug={b.slug} token={token!} />}
     <a className="card contact" href={telHref(b.phone)}><span className="ico accent" style={{ width: 52, height: 52 }}><Phone /></span><span><b>Связаться со студией</b><br /><span className="muted small">{b.phone}</span></span></a>
     <div className="acts">
       <button className="act" onClick={() => void copy()}><span className="ico"><Copy size={16} /></span>Ссылка</button>

@@ -18,13 +18,13 @@ const GOALS = [
 ];
 
 function suggest(services: Svc[], goal: number | null) {
-  if (goal === null || GOALS[goal]?.keywords.length === 0) return { items: services.slice(0, 4), exact: true };
+  if (goal === null || GOALS[goal]?.keywords.length === 0) return { items: services, matchCount: services.length };
   const keywords = GOALS[goal]!.keywords;
   const ranked = services.map((service) => {
     const name = service.name.toLocaleLowerCase('ru').replaceAll('ё', 'е');
     return { service, score: keywords.reduce((sum, term) => sum + Number(name.includes(term)), 0) };
-  }).filter((x) => x.score > 0).sort((a, b) => b.score - a.score).slice(0, 4).map((x) => x.service);
-  return ranked.length ? { items: ranked, exact: true } : { items: services.slice(0, 4), exact: false };
+  }).sort((a, b) => b.score - a.score);
+  return { items: ranked.map((x) => x.service), matchCount: ranked.filter((x) => x.score > 0).length };
 }
 
 export function AssistantSheet({ slug, currency = '₸', onClose, onSelectService, scope = 'client' }: {
@@ -47,13 +47,14 @@ export function AssistantSheet({ slug, currency = '₸', onClose, onSelectServic
       {goal !== null && <section className="guide-results" aria-live="polite">
         {servicesQ.isPending ? <p className="muted">Загружаем прайс…</p> : servicesQ.isError ? <p className="err">Не удалось загрузить услуги. <button className="link" onClick={() => void servicesQ.refetch()}>Повторить</button></p>
           : servicesQ.data?.length ? <>
-            <p className="muted small">{recommendations.exact ? 'Вам могут подойти:' : 'Похожего варианта в прайсе нет. Посмотрите другие услуги:'}</p>
-            {recommendations.items.map((s) => <div className="card col guide-service" key={s.id}>
+            <p className="muted small">{GOALS[goal]?.keywords.length === 0 ? 'Все актуальные услуги из прайса:' : recommendations.matchCount ? 'По вашему выбору могут подойти:' : 'Точного совпадения по названию нет — посмотрите весь прайс:'}</p>
+            {recommendations.items.map((s, i) => <div className="card col guide-service" key={s.id}>
+              {recommendations.matchCount > 0 && i === recommendations.matchCount && <p className="muted small">Другие услуги студии</p>}
               <div><b>{s.name}</b><p className="muted small">{duration(s.duration_minutes)} · {money(s.price_cents / 100, currency)}</p></div>
               <button className="btn mini" onClick={() => onSelectService?.(s.id)}>Записаться <ArrowRight size={16} /></button>
             </div>)}
           </> : <p className="muted">Услуги пока не добавлены в прайс.</p>}
-        <p className="muted small guide-note">Подбор ориентируется на названия услуг в прайсе. Если нужна помощь, свяжитесь со студией.</p>
+        <p className="muted small guide-note">Прайс обновляется вместе со списком услуг студии. Если сомневаетесь, свяжитесь с нами — поможем выбрать.</p>
       </section>}
     </Sheet>
   );

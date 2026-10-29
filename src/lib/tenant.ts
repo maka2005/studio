@@ -3,7 +3,7 @@ import { supabase } from './supabase';
 const Card = z.object({ title: z.string(), text: z.string() });
 export const Business = z.object({
   slug: z.string(), name: z.string(), short_name: z.string(), accent: z.string().regex(/^#[0-9a-fA-F]{6}$/),
-  timezone: z.string(), currency: z.string(), route_url: z.string().optional(), client_profile: z.boolean().optional(), cancel_hours: z.number().optional(),
+  timezone: z.string(), currency: z.string(), route_url: z.string().optional(), client_profile: z.boolean().optional(), client_telegram_enabled: z.boolean().optional(), cancel_hours: z.number().optional(),
   legal: z.object({ name: z.string(), bin: z.string(), address: z.string(), email: z.string(), storage: z.string(), processors: z.string(), retention: z.string() }).partial().optional(), phone: z.string(), address: z.string(), description: z.string(),
   demo: z.boolean().optional(),
   images: z.object({ logo: z.string(), hero: z.string() }),

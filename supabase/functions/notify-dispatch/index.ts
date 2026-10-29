@@ -1,5 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { buildMessage, escapeHtml, isDeadChat, type Kind } from './format.ts';
+import { buildCustomerMessage, buildMessage, escapeHtml, isDeadChat, type Kind } from './format.ts';
 const env = (k: string) => Deno.env.get(k) ?? '';
 
 async function finishJob(admin: ReturnType<typeof createClient>, id: string, ok: boolean, error: string | null) {
@@ -37,12 +37,12 @@ Deno.serve(async (req) => {
       const { data: links, error: linksError } = await admin.from('telegram_links').select('chat_id').eq('tenant_id', j.tenant_id);
       if (linksError) throw linksError;
       if (!t) throw new Error('tenant_missing');
-      if (!links?.length) {
-        await finishJob(admin, j.id, false, 'no_telegram_chat_linked');
-        retry++;
-        continue;
-      }
       if (j.kind === 'waitlist_interest') {
+        if (!links?.length) {
+          await finishJob(admin, j.id, false, 'no_telegram_chat_linked');
+          retry++;
+          continue;
+        }
         const p = j.payload ?? {};
         const text = [`<b>🕒 Новая заявка в лист ожидания</b> · ${escapeHtml(String((t.config as { name?: string }).name ?? t.slug))}`,
           `Услуга: ${escapeHtml(String(p.service ?? ''))}`, `Дата: ${escapeHtml(String(p.day ?? ''))}`,
@@ -67,14 +67,23 @@ Deno.serve(async (req) => {
         await finishJob(admin, j.id, true, null);
         continue;
       }
+      const cfg = t.config as { name?: string; short_name?: string; currency?: string; address?: string; client_telegram_enabled?: boolean };
+      const { data: clientLink, error: clientLinkError } = cfg.client_telegram_enabled && j.kind !== 'booking_created'
+        ? await admin.from('booking_telegram_links').select('chat_id').eq('tenant_id', j.tenant_id).eq('booking_id', j.booking_id).maybeSingle()
+        : { data: null, error: null };
+      if (clientLinkError) throw clientLinkError;
+      if (!links?.length && !clientLink) {
+        await finishJob(admin, j.id, false, 'no_telegram_chat_linked');
+        retry++;
+        continue;
+      }
       const { data: svc, error: serviceError } = await admin.from('services').select('name').eq('tenant_id', j.tenant_id).eq('id', bk.service_id).maybeSingle();
       if (serviceError) throw serviceError;
-      const cfg = t.config as { name?: string; currency?: string };
       const text = buildMessage({ kind: j.kind, studio: cfg.name ?? t.slug, service: svc?.name ?? '', startsAt: bk.starts_at, timezone: t.timezone,
         customer: bk.customer_name, phone: bk.customer_phone, car: bk.car, priceCents: bk.price_cents, currency: cfg.currency ?? '' });
       let failure: string | null = null;
       let delivered = 0;
-      for (const l of links as { chat_id: number }[]) {
+      for (const l of (links ?? []) as { chat_id: number }[]) {
         const r = await send(token, l.chat_id, text, `${env('SITE_URL').replace(/\/+$/, '')}/s/${t.slug}/owner`);
         if (r.ok) { delivered++; continue; }
         if (isDeadChat(r.code, r.desc)) {
@@ -84,6 +93,23 @@ Deno.serve(async (req) => {
         }
         failure = `telegram ${r.code ?? ''} ${r.desc}`.slice(0, 200);
       }
+      let clientDelivered = false;
+      if (clientLink) {
+        const customerText = buildCustomerMessage({ kind: j.kind as Exclude<Kind, 'waitlist_interest'>,
+          studio: cfg.short_name ?? cfg.name ?? t.slug, service: svc?.name ?? '', startsAt: bk.starts_at,
+          timezone: t.timezone, address: cfg.address ?? '' });
+        const r = await send(token, clientLink.chat_id, customerText, '');
+        if (r.ok) clientDelivered = true;
+        else if (isDeadChat(r.code, r.desc)) {
+          const { error: deleteError } = await admin.from('booking_telegram_links').delete().eq('tenant_id', j.tenant_id).eq('booking_id', j.booking_id);
+          if (deleteError) throw deleteError;
+        } else failure = `customer telegram ${r.code ?? ''} ${r.desc}`.slice(0, 200);
+      }
+      if (clientDelivered && j.kind === 'booking_cancelled') {
+        const { error: deleteError } = await admin.from('booking_telegram_links').delete().eq('tenant_id', j.tenant_id).eq('booking_id', j.booking_id);
+        if (deleteError) throw deleteError;
+      }
+      delivered += Number(clientDelivered);
       if (failure === null && delivered === 0) failure = 'no_reachable_telegram_chat';
       await finishJob(admin, j.id, failure === null, failure);
       if (failure === null) sent++; else retry++;

@@ -13,6 +13,7 @@ import { Sheet } from './Sheet';
 import { LEGAL_VERSION } from '../lib/legal';
 import { supabase } from '../lib/supabase';
 import { saveToken } from '../lib/tokens';
+import { CustomerTelegramOptIn } from './CustomerTelegramOptIn';
 
 const Contact = z.object({
   name: z.string().trim().min(1, 'Введите имя').max(80),
@@ -87,6 +88,7 @@ export function BookingFlow({ b, initialService, onClose }: { b: Business; initi
     <Sheet title="Запись подтверждена" onClose={onClose}>
       <div className="card col"><b>{svc.name}</b><span>{fmt(slot, "d MMMM 'в' HH:mm")}</span>{mut.data?.discount_cents ? <span className="muted"><s>{money(svc.price_cents / 100, b.currency)}</s> · скидка {money(mut.data.discount_cents / 100, b.currency)}</span> : null}<span className="muted">{money((mut.data?.price_cents ?? svc.price_cents) / 100, b.currency)}</span></div>
       <p className="muted small">Все детали и возможность отмены доступны в разделе «Моя запись» на этом устройстве.</p>
+      {b.client_telegram_enabled && <CustomerTelegramOptIn slug={b.slug} token={token.current} />}
       <Link className="btn" to={`/s/${b.slug}/booking`} onClick={onClose}>Моя запись <ArrowRight /></Link>
     </Sheet>);
 

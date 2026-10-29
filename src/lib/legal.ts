@@ -1,3 +1,3 @@
 // Версия текстов правовых страниц. Меняйте при любой правке текстов: версия сохраняется вместе с согласием.
-export const LEGAL_VERSION = '2026-10-25';
-export const LEGAL_DATE = '25 октября 2026 г.';
+export const LEGAL_VERSION = '2026-10-29';
+export const LEGAL_DATE = '29 октября 2026 г.';
