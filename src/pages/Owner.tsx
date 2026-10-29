@@ -62,13 +62,18 @@ function Login() {
   const submit = async () => {
     setBusy(true)
     setErr(null)
-    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
-    setBusy(false)
-    if (error) setErr('Неверная почта или пароль.')
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
+      if (error) setErr('Неверная почта или пароль.')
+    } catch {
+      setErr('Не удалось связаться с сервером. Проверьте интернет и повторите.')
+    } finally {
+      setBusy(false)
+    }
   }
   return (
-    <div className="page">
-      <div className="login-wrap">
+    <div className="page admin-login-page">
+      <form className="login-wrap admin-login" onSubmit={(e) => { e.preventDefault(); void submit() }}>
         <div className="login-ico">
           <LockIcon />
         </div>
@@ -81,6 +86,7 @@ function Login() {
           id="em"
           className="field"
           type="email"
+          required
           autoComplete="username"
           inputMode="email"
           value={email}
@@ -93,12 +99,10 @@ function Login() {
           id="pw"
           className="field"
           type="password"
+          required
           autoComplete="current-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && email && password) void submit()
-          }}
         />
         {err && (
           <p role="alert" className="err">
@@ -108,11 +112,11 @@ function Login() {
         <button
           className="btn"
           disabled={busy || !email || !password}
-          onClick={() => void submit()}
+          type="submit"
         >
           {busy ? 'Входим…' : 'Войти'}
         </button>
-      </div>
+      </form>
     </div>
   )
 }
@@ -142,14 +146,18 @@ function Cabinet({ b, onLogout }: { b: Business; onLogout: () => void }) {
       </section>
     )
   return (
-    <section className="pad">
-      <div className="row between">
-        <h2>Кабинет</h2>
-        <button className="link" onClick={onLogout}>
+    <section className="pad admin-shell">
+      <div className="admin-heading">
+        <div>
+          <p className="admin-eyebrow">ПАНЕЛЬ УПРАВЛЕНИЯ</p>
+          <h1>Кабинет студии</h1>
+          <p className="muted">Расписание, клиенты и настройки в одном месте</p>
+        </div>
+        <button className="btn ghost mini admin-logout" onClick={onLogout}>
           Выйти
         </button>
       </div>
-      <div className="tabs2" role="tablist">
+      <div className="tabs2 admin-tabs" role="tablist" aria-label="Разделы кабинета">
         {TABS.map((t) => (
           <button
             key={t}
@@ -184,8 +192,12 @@ function Bookings({ b }: { b: Business }) {
   const [sel, setSel] = useState<OwnerBooking | null>(null)
   const [add, setAdd] = useState(false)
   const [block, setBlock] = useState(false)
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const shiftDay = (date: string, amount: number) =>
+    new Date(Date.parse(`${date}T12:00:00Z`) + amount * 864e5).toISOString().slice(0, 10)
   const weekDays = Array.from({ length: 7 }, (_, i) =>
-    new Date(new Date(`${day}T12:00:00Z`).getTime() + i * 864e5).toISOString().slice(0, 10),
+    shiftDay(day, i),
   )
   const to = mode === 'day' ? day : weekDays[6]!
   const list = useQuery({
@@ -197,55 +209,42 @@ function Bookings({ b }: { b: Business }) {
     queryFn: () => owner.stats(b.slug, day, to),
   })
   const refresh = () => void qc.invalidateQueries({ queryKey: ['owner'] })
+  const visible = (list.data ?? []).filter((x) => {
+    const q = search.trim().toLocaleLowerCase('ru')
+    const matchesSearch = !q || [x.customer_name, x.customer_phone, x.car, x.service_name, x.resource_name]
+      .some((value) => value.toLocaleLowerCase('ru').includes(q))
+    return matchesSearch && (statusFilter === 'all' || x.status === statusFilter)
+  })
   return (
     <>
-      <div className="row wrap">
-        <button
-          className={`chip mini ${mode === 'day' ? 'sel' : ''}`}
-          onClick={() => setMode('day')}
-        >
-          День
+      <div className="admin-toolbar">
+        <div className="admin-view-switch" role="group" aria-label="Период расписания">
+          <button className={`chip mini ${mode === 'day' ? 'sel' : ''}`} onClick={() => setMode('day')}>День</button>
+          <button className={`chip mini ${mode === 'week' ? 'sel' : ''}`} onClick={() => setMode('week')}>Неделя</button>
+        </div>
+        <div className="admin-date-controls">
+          <button className="admin-icon-button" aria-label="Предыдущий период" onClick={() => setDay(shiftDay(day, mode === 'day' ? -1 : -7))}>‹</button>
+          <input aria-label="Дата расписания" className="field admin-date" type="date" value={day} onChange={(e) => e.target.value && setDay(e.target.value)} />
+          <button className="admin-icon-button" aria-label="Следующий период" onClick={() => setDay(shiftDay(day, mode === 'day' ? 1 : 7))}>›</button>
+          <button className="btn ghost mini" onClick={() => setDay(today(b))}>Сегодня</button>
+        </div>
+        <button className="btn ghost mini admin-refresh" onClick={refresh} disabled={list.isFetching || stats.isFetching}>
+          {list.isFetching || stats.isFetching ? 'Обновляем…' : 'Обновить'}
         </button>
-        <button
-          className={`chip mini ${mode === 'week' ? 'sel' : ''}`}
-          onClick={() => setMode('week')}
-        >
-          Неделя
-        </button>
-        <input
-          aria-label="Дата"
-          className="field"
-          style={{ flex: 1 }}
-          type="date"
-          value={day}
-          onChange={(e) => e.target.value && setDay(e.target.value)}
-        />
       </div>
       {stats.data && (
         <>
-        <p className="muted small">Показатели за {mode === 'day' ? 'этот день' : 'эти 7 дней'}</p>
-        <div className="stats">
-          <div className="card">
-            <span className="muted small">Заезды</span>
-            <b>{stats.data.visits}</b>
+          <p className="muted small admin-section-caption">Показатели за {mode === 'day' ? 'этот день' : 'эти 7 дней'}</p>
+          <div className="stats admin-stats">
+            <div className="card admin-stat"><span className="muted small">Записи</span><b>{stats.data.visits}</b></div>
+            <div className="card admin-stat"><span className="muted small">Завершено</span><b>{stats.data.done}</b></div>
+            <div className="card admin-stat"><span className="muted small">Получено</span><b>{money(Number(stats.data.received_cents) / 100, b.currency)}</b></div>
+            <div className="card admin-stat"><span className="muted small">Ожидается</span><b>{money(Number(stats.data.expected_cents) / 100, b.currency)}</b></div>
           </div>
-          <div className="card">
-            <span className="muted small">Завершено</span>
-            <b>{stats.data.done}</b>
-          </div>
-          <div className="card">
-            <span className="muted small">Получено</span>
-            <b>{money(Number(stats.data.received_cents) / 100, b.currency)}</b>
-          </div>
-          <div className="card">
-            <span className="muted small">Ожидаемая стоимость записей</span>
-            <b>{money(Number(stats.data.expected_cents) / 100, b.currency)}</b>
-          </div>
-        </div>
         </>
       )}
       {stats.isError && <p className="err small">Статистика недоступна.</p>}
-      <div className="row wrap">
+      <div className="admin-actions">
         <button className="btn mini" onClick={() => setAdd(true)}>
           + Запись
         </button>
@@ -253,7 +252,19 @@ function Bookings({ b }: { b: Business }) {
           Заблокировать пост
         </button>
       </div>
-      <div style={{ height: 12 }} />
+      <div className="admin-list-heading">
+        <div><h2>Записи</h2><span className="muted small">{visible.length} из {list.data?.length ?? 0}</span></div>
+        <div className="admin-filters">
+          <input className="field admin-search" aria-label="Поиск записей" placeholder="Клиент, телефон, авто…" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <select className="field admin-status-filter" aria-label="Фильтр по статусу" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            <option value="all">Все статусы</option>
+            <option value="booked">Записаны</option>
+            <option value="arrived">Приняты</option>
+            <option value="done">Завершены</option>
+            <option value="cancelled">Отменены</option>
+          </select>
+        </div>
+      </div>
       {list.isPending ? (
         <p className="muted">Загрузка…</p>
       ) : list.isError ? (
@@ -263,16 +274,21 @@ function Bookings({ b }: { b: Business }) {
             Повторить
           </button>
         </p>
-      ) : list.data.length === 0 ? (
-        <p className="muted">Записей на этот период нет.</p>
+      ) : visible.length === 0 ? (
+        <div className="admin-empty">
+          <span className="admin-empty-icon">✓</span>
+          <b>{list.data.length === 0 ? 'На этот период записей нет' : 'Ничего не найдено'}</b>
+          <p className="muted small">{list.data.length === 0 ? 'Новые записи появятся здесь автоматически.' : 'Измените запрос или сбросьте фильтры.'}</p>
+          {(search || statusFilter !== 'all') && <button className="link" onClick={() => { setSearch(''); setStatusFilter('all') }}>Сбросить фильтры</button>}
+        </div>
       ) : mode === 'week' ? (
         <div className="week-calendar">
           {weekDays.map((iso) => {
-            const entries = list.data.filter((x) => fmtT(b, x.starts_at, 'yyyy-MM-dd') === iso)
+            const entries = visible.filter((x) => fmtT(b, x.starts_at, 'yyyy-MM-dd') === iso)
             return <section className="week-day" key={iso}>
-              <h3>{formatInTimeZone(new Date(`${iso}T12:00:00Z`), b.timezone, 'EEEE, d MMMM', { locale: ru })}</h3>
+              <h3>{formatInTimeZone(new Date(`${iso}T12:00:00Z`), b.timezone, 'EEEE, d MMMM', { locale: ru })}<span>{entries.length}</span></h3>
               {entries.length === 0 ? <p className="muted small">Записей нет</p> : entries.map((x) => (
-                <button key={x.id} className="card bk" onClick={() => setSel(x)}>
+                <button key={x.id} className={`card bk admin-booking status-${x.status}`} onClick={() => setSel(x)}>
                   <span className="row between"><b>{fmtT(b, x.starts_at, 'HH:mm')}</b><span className="pill">{STATUS[x.status] ?? x.status}</span></span>
                   <span>{x.service_name} · {x.resource_name}</span>
                   <span className="muted small">{x.car} · {x.customer_name} · {x.customer_phone}</span>
@@ -283,8 +299,8 @@ function Bookings({ b }: { b: Business }) {
           })}
         </div>
       ) : (
-        list.data.map((x) => (
-          <button key={x.id} className="card bk" onClick={() => setSel(x)}>
+        visible.map((x) => (
+          <button key={x.id} className={`card bk admin-booking status-${x.status}`} onClick={() => setSel(x)}>
             <span className="row between">
               <b>{fmtT(b, x.starts_at, 'd MMM, HH:mm')}</b>
               <span className="pill">{STATUS[x.status] ?? x.status}</span>
@@ -722,23 +738,33 @@ function Services({ b }: { b: Business }) {
   }
   return (
     <>
+      <div className="admin-subheading">
+        <div><h2>Услуги</h2><p className="muted small">Название, длительность и цена, которые видят клиенты.</p></div>
+        {!q.isPending && !q.isError && <span className="admin-count">{q.data.length}</span>}
+      </div>
       {q.isPending ? (
         <p className="muted">Загрузка…</p>
       ) : q.isError ? (
         <p className="err">Не удалось загрузить услуги.</p>
       ) : (
-        q.data.map((s) => <ServiceRow key={s.id + s.name} b={b} s={s} onSaved={saved} />)
+        <div className="admin-services-grid">
+          {q.data.map((s) => <ServiceRow key={s.id + s.name} b={b} s={s} onSaved={saved} />)}
+        </div>
       )}
-      <h3>Новая услуга</h3>
-      <ServiceRow
-        key={n}
-        b={b}
-        s={{ id: null, name: '', price_cents: 0, duration_minutes: 60 }}
-        onSaved={() => {
-          saved()
-          setN(n + 1)
-        }}
-      />
+      <div className="admin-subheading admin-subheading-new">
+        <div><h3>Добавить услугу</h3><p className="muted small">Она появится в форме записи после сохранения.</p></div>
+      </div>
+      <div className="admin-new-service">
+        <ServiceRow
+          key={n}
+          b={b}
+          s={{ id: null, name: '', price_cents: 0, duration_minutes: 60 }}
+          onSaved={() => {
+            saved()
+            setN(n + 1)
+          }}
+        />
+      </div>
       <p className="muted small">Изменение цены не затрагивает уже созданные записи.</p>
     </>
   )
@@ -827,12 +853,14 @@ function Settings({ b }: { b: Business }) {
   )
   return (
     <>
+      <div className="admin-subheading"><div><h2>Настройки студии</h2><p className="muted small">Контакты, часы работы и текст главной страницы.</p></div></div>
       <Err m={msg} />
       {ok && (
         <p className="muted" role="status">
           Сохранено.
         </p>
       )}
+      <div className="card col admin-settings-card">
       <label className="muted small" htmlFor="ph">
         Телефон
       </label>
@@ -875,12 +903,14 @@ function Settings({ b }: { b: Business }) {
         value={f.description}
         onChange={(e) => setF({ ...f, description: e.target.value })}
       />
+      </div>
       <h3>Часы работы</h3>
+      <div className="card col admin-hours">
       {DAYS.map(([k, l]) => {
         const h = f.hours[k] ?? null
         const set = (v: [string, string] | null) => setF({ ...f, hours: { ...f.hours, [k]: v } })
         return (
-          <div className="row wrap" key={k}>
+          <div className="row wrap admin-hours-row" key={k}>
             <b style={{ width: 28 }}>{l}</b>
             <label className="row small">
               <input
@@ -911,11 +941,14 @@ function Settings({ b }: { b: Business }) {
           </div>
         )
       })}
+      </div>
       <h3>Карточки на главной</h3>
+      <div className="admin-copy-grid">
       {card('booking', 'Запись')}
       {card('ai', 'ИИ')}
       {card('install', 'Установка')}
-      <button className="btn" disabled={m.isPending} onClick={save}>
+      </div>
+      <button className="btn admin-save" disabled={m.isPending} onClick={save}>
         {m.isPending ? 'Сохраняем…' : 'Сохранить'}
       </button>
       <p className="muted small">
@@ -998,12 +1031,14 @@ function Media({ b }: { b: Business }) {
   }
   return (
     <>
+      <div className="admin-subheading"><div><h2>Фото и оформление</h2><p className="muted small">Логотип, обложка и работы, которые отображаются клиентам.</p></div></div>
       <Err m={msg} />
       {saved && (
         <p className="muted" role="status">
           Сохранено. Фото на сайте обновились.
         </p>
       )}
+      <div className="admin-media-grid">
       <div className="card col">
         <b>Логотип</b>
         <div className="row">
@@ -1049,7 +1084,9 @@ function Media({ b }: { b: Business }) {
           />
         </label>
       </div>
+      </div>
       <h3>Работы студии</h3>
+      <div className="admin-work-grid">
       {works.length === 0 && <p className="muted">Пока нет ни одной работы.</p>}
       {works.map((w, i) => (
         <div className="card col" key={w.image + i}>
@@ -1120,6 +1157,7 @@ function Media({ b }: { b: Business }) {
           </label>
         </div>
       )}
+      </div>
       <button className="btn" disabled={save.isPending || !!busy} onClick={() => save.mutate()}>
         {save.isPending ? 'Сохраняем…' : 'Сохранить'}
       </button>
@@ -1176,6 +1214,7 @@ function Docs({ b }: { b: Business }) {
     setF({ ...f, [k]: e.target.value })
   return (
     <>
+      <div className="admin-subheading"><div><h2>Документы</h2><p className="muted small">Реквизиты подставляются в юридические страницы сайта.</p></div></div>
       <Err m={msg} />
       {ok && (
         <p className="muted" role="status">
@@ -1270,7 +1309,7 @@ function Notify({ b }: { b: Business }) {
   })
   return (
     <div className="card col" style={{ gap: 16 }}>
-      <h3>Telegram-уведомления</h3>
+      <div className="admin-subheading"><div><h2>Telegram-уведомления</h2><p className="muted small">Подключение чата и состояние доставки записей.</p></div></div>
       <p className="muted small">Получайте уведомления о новых записях и отменах. После открытия ссылки обязательно нажмите «Запустить» в чате с ботом.</p>
       {msg && <p className="err" role="alert">{msg}</p>}
       {links.isPending ? <p className="muted small">Проверяем подключённые чаты…</p>

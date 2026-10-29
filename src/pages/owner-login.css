@@ -3,3 +3,11 @@
 .login-wrap h1{font-size:36px;margin:0 0 10px}
 .login-wrap label{display:block;margin-top:18px}
 .login-wrap .btn{margin-top:20px}
+.admin-login-page{min-height:calc(100svh - 86px);display:grid;place-items:center;padding-top:36px;padding-bottom:48px;background:radial-gradient(ellipse at 50% 35%,rgba(70,144,255,.12),transparent 58%)}
+.admin-login{width:min(100%,460px);padding:36px;border:1px solid #242833;border-radius:28px;background:linear-gradient(145deg,rgba(19,22,29,.98),rgba(10,11,14,.98));box-shadow:0 24px 80px rgba(0,0,0,.38)}
+.admin-login .login-ico{color:var(--accent);background:rgba(70,144,255,.12);border:1px solid rgba(70,144,255,.2);margin-bottom:22px}
+.admin-login h1{font-size:30px;letter-spacing:-.04em}
+.admin-login .field{margin:7px 0 3px}
+.admin-login .btn{margin-top:24px}
+.admin-login:focus-within{border-color:rgba(70,144,255,.45)}
+@media(max-width:520px){.admin-login{padding:26px 20px;border-radius:24px}.admin-login-page{padding-left:14px;padding-right:14px}}
