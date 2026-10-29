@@ -15,7 +15,7 @@ import './owner-login.css'
 import './owner-media.css'
 import { AI_ENABLED } from '../lib/features'
 
-const TABS = ['Записи', 'Услуги', 'Студия', 'Фото', 'Уведомления', 'Документы', 'Помощник'] as const
+const TABS = ['Записи', 'Отчёты', 'Ожидание', 'Промокоды', 'Отзывы', 'Услуги', 'Студия', 'Фото', 'Уведомления', 'Документы', 'Помощник'] as const
 const STATUS: Record<string, string> = {
   booked: 'Записан',
   arrived: 'Принята',
@@ -63,8 +63,15 @@ function Login() {
     setBusy(true)
     setErr(null)
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
-      if (error) setErr('Неверная почта или пароль.')
+      const { data, error } = await supabase.functions.invoke('owner-login', { body: { email: email.trim(), password } })
+      const body = error ? await (error as { context?: Response }).context?.clone().json().catch(() => null) : data
+      if (body?.error === 'rate_limited') setErr('Слишком много попыток входа. Подождите 15 минут и попробуйте снова.')
+      else if (body?.error === 'bad_credentials') setErr('Неверная почта или пароль.')
+      else if (error || !body?.session) setErr('Не удалось войти. Проверьте соединение и повторите позже.')
+      else {
+        const { error: sessionError } = await supabase.auth.setSession(body.session)
+        if (sessionError) setErr('Не удалось открыть сессию. Повторите вход.')
+      }
     } catch {
       setErr('Не удалось связаться с сервером. Проверьте интернет и повторите.')
     } finally {
@@ -171,6 +178,10 @@ function Cabinet({ b, onLogout }: { b: Business; onLogout: () => void }) {
         ))}
       </div>
       {tab === 'Записи' && <Bookings b={b} />}
+      {tab === 'Отчёты' && <Reports b={b} />}
+      {tab === 'Ожидание' && <WaitlistAdmin b={b} />}
+      {tab === 'Промокоды' && <Promos b={b} />}
+      {tab === 'Отзывы' && <Reviews b={b} />}
       {tab === 'Услуги' && <Services b={b} />}
       {tab === 'Студия' && <Settings b={b} />}
       {tab === 'Фото' && <Media b={b} />}
@@ -179,6 +190,53 @@ function Cabinet({ b, onLogout }: { b: Business; onLogout: () => void }) {
       {ai && <AssistantSheet slug={b.slug} scope="owner" onClose={() => setAi(false)} />}
     </section>
   )
+}
+
+function Reports({ b }: { b: Business }) {
+  const to = today(b); const from = new Date(Date.parse(`${to}T12:00:00Z`) - 29 * 864e5).toISOString().slice(0, 10);
+  const stats = useQuery({ queryKey: ['owner','source-stats',b.slug,from,to], queryFn: () => owner.sourceStats(b.slug,from,to) });
+  const kpis = useQuery({ queryKey: ['owner','report-stats',b.slug,from,to], queryFn: () => owner.stats(b.slug,from,to) });
+  const bookings = useQuery({ queryKey: ['owner','report-bookings',b.slug,from,to], queryFn: () => owner.bookings(b.slug,from,to) });
+  const resources = useQuery({ queryKey: ['owner','resources',b.slug], queryFn: () => owner.resources(b.slug) });
+  let capacityMinutes=0; const keys=['sun','mon','tue','wed','thu','fri','sat'];
+  for(let i=0;i<30;i++){const d=new Date(Date.parse(`${from}T12:00:00Z`)+i*864e5);const hours=b.hours[keys[d.getUTCDay()]!];if(hours){const a=Number(hours[0].slice(0,2))*60+Number(hours[0].slice(3,5));const z=Number(hours[1].slice(0,2))*60+Number(hours[1].slice(3,5));capacityMinutes+=Math.max(0,z-a)*Math.max(1,resources.data?.length??b.resources.length);}}
+  const reservedMinutes=(bookings.data??[]).filter(x=>x.status!=='cancelled').reduce((n,x)=>n+Math.max(0,(Date.parse(x.ends_at)-Date.parse(x.starts_at))/60000),0);
+  const occupancy=capacityMinutes?Math.min(100,Math.round(reservedMinutes/capacityMinutes*100)):0;
+  return <div className="col"><div className="admin-subheading"><div><h2>Отчёты за 30 дней</h2><p className="muted small">Выручка, загрузка постов и источники обращений.</p></div></div>
+    {kpis.data&&<div className="stats admin-stats"><div className="card admin-stat"><span className="muted small">Получено</span><b>{money(kpis.data.received_cents/100,b.currency)}</b></div><div className="card admin-stat"><span className="muted small">Записей</span><b>{kpis.data.booked}</b></div><div className="card admin-stat"><span className="muted small">Визитов</span><b>{kpis.data.visits}</b></div><div className="card admin-stat"><span className="muted small">Загрузка постов</span><b>{bookings.isPending||resources.isPending?'…':`${occupancy}%`}</b></div></div>}
+    <p className="muted small">Загрузка — оценка занятых минут к рабочим минутам всех постов по недельному графику.</p>
+    <div className="admin-subheading"><div><h2>Источники записей</h2><p className="muted small">UTM-метки и домены переходов.</p></div></div>
+    {stats.isPending ? <p className="muted">Загрузка отчёта…</p> : stats.isError ? <p className="err">Не удалось загрузить отчёт. <button className="link" onClick={() => void stats.refetch()}>Повторить</button></p> : (stats.data ?? []).length === 0 ? <p className="muted">Записей за этот период пока нет.</p> : <div className="card col">{stats.data!.map((x) => <div className="kv" key={x.source}><span>{x.source === 'direct' ? 'Прямые переходы' : x.source} · {x.visits} записей</span><b>{money(x.received_cents / 100,b.currency)}</b></div>)}</div>}
+    <p className="muted small">Источник сохраняется при записи: UTM-метка или домен перехода. Личные данные и полный URL не записываются.</p>
+  </div>;
+}
+
+function WaitlistAdmin({ b }: { b: Business }) {
+  const qc = useQueryClient(); const q = useQuery({ queryKey: ['owner','waitlist',b.slug], queryFn: () => owner.waitlist(b.slug) });
+  const setStatus = useMutation({ mutationFn: ({ id,status }: {id:string;status:'waiting'|'contacted'|'closed'}) => owner.waitlistStatus(id,status), onSuccess: () => void qc.invalidateQueries({ queryKey: ['owner','waitlist',b.slug] }) });
+  return <div className="col"><div className="admin-subheading"><div><h2>Лист ожидания</h2><p className="muted small">Заявки клиентов на дни без свободных окон. О новых заявках придёт сообщение в Telegram.</p></div></div>
+    {q.isPending ? <p className="muted">Загрузка…</p> : q.isError ? <p className="err">Не удалось загрузить лист ожидания. <button className="link" onClick={() => void q.refetch()}>Повторить</button></p> : !q.data?.length ? <p className="muted">Заявок пока нет.</p> : q.data.map((w) => <div className="card col" key={w.id}><div className="row between"><b>{w.customer_name} · {w.preferred_day}</b><span className="pill">{{waiting:'Ожидает',contacted:'Связались',closed:'Закрыта'}[w.status] ?? w.status}</span></div><span>{w.service_name} · {w.car}</span><a href={telHref(w.customer_phone)}>{w.customer_phone}</a><div className="row wrap"><button className="btn ghost mini" disabled={setStatus.isPending} onClick={() => setStatus.mutate({id:w.id,status:'contacted'})}>Связались</button><button className="btn ghost mini" disabled={setStatus.isPending} onClick={() => setStatus.mutate({id:w.id,status:'closed'})}>Закрыть заявку</button></div></div>)}
+    {setStatus.isError && <p className="err small">Не удалось обновить статус заявки.</p>}
+  </div>;
+}
+
+function Promos({ b }: { b: Business }) {
+  const qc = useQueryClient(); const q = useQuery({ queryKey: ['owner','promos',b.slug], queryFn: () => owner.promos(b.slug) });
+  const [form,setForm] = useState({code:'',kind:'percent' as 'percent'|'fixed',value:'10',limit:''}); const [msg,setMsg] = useState<string|null>(null);
+  const save = useMutation({ mutationFn: () => owner.upsertPromo(b.slug,{code:form.code.trim().toUpperCase(),kind:form.kind,value:form.kind==='fixed'?Math.round(Number(form.value)*100):Number(form.value),limit:form.limit?Number(form.limit):null,active:true}), onSuccess: () => { setForm({...form,code:''});setMsg(null);void qc.invalidateQueries({queryKey:['owner','promos',b.slug]}); }, onError: () => setMsg('Проверьте код, размер скидки и лимит использований.') });
+  const toggle = useMutation({ mutationFn: (p: NonNullable<typeof q.data>[number]) => owner.upsertPromo(b.slug,{id:p.id,code:p.code,kind:p.discount_kind,value:p.discount_value,limit:p.usage_limit,active:!p.active}), onSuccess: () => void qc.invalidateQueries({queryKey:['owner','promos',b.slug]}) });
+  return <div className="col"><div className="admin-subheading"><div><h2>Промокоды</h2><p className="muted small">Скидка пересчитывается и списывается атомарно при подтверждении записи.</p></div></div>
+    <div className="card col"><input className="field" aria-label="Код промокода" placeholder="Код, например START10" maxLength={24} value={form.code} onChange={(e)=>setForm({...form,code:e.target.value.toUpperCase()})}/><div className="row wrap"><select className="field" value={form.kind} onChange={(e)=>setForm({...form,kind:e.target.value as 'percent'|'fixed'})}><option value="percent">Процент</option><option value="fixed">Сумма</option></select><input className="field" aria-label="Размер скидки" type="number" min="1" max={form.kind==='percent'?100:1000000} value={form.value} onChange={(e)=>setForm({...form,value:e.target.value})}/><input className="field" aria-label="Лимит применений" type="number" min="1" placeholder="Без лимита" value={form.limit} onChange={(e)=>setForm({...form,limit:e.target.value})}/></div>{msg&&<p className="err small">{msg}</p>}<button className="btn" disabled={save.isPending||!form.code.trim()||!Number(form.value)} onClick={()=>save.mutate()}>{save.isPending?'Сохраняем…':'Создать промокод'}</button></div>
+    {q.isPending?<p className="muted">Загрузка промокодов…</p>:q.isError?<p className="err">Не удалось загрузить промокоды.</p>:q.data?.map(p=><div className="card row between" key={p.id}><div><b>{p.code}</b><p className="muted small">{p.discount_kind==='percent'?`${p.discount_value}%`:`${money(p.discount_value/100,b.currency)}`} · использован {p.used_count}{p.usage_limit?` из ${p.usage_limit}`:''}</p></div><button className="btn ghost mini" disabled={toggle.isPending} onClick={()=>toggle.mutate(p)}>{p.active?'Отключить':'Включить'}</button></div>)}
+  </div>;
+}
+
+function Reviews({ b }: { b: Business }) {
+  const qc=useQueryClient();const q=useQuery({queryKey:['owner','reviews',b.slug],queryFn:()=>owner.reviews(b.slug)});
+  const toggle=useMutation({mutationFn:({id,published}:{id:string;published:boolean})=>owner.publishReview(id,published),onSuccess:()=>void qc.invalidateQueries({queryKey:['owner','reviews',b.slug]})});
+  return <div className="col"><div className="admin-subheading"><div><h2>Отзывы клиентов</h2><p className="muted small">Отзывы доступны после завершённого визита. Публикация отображает отзыв на главной странице.</p></div></div>
+    {q.isPending?<p className="muted">Загрузка…</p>:q.isError?<p className="err">Не удалось загрузить отзывы.</p>:!q.data?.length?<p className="muted">Отзывы появятся после выполненных записей.</p>:q.data.map(r=><div className="card col" key={r.id}><div className="row between"><b>{r.customer_name} · {r.service_name}</b><span>{'★'.repeat(r.rating)}{'☆'.repeat(5-r.rating)}</span></div>{r.comment&&<p>{r.comment}</p>}<button className="btn ghost mini" disabled={toggle.isPending} onClick={()=>toggle.mutate({id:r.id,published:!r.published})}>{r.published?'Снять с публикации':'Опубликовать отзыв'}</button></div>)}
+  </div>;
 }
 
 const today = (b: Business) => formatInTimeZone(new Date(), b.timezone, 'yyyy-MM-dd')
@@ -194,6 +252,8 @@ function Bookings({ b }: { b: Business }) {
   const [block, setBlock] = useState(false)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [resourceFilter, setResourceFilter] = useState('all')
+  const resources = useQuery({ queryKey: ['owner','resources',b.slug], queryFn: () => owner.resources(b.slug) })
   const shiftDay = (date: string, amount: number) =>
     new Date(Date.parse(`${date}T12:00:00Z`) + amount * 864e5).toISOString().slice(0, 10)
   const weekDays = Array.from({ length: 7 }, (_, i) =>
@@ -213,7 +273,7 @@ function Bookings({ b }: { b: Business }) {
     const q = search.trim().toLocaleLowerCase('ru')
     const matchesSearch = !q || [x.customer_name, x.customer_phone, x.car, x.service_name, x.resource_name]
       .some((value) => value.toLocaleLowerCase('ru').includes(q))
-    return matchesSearch && (statusFilter === 'all' || x.status === statusFilter)
+    return matchesSearch && (statusFilter === 'all' || x.status === statusFilter) && (resourceFilter === 'all' || x.resource_name === resources.data?.find((r) => r.id === resourceFilter)?.name)
   })
   return (
     <>
@@ -263,6 +323,7 @@ function Bookings({ b }: { b: Business }) {
             <option value="done">Завершены</option>
             <option value="cancelled">Отменены</option>
           </select>
+          <select className="field admin-status-filter" aria-label="Фильтр по посту" value={resourceFilter} onChange={(e) => setResourceFilter(e.target.value)}><option value="all">Все посты</option>{resources.data?.map((r)=><option key={r.id} value={r.id}>{r.name}</option>)}</select>
         </div>
       </div>
       {list.isPending ? (
@@ -279,7 +340,7 @@ function Bookings({ b }: { b: Business }) {
           <span className="admin-empty-icon">✓</span>
           <b>{list.data.length === 0 ? 'На этот период записей нет' : 'Ничего не найдено'}</b>
           <p className="muted small">{list.data.length === 0 ? 'Новые записи появятся здесь автоматически.' : 'Измените запрос или сбросьте фильтры.'}</p>
-          {(search || statusFilter !== 'all') && <button className="link" onClick={() => { setSearch(''); setStatusFilter('all') }}>Сбросить фильтры</button>}
+          {(search || statusFilter !== 'all' || resourceFilter !== 'all') && <button className="link" onClick={() => { setSearch(''); setStatusFilter('all'); setResourceFilter('all') }}>Сбросить фильтры</button>}
         </div>
       ) : mode === 'week' ? (
         <div className="week-calendar">

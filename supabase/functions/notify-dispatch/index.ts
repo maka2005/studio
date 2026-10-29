@@ -1,5 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { buildMessage, isDeadChat, type Kind } from './format.ts';
+import { buildMessage, escapeHtml, isDeadChat, type Kind } from './format.ts';
 const env = (k: string) => Deno.env.get(k) ?? '';
 
 async function finishJob(admin: ReturnType<typeof createClient>, id: string, ok: boolean, error: string | null) {
@@ -30,19 +30,41 @@ Deno.serve(async (req) => {
   const { data: jobs, error } = await admin.rpc('lease_notification_jobs', { p_limit: 20 });
   if (error) return new Response(error.message, { status: 500 });
   let sent = 0, retry = 0;
-  for (const j of (jobs ?? []) as { id: string; tenant_id: string; kind: Kind; booking_id: string }[]) {
+  for (const j of (jobs ?? []) as { id: string; tenant_id: string; kind: Kind; booking_id: string | null; payload?: Record<string, unknown> }[]) {
     try {
-      const { data: bk, error: bookingError } = await admin.from('bookings').select('starts_at,price_cents,customer_name,customer_phone,car,service_id').eq('id', j.booking_id).maybeSingle();
-      if (bookingError) throw bookingError;
       const { data: t, error: tenantError } = await admin.from('tenants').select('slug,timezone,config').eq('id', j.tenant_id).maybeSingle();
       if (tenantError) throw tenantError;
       const { data: links, error: linksError } = await admin.from('telegram_links').select('chat_id').eq('tenant_id', j.tenant_id);
       if (linksError) throw linksError;
-      if (!bk) throw new Error('booking_missing');
       if (!t) throw new Error('tenant_missing');
       if (!links?.length) {
         await finishJob(admin, j.id, false, 'no_telegram_chat_linked');
         retry++;
+        continue;
+      }
+      if (j.kind === 'waitlist_interest') {
+        const p = j.payload ?? {};
+        const text = [`<b>🕒 Новая заявка в лист ожидания</b> · ${escapeHtml(String((t.config as { name?: string }).name ?? t.slug))}`,
+          `Услуга: ${escapeHtml(String(p.service ?? ''))}`, `Дата: ${escapeHtml(String(p.day ?? ''))}`,
+          `Клиент: ${escapeHtml(String(p.name ?? ''))}, ${escapeHtml(String(p.phone ?? ''))}`, `Авто: ${escapeHtml(String(p.car ?? ''))}`].join('\n');
+        let failure: string | null = null; let delivered = 0;
+        for (const l of links as { chat_id: number }[]) {
+          const sent = await send(token, l.chat_id, text, `${env('SITE_URL').replace(/\/+$/, '')}/s/${t.slug}/owner`);
+          if (sent.ok) delivered++;
+          else if (isDeadChat(sent.code, sent.desc)) await admin.from('telegram_links').delete().eq('tenant_id', j.tenant_id).eq('chat_id', l.chat_id);
+          else failure = `telegram ${sent.code ?? ''} ${sent.desc}`.slice(0, 200);
+        }
+        if (failure === null && delivered === 0) failure = 'no_reachable_telegram_chat';
+        await finishJob(admin, j.id, failure === null, failure);
+        if (failure === null) sent++; else retry++;
+        continue;
+      }
+      if (!j.booking_id) throw new Error('booking_missing');
+      const { data: bk, error: bookingError } = await admin.from('bookings').select('starts_at,price_cents,customer_name,customer_phone,car,service_id,status').eq('id', j.booking_id).maybeSingle();
+      if (bookingError) throw bookingError;
+      if (!bk) throw new Error('booking_missing');
+      if (j.kind === 'booking_reminder' && bk.status !== 'booked') {
+        await finishJob(admin, j.id, true, null);
         continue;
       }
       const { data: svc, error: serviceError } = await admin.from('services').select('name').eq('tenant_id', j.tenant_id).eq('id', bk.service_id).maybeSingle();

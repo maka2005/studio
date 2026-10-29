@@ -4,7 +4,7 @@ import { useOutletContext } from 'react-router-dom';
 import { formatInTimeZone } from 'date-fns-tz';
 import { ru } from 'date-fns/locale';
 import type { Ctx } from '../lib/tenant';
-import { cancelBooking, getBooking } from '../lib/api';
+import { cancelBooking, getBooking, submitReview } from '../lib/api';
 import { money, telHref } from '../lib/format';
 import { saveToken } from '../lib/tokens';
 import { Bell, Calendar, Check, Copy, Phone } from '../lib/icons';
@@ -25,8 +25,10 @@ export function MyBooking() {
   const { b, openBooking } = useOutletContext<Ctx>();
   const qc = useQueryClient(); const [sure, setSure] = useState(false); const [note, setNote] = useState<string | null>(null);
   const [token] = useState(() => readToken(b.slug));
+  const [rating, setRating] = useState(0); const [reviewText, setReviewText] = useState(''); const [reviewSaved, setReviewSaved] = useState(false); const [reviewError, setReviewError] = useState<string | null>(null);
   const q = useQuery({ queryKey: ['my', b.slug], queryFn: () => getBooking(token!), enabled: !!token });
   const cancel = useMutation({ mutationFn: () => cancelBooking(token!), onSuccess: () => { setSure(false); void qc.invalidateQueries({ queryKey: ['my', b.slug] }); } });
+  const review = useMutation({ mutationFn: () => submitReview(token!, rating, reviewText), onSuccess: () => { setReviewSaved(true); setReviewError(null); void qc.invalidateQueries({ queryKey: ['my', b.slug] }); }, onError: (e: Error) => setReviewError(e.message.includes('already_reviewed') || e.message.includes('duplicate') ? 'Отзыв по этой записи уже оставлен.' : 'Не удалось отправить отзыв. Попробуйте позже.') });
   if (!token || (q.isSuccess && !q.data)) return <section className="page"><h2>Моя запись</h2><p className="muted">На этом устройстве записей пока нет.</p><button className="btn" onClick={() => openBooking()}>Записаться</button></section>;
   if (q.isPending) return <p className="page muted">Загрузка…</p>;
   if (q.isError) return <p className="page err">Не удалось загрузить запись. <button className="link" onClick={() => q.refetch()}>Повторить</button></p>;
@@ -56,6 +58,14 @@ export function MyBooking() {
       <button className="act" disabled={d.status === 'cancelled'} onClick={() => download(false)}><span className="ico"><Calendar size={16} /></span>Календарь</button>
       <button className="act" disabled={d.status === 'cancelled'} onClick={() => download(true)}><span className="ico"><Bell size={16} /></span>Напомнить</button></div>
     {note && <p className="note" role="status">{note}</p>}
+    {(d.status === 'done' || d.status === 'cancelled') && <button className="btn ghost" onClick={() => openBooking(d.service_id)}>Записаться на эту услугу ещё раз</button>}
+    {d.status === 'done' && !d.reviewed && !reviewSaved && <div className="card col">
+      <b>Оцените визит</b><div className="row" role="group" aria-label="Оценка от 1 до 5">{[1,2,3,4,5].map((n) => <button key={n} type="button" aria-pressed={rating === n} aria-label={`${n} из 5`} className="chip" onClick={() => setRating(n)}>{n} ★</button>)}</div>
+      <textarea className="field" aria-label="Комментарий к отзыву" maxLength={1000} rows={3} placeholder="Комментарий, если хотите" value={reviewText} onChange={(e) => setReviewText(e.target.value)} />
+      {reviewError && <p className="err small" role="alert">{reviewError}</p>}
+      <button className="btn" disabled={rating === 0 || review.isPending} onClick={() => review.mutate()}>{review.isPending ? 'Отправляем…' : 'Отправить отзыв'}</button>
+    </div>}
+    {(d.reviewed || reviewSaved) && <p className="note" role="status">Спасибо за отзыв. Студия проверит его перед публикацией.</p>}
     {d.can_cancel && (sure ? <button className="btn danger" disabled={cancel.isPending} onClick={() => cancel.mutate()}>{cancel.isPending ? 'Отменяем…' : 'Да, отменить запись'}</button>
       : <button className="btn ghost" onClick={() => setSure(true)}>Отменить запись</button>)}
     {!d.can_cancel && d.status === 'booked' && <p className="muted small">Отмена доступна не позднее чем за 24 часа до начала. Позвоните в студию: {b.phone}.</p>}

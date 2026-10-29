@@ -1,5 +1,7 @@
 import { Link, useOutletContext } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { assetUrl, type Ctx } from '../lib/tenant';
+import { owner } from '../lib/api';
 import { money, plural, telHref } from '../lib/format';
 import { Arrow, ArrowRight, Car, Clock, Download, Phone, Photo, Pin, Sparkle, Tag, Wrench } from '../lib/icons';
 import { Reveal } from '../components/Reveal';
@@ -9,6 +11,7 @@ import { AI_ENABLED } from '../lib/features';
 import '../lib/install';   // ловит событие установки с самого запуска
 export function Home() {
   const { b, openBooking, openAI } = useOutletContext<Ctx>(); const services = useServices(b);
+  const reviews = useQuery({ queryKey: ['public-reviews', b.slug], queryFn: () => owner.publicReviews(b.slug), staleTime: 5 * 60_000 });
   const img = (p: string) => `url(${assetUrl(b.slug, p)})`;
   const ranges = [...new Set(Object.values(b.hours).filter(Boolean).map((h) => `${h![0]}–${h![1]}`))];
   // «Маршрут» открывает 2ГИС: по ссылке владельца, а без неё по поиску адреса.
@@ -34,6 +37,7 @@ export function Home() {
           <div className="row"><a className="btn ghost inline" href={routeHref} target="_blank" rel="noreferrer">Маршрут <Arrow size={16} /></a>
             <a className="icon-btn big-btn" href={telHref(b.phone)} aria-label="Позвонить"><Phone /></a></div></div></Reveal>
       <Reveal className="col-main"><div className="row between"><h2>Услуги</h2><Link className="muted" to={`/s/${b.slug}/services`}>Все услуги <ArrowRight size={16} /></Link></div><ServiceList limit={4} />
+        {!!reviews.data?.length && <><h2 style={{ marginTop: 24 }}>Отзывы клиентов</h2><div className="review-list">{reviews.data.map((r,i)=><article className="card col" key={`${r.created_at}-${i}`}><span aria-label={`Оценка ${r.rating} из 5`}>{'★'.repeat(r.rating)}{'☆'.repeat(5-r.rating)}</span>{r.comment&&<p>{r.comment}</p>}<span className="muted small">Клиент студии</span></article>)}</div></>}
         {b.gallery.length > 0 && <><h2 style={{ marginTop: 24 }}>Работы студии</h2>
           <div className="gallery">{b.gallery.map((g) => <figure key={g.image}><div className="shot" style={{ backgroundImage: img(g.image) }} /><figcaption>{g.caption}</figcaption></figure>)}</div></>}</Reveal></div>
     <Reveal className="install-block"><div className="card install"><div className="row"><img src={assetUrl(b.slug, b.images.logo)} alt="" width={48} height={48} /><div><b>{b.short_name}</b><p className="muted small">Приложение студии</p></div></div>

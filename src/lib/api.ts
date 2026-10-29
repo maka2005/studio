@@ -1,8 +1,8 @@
 import { supabase } from './supabase';
 export type Svc = { id: string; name: string; price_cents: number; duration_minutes: number };
 export type Slot = { slot: string; free: boolean };
-export type MyBooking = { id: string; tenant_slug: string; service_name: string; starts_at: string; ends_at: string;
-  price_cents: number; status: string; customer_name: string; car: string; can_cancel: boolean };
+export type MyBooking = { id: string; tenant_slug: string; service_name: string; service_id: string; starts_at: string; ends_at: string;
+  price_cents: number; status: string; customer_name: string; car: string; can_cancel: boolean; reviewed: boolean };
 export async function fetchServices(slug: string): Promise<Svc[]> {
   const { data, error } = await supabase.from('services').select('id,name,price_cents,duration_minutes,tenants!inner(slug)')
     .eq('tenants.slug', slug).eq('active', true).order('price_cents');
@@ -10,11 +10,16 @@ export async function fetchServices(slug: string): Promise<Svc[]> {
   return (data ?? []) as unknown as Svc[];
 }
 export async function fetchSlots(slug: string, service: string, day: string): Promise<Slot[]> {
-  const { data, error } = await supabase.rpc('get_slots', { p_slug: slug, p_service: service, p_day: day });
-  if (error) throw error;
-  return (data ?? []) as Slot[];
+  const { data, error } = await supabase.functions.invoke('public-api', { body: { action: 'slots', slug, service, day } });
+  if (error) {
+    const body = await (error as { context?: Response }).context?.clone().json().catch(() => null);
+    if (body?.error) throw new Error(String(body.error));
+    throw error;
+  }
+  if (data?.error) throw new Error(String(data.error));
+  return (data?.slots ?? []) as Slot[];
 }
-export async function createBooking(a: { slug: string; service: string; start: string; name: string; phone: string; car: string; key: string; token: string; consent: string }) {
+export async function createBooking(a: { slug: string; service: string; start: string; name: string; phone: string; car: string; key: string; token: string; consent: string; promo?: string; source?: string }) {
   const { data, error } = await supabase.functions.invoke('booking-create', { body: a });
   if (error) {
     const context = (error as { context?: Response }).context;
@@ -23,16 +28,44 @@ export async function createBooking(a: { slug: string; service: string; start: s
     throw error;
   }
   if (data?.error) throw new Error(String(data.error));
-  return data?.booking as { booking_id: string; starts_at: string; ends_at: string };
+  return data?.booking as { booking_id: string; starts_at: string; ends_at: string; price_cents: number; discount_cents: number; promo_code: string | null };
 }
 export async function getBooking(token: string): Promise<MyBooking | null> {
-  const { data, error } = await supabase.rpc('get_booking', { p_token: token });
-  if (error) throw error;
-  return ((data ?? []) as MyBooking[])[0] ?? null;
+  const { data, error } = await supabase.functions.invoke('public-api', { body: { action: 'booking_read', token } });
+  if (error) {
+    const body = await (error as { context?: Response }).context?.clone().json().catch(() => null);
+    if (body?.error) throw new Error(String(body.error));
+    throw error;
+  }
+  if (data?.error) throw new Error(String(data.error));
+  return (data?.booking ?? null) as MyBooking | null;
 }
 export async function cancelBooking(token: string) {
-  const { error } = await supabase.rpc('cancel_booking', { p_token: token });
-  if (error) throw error;
+  const { data, error } = await supabase.functions.invoke('public-api', { body: { action: 'booking_cancel', token } });
+  if (error) {
+    const body = await (error as { context?: Response }).context?.clone().json().catch(() => null);
+    if (body?.error) throw new Error(String(body.error));
+    throw error;
+  }
+  if (data?.error) throw new Error(String(data.error));
+}
+export async function joinWaitlist(a: { slug: string; service: string; day: string; name: string; phone: string; car: string; consent: string }) {
+  const { data, error } = await supabase.functions.invoke('public-api', { body: { action: 'waitlist', ...a } });
+  if (error) {
+    const body = await (error as { context?: Response }).context?.clone().json().catch(() => null);
+    if (body?.error) throw new Error(String(body.error));
+    throw error;
+  }
+  if (data?.error) throw new Error(String(data.error));
+}
+export async function submitReview(token: string, rating: number, comment: string) {
+  const { data, error } = await supabase.functions.invoke('public-api', { body: { action: 'review', token, rating, comment } });
+  if (error) {
+    const body = await (error as { context?: Response }).context?.clone().json().catch(() => null);
+    if (body?.error) throw new Error(String(body.error));
+    throw error;
+  }
+  if (data?.error) throw new Error(String(data.error));
 }
 
 const rpc = async <T,>(fn: string, args: Record<string, unknown>): Promise<T> => { const { data, error } = await supabase.rpc(fn, args); if (error) throw error; return data as T; };
@@ -64,6 +97,14 @@ export const owner = {
     const { data, error } = await supabase.from('resources').select('id,name,tenants!inner(slug)').eq('tenants.slug', slug); if (error) throw error;
     return (data ?? []) as unknown as { id: string; name: string }[];
   },
+  waitlist: (slug: string) => rpc<{ id: string; service_name: string; preferred_day: string; customer_name: string; customer_phone: string; car: string; status: string; created_at: string }[]>('owner_waitlist', { p_slug: slug }),
+  waitlistStatus: (id: string, status: 'waiting' | 'contacted' | 'closed') => rpc<void>('owner_waitlist_status', { p_id: id, p_status: status }),
+  promos: (slug: string) => rpc<{ id: string; code: string; discount_kind: 'percent' | 'fixed'; discount_value: number; usage_limit: number | null; used_count: number; active: boolean }[]>('owner_promo_codes', { p_slug: slug }),
+  upsertPromo: (slug: string, p: { id?: string; code: string; kind: 'percent' | 'fixed'; value: number; limit: number | null; active: boolean }) => rpc<string>('owner_upsert_promo', { p_slug: slug, p_id: p.id ?? null, p_code: p.code, p_kind: p.kind, p_value: p.value, p_limit: p.limit, p_starts: null, p_ends: null, p_active: p.active }),
+  reviews: (slug: string) => rpc<{ id: string; rating: number; comment: string; published: boolean; created_at: string; customer_name: string; service_name: string }[]>('owner_reviews', { p_slug: slug }),
+  publishReview: (id: string, published: boolean) => rpc<void>('owner_publish_review', { p_id: id, p_published: published }),
+  sourceStats: (slug: string, from: string, to: string) => rpc<{ source: string; visits: number; received_cents: number }[]>('owner_source_stats', { p_slug: slug, p_from: from, p_to: to }),
+  publicReviews: (slug: string) => rpc<{ rating: number; comment: string; created_at: string }[]>('published_reviews', { p_slug: slug }),
 };
 const MSG: [string, string][] = [['slot_taken', 'Это время занято.'], ['exclusion', 'Это время занято.'], ['invalid_slot', 'На это время приём не ведётся.'],
   ['past_start', 'Это время уже прошло.'], ['refund_exceeds', 'Возврат больше полученной суммы.'], ['bad_transition', 'Это действие недоступно для текущего статуса.'],

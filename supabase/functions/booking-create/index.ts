@@ -26,6 +26,8 @@ Deno.serve(async (req) => {
   const key = typeof p.key === 'string' ? p.key : '';
   const token = typeof p.token === 'string' ? p.token : '';
   const consent = typeof p.consent === 'string' ? p.consent : '';
+  const promo = typeof p.promo === 'string' ? p.promo.trim().toUpperCase().slice(0, 24) : null;
+  const source = typeof p.source === 'string' ? p.source.toLowerCase().slice(0, 40) : 'direct';
 
   if (!/^[a-z0-9-]{2,40}$/.test(slug) || !uuid.test(service) || !Number.isFinite(Date.parse(start)))
     return json({ error: 'bad_request' }, 400);
@@ -47,13 +49,13 @@ Deno.serve(async (req) => {
   }
   if (!allowed) return json({ error: 'rate_limited' }, 429);
 
-  const { data, error } = await admin.rpc('create_booking', {
+  const { data, error } = await admin.rpc('create_booking_with_promo', {
     p_slug: slug, p_service: service, p_start: start, p_name: name, p_phone: phone,
-    p_car: car, p_key: key, p_token: token, p_consent: consent,
+    p_car: car, p_key: key, p_token: token, p_consent: consent, p_promo: promo, p_source: source,
   });
   if (error) {
     const message = error.message ?? '';
-    const known = ['tenant_not_found', 'service_not_found', 'past_start', 'slot_taken', 'invalid_slot', 'bad_name', 'bad_phone', 'bad_car', 'consent_required'];
+    const known = ['tenant_not_found', 'service_not_found', 'past_start', 'slot_taken', 'invalid_slot', 'bad_name', 'bad_phone', 'bad_car', 'consent_required', 'promo_invalid'];
     const code = known.find((item) => message.includes(item));
     if (code) return json({ error: code }, code === 'slot_taken' || code === 'invalid_slot' ? 409 : 400);
     console.error('booking create failed:', message);
@@ -61,5 +63,7 @@ Deno.serve(async (req) => {
   }
   const booking = Array.isArray(data) ? data[0] : null;
   if (!booking) return json({ error: 'booking_unavailable' }, 503);
-  return json({ booking });
+  const { data: pricing, error: pricingError } = await admin.from('bookings').select('price_cents,discount_cents,promo_code').eq('id', booking.booking_id).maybeSingle();
+  if (pricingError) console.error('booking price lookup failed:', pricingError.message);
+  return json({ booking: { ...booking, ...(pricing ?? {}) } });
 });
