@@ -8,10 +8,10 @@ export const Business = z.object({
   demo: z.boolean().optional(),
   images: z.object({ logo: z.string(), hero: z.string() }),
   gallery: z.array(z.object({ image: z.string(), caption: z.string() })),
-  cards: z.object({ booking: Card, ai: Card, install: Card }),
+  cards: z.object({ booking: Card, catalog: Card, install: Card }),
   resources: z.array(z.string()),
   hours: z.record(z.string(), z.tuple([z.string(), z.string()]).nullable()),
-  services: z.array(z.object({ name: z.string(), price: z.number(), duration_minutes: z.number(), price_from: z.boolean().optional() })),
+  services: z.array(z.object({ name: z.string(), category: z.string().optional(), price: z.number(), duration_minutes: z.number(), price_from: z.boolean().optional() })),
 });
 export type Business = z.infer<typeof Business>;
 // Runtime-источник — БД (владелец правит настройки в кабинете). Статический JSON — запасной вариант, если БД недоступна.
@@ -24,5 +24,5 @@ export async function loadBusiness(slug: string): Promise<Business> {
   if (!r.ok) throw new Error('Студия не найдена');
   return Business.parse(await r.json());
 }
-export type Ctx = { b: Business; openBooking: (service?: string) => void; openGuide: () => void };
+export type Ctx = { b: Business; openBooking: (service?: string) => void };
 export const assetUrl = (slug: string, p: string) => (/^https?:/.test(p) ? p : `/tenants/${slug}/${p}`);

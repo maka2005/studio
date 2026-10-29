@@ -11,6 +11,7 @@ import { assetUrl, type Business, type Ctx } from '../lib/tenant'
 import { prepareImage, removeByUrl, uploadImage } from '../lib/media'
 import { Sheet } from '../components/Sheet'
 import { AssistantSheet } from '../components/AssistantSheet'
+import { SERVICE_CATEGORIES, serviceCategories } from '../lib/serviceCatalog'
 import './owner-login.css'
 import './owner-media.css'
 import { AI_ENABLED } from '../lib/features'
@@ -187,7 +188,7 @@ function Cabinet({ b, onLogout }: { b: Business; onLogout: () => void }) {
       {tab === 'Фото' && <Media b={b} />}
       {tab === 'Уведомления' && <Notify b={b} />}
       {tab === 'Документы' && <Docs b={b} />}
-      {ai && <AssistantSheet slug={b.slug} scope="owner" onClose={() => setAi(false)} />}
+      {ai && <AssistantSheet slug={b.slug} onClose={() => setAi(false)} />}
     </section>
   )
 }
@@ -725,26 +726,31 @@ function ServiceRow({
   b,
   s,
   onSaved,
+  categoryOptions,
 }: {
   b: Business
   s: {
     id: string | null
     name: string
+    category: string
     price_cents: number
     duration_minutes: number
     active?: boolean
   }
   onSaved: () => void
+  categoryOptions: string[]
 }) {
   const a = useAct(onSaved)
   const [name, setName] = useState(s.name)
+  const [category, setCategory] = useState(s.category || 'Другое')
   const [price, setPrice] = useState(String(s.price_cents / 100))
   const [min, setMin] = useState(String(s.duration_minutes))
   const [active, setActive] = useState(s.active ?? true)
   const minutes = Number(min)
   const cents = Math.round(Number(price.replace(',', '.')) * 100)
   const ok =
-    name.trim() && Number.isFinite(cents) && cents >= 0 && Number.isInteger(minutes) && minutes > 0
+    name.trim() && category.trim().length > 0 && category.trim().length <= 60 && Number.isFinite(cents) && cents >= 0 && Number.isInteger(minutes) && minutes > 0
+  const categoryListId = `service-categories-${b.slug}-${s.id ?? 'new'}`
   return (
     <div className="card col">
       <Err m={a.msg} />
@@ -754,6 +760,9 @@ function ServiceRow({
         value={name}
         onChange={(e) => setName(e.target.value)}
       />
+      <label className="muted small" htmlFor={`${categoryListId}-input`}>Категория</label>
+      <input id={`${categoryListId}-input`} aria-label="Категория услуги" list={categoryListId} className="field" maxLength={60} value={category} onChange={(e) => setCategory(e.target.value)} />
+      <datalist id={categoryListId}>{[...new Set([...SERVICE_CATEGORIES, ...categoryOptions])].map((item) => <option key={item} value={item} />)}</datalist>
       <div className="row">
         <div style={{ flex: 1 }}>
           <label className="muted small">Цена, {b.currency}</label>
@@ -782,7 +791,7 @@ function ServiceRow({
         className="btn mini"
         disabled={!ok || a.busy}
         onClick={() =>
-          a.run(() => owner.upsertService(b.slug, { id: s.id, name, cents, minutes, active }))
+          a.run(() => owner.upsertService(b.slug, { id: s.id, name, category, cents, minutes, active }))
         }
       >
         Сохранить
@@ -792,10 +801,12 @@ function ServiceRow({
 }
 function Services({ b }: { b: Business }) {
   const qc = useQueryClient()
-  const q = useQuery({ queryKey: ['services', b.slug], queryFn: () => fetchServices(b.slug) })
+  const q = useQuery({ queryKey: ['owner', 'services', b.slug], queryFn: () => fetchServices(b.slug, true) })
   const [n, setN] = useState(0)
+  const [search, setSearch] = useState('')
   const saved = () => {
     void qc.invalidateQueries({ queryKey: ['services', b.slug] })
+    void qc.invalidateQueries({ queryKey: ['owner', 'services', b.slug] })
   }
   return (
     <>
@@ -808,9 +819,22 @@ function Services({ b }: { b: Business }) {
       ) : q.isError ? (
         <p className="err">Не удалось загрузить услуги.</p>
       ) : (
-        <div className="admin-services-grid">
-          {q.data.map((s) => <ServiceRow key={s.id + s.name} b={b} s={s} onSaved={saved} />)}
-        </div>
+        <>
+          <label className="sr-only" htmlFor={`admin-service-search-${b.slug}`}>Найти услугу</label>
+          <input id={`admin-service-search-${b.slug}`} className="field" type="search" placeholder="Поиск по названию или категории" value={search} onChange={(e) => setSearch(e.target.value)} />
+          {(() => {
+            const needle = search.trim().toLocaleLowerCase('ru').replaceAll('ё', 'е')
+            const rows = q.data.filter((service) => `${service.name} ${service.category}`.toLocaleLowerCase('ru').replaceAll('ё', 'е').includes(needle))
+            const options = [...new Set([...SERVICE_CATEGORIES, ...serviceCategories(q.data)])]
+            return <>
+              <p className="muted small">Показано {rows.length} из {q.data.length}</p>
+              <div className="admin-services-grid">
+                {rows.map((s) => <ServiceRow key={s.id + s.name} b={b} s={s} categoryOptions={options} onSaved={saved} />)}
+              </div>
+              {rows.length === 0 && <p className="muted">По этому запросу услуги не найдены.</p>}
+            </>
+          })()}
+        </>
       )}
       <div className="admin-subheading admin-subheading-new">
         <div><h3>Добавить услугу</h3><p className="muted small">Она появится в форме записи после сохранения.</p></div>
@@ -819,7 +843,8 @@ function Services({ b }: { b: Business }) {
         <ServiceRow
           key={n}
           b={b}
-          s={{ id: null, name: '', price_cents: 0, duration_minutes: 60 }}
+          s={{ id: null, name: '', category: 'Другое', price_cents: 0, duration_minutes: 60 }}
+          categoryOptions={[...new Set([...SERVICE_CATEGORIES, ...serviceCategories(q.data ?? [])])]}
           onSaved={() => {
             saved()
             setN(n + 1)
@@ -890,7 +915,7 @@ function Settings({ b }: { b: Business }) {
     }
     m.mutate()
   }
-  const card = (k: 'booking' | 'ai' | 'install', label: string): ReactNode => (
+  const card = (k: 'booking' | 'catalog' | 'install', label: string): ReactNode => (
     <div className="card col">
       <b>{label}</b>
       <input
@@ -1006,7 +1031,7 @@ function Settings({ b }: { b: Business }) {
       <h3>Карточки на главной</h3>
       <div className="admin-copy-grid">
       {card('booking', 'Запись')}
-      {card('ai', 'ИИ')}
+      {card('catalog', 'Каталог услуг')}
       {card('install', 'Установка')}
       </div>
       <button className="btn admin-save" disabled={m.isPending} onClick={save}>

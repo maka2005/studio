@@ -1,11 +1,12 @@
 import { supabase } from './supabase';
-export type Svc = { id: string; name: string; price_cents: number; duration_minutes: number };
+export type Svc = { id: string; name: string; category: string; price_cents: number; duration_minutes: number; active: boolean };
 export type Slot = { slot: string; free: boolean };
 export type MyBooking = { id: string; tenant_slug: string; service_name: string; service_id: string; starts_at: string; ends_at: string;
   price_cents: number; status: string; customer_name: string; car: string; can_cancel: boolean; reviewed: boolean };
-export async function fetchServices(slug: string): Promise<Svc[]> {
-  const { data, error } = await supabase.from('services').select('id,name,price_cents,duration_minutes,tenants!inner(slug)')
-    .eq('tenants.slug', slug).eq('active', true).order('price_cents');
+export async function fetchServices(slug: string, includeInactive = false): Promise<Svc[]> {
+  let query = supabase.from('services').select('id,name,category,price_cents,duration_minutes,active,tenants!inner(slug)').eq('tenants.slug', slug);
+  if (!includeInactive) query = query.eq('active', true);
+  const { data, error } = await query.order('price_cents');
   if (error) throw error;
   return (data ?? []) as unknown as Svc[];
 }
@@ -105,8 +106,8 @@ export const owner = {
     rpc<string>('owner_create_booking', { p_slug: slug, p_service: a.service, p_start: a.start, p_name: a.name, p_phone: a.phone, p_car: a.car }),
   block: (slug: string, resource: string, start: string, end: string) => rpc<string>('owner_block', { p_slug: slug, p_resource: resource, p_start: start, p_end: end }),
   payment: (id: string, cents: number, kind: 'payment' | 'refund') => rpc<void>('owner_add_payment', { p_booking: id, p_amount: cents, p_kind: kind }),
-  upsertService: (slug: string, s: { id: string | null; name: string; cents: number; minutes: number; active: boolean }) =>
-    rpc<string>('owner_upsert_service', { p_slug: slug, p_id: s.id, p_name: s.name, p_price_cents: s.cents, p_duration: s.minutes, p_active: s.active }),
+  upsertService: (slug: string, s: { id: string | null; name: string; category: string; cents: number; minutes: number; active: boolean }) =>
+    rpc<string>('owner_upsert_service', { p_slug: slug, p_id: s.id, p_name: s.name, p_category: s.category, p_price_cents: s.cents, p_duration: s.minutes, p_active: s.active }),
   updateConfig: (slug: string, patch: Record<string, unknown>) => rpc<void>('owner_update_config', { p_slug: slug, p_patch: patch }),
   updateLegal: (slug: string, legal: Record<string, unknown>) => rpc<void>('owner_update_legal', { p_slug: slug, p_legal: legal }),
   telegramCode: (slug: string) => rpc<string>('owner_telegram_code', { p_slug: slug }),

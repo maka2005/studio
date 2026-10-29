@@ -35,7 +35,7 @@ if (cmd === 'new') {
   if (!c.resources?.length) err.push('нужен минимум один пост')
   if (!c.services?.length) err.push('нужна минимум одна услуга')
   for (const s of c.services ?? [])
-    if (!(s.price >= 0) || !(s.duration_minutes > 0)) err.push('услуга: ' + s.name)
+    if (!(s.price >= 0) || !(s.duration_minutes > 0) || (s.category !== undefined && (!String(s.category).trim() || String(s.category).trim().length > 60))) err.push('услуга: ' + s.name)
   for (const [d, h] of Object.entries(c.hours ?? {})) if (h && h[0] >= h[1]) err.push('часы ' + d)
   if (!c.demo)
     for (const k of ['logo', 'hero'])
@@ -97,11 +97,11 @@ if (cmd === 'new') {
     )
   for (const s of c.services)
     out.push(
-      `insert into services(tenant_id,name,price_cents,duration_minutes) select id,${q(s.name)},${Math.round(s.price * 100)},${s.duration_minutes} from tenants where slug=${q(c.slug)} and not exists(select 1 from services x where x.tenant_id=tenants.id and x.name=${q(s.name)});`,
+      `insert into services(tenant_id,name,category,price_cents,duration_minutes) select id,${q(s.name)},${q(s.category ?? 'Другое')},${Math.round(s.price * 100)},${s.duration_minutes} from tenants where slug=${q(c.slug)} and not exists(select 1 from services x where x.tenant_id=tenants.id and x.name=${q(s.name)});`,
     )
   for (const s of c.services)
     out.push(
-      `update services set price_cents=${Math.round(s.price * 100)},duration_minutes=${s.duration_minutes} where tenant_id=(select id from tenants where slug=${q(c.slug)}) and name=${q(s.name)};`,
+      `update services set category=${q(s.category ?? 'Другое')},price_cents=${Math.round(s.price * 100)},duration_minutes=${s.duration_minutes} where tenant_id=(select id from tenants where slug=${q(c.slug)}) and name=${q(s.name)};`,
     )
   fs.mkdirSync('supabase/seed', { recursive: true })
   fs.writeFileSync(`supabase/seed/${slug}.sql`, out.join('\n') + '\n')

@@ -14,6 +14,7 @@ import { LEGAL_VERSION } from '../lib/legal';
 import { supabase } from '../lib/supabase';
 import { saveToken } from '../lib/tokens';
 import { CustomerTelegramOptIn } from './CustomerTelegramOptIn';
+import { ALL_SERVICES_CATEGORY, filterServices, serviceCategories } from '../lib/serviceCatalog';
 
 const Contact = z.object({
   name: z.string().trim().min(1, 'Введите имя').max(80),
@@ -39,6 +40,8 @@ export function BookingFlow({ b, initialService, onClose }: { b: Business; initi
   const svcQ = useQuery({ queryKey: ['services', b.slug], queryFn: () => fetchServices(b.slug) });
   const [step, setStep] = useState(1);
   const [serviceId, setServiceId] = useState<string | null>(null);
+  const [serviceSearch, setServiceSearch] = useState('');
+  const [serviceCategory, setServiceCategory] = useState(ALL_SERVICES_CATEGORY);
   const today = formatInTimeZone(new Date(), b.timezone, 'yyyy-MM-dd');
   const [day, setDay] = useState(today);
   const [slot, setSlot] = useState<string | null>(null);
@@ -54,6 +57,8 @@ export function BookingFlow({ b, initialService, onClose }: { b: Business; initi
     if (s) { preset.current = true; setServiceId(s.id); setStep(2); }
   }, [svcQ.data, initialService]);
   const svc = svcQ.data?.find((s) => s.id === serviceId);
+  const svcCategories = serviceCategories(svcQ.data ?? []);
+  const filteredServices = filterServices(svcQ.data ?? [], serviceSearch, serviceCategory);
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => {
     const d = new Date(new Date(`${today}T12:00:00Z`).getTime() + i * 864e5);
     return { iso: d.toISOString().slice(0, 10), wd: d.toLocaleDateString('ru-RU', { weekday: 'short', timeZone: 'UTC' }), n: d.getUTCDate() };
@@ -100,8 +105,15 @@ export function BookingFlow({ b, initialService, onClose }: { b: Business; initi
 
       {step === 1 && (svcQ.isPending ? <p className="muted">Загрузка услуг…</p> : svcQ.isError ? <p className="err">Не удалось загрузить услуги. <button className="link" onClick={() => svcQ.refetch()}>Повторить</button></p>
         : svcQ.data.length === 0 ? <p className="muted">Услуг пока нет.</p>
-        : svcQ.data.map((s) => <button key={s.id} className={`card pick ${s.id === serviceId ? 'sel' : ''}`} onClick={() => setServiceId(s.id)}>
-            <span><b>{s.name}</b><br /><span className="muted small">{duration(s.duration_minutes)}</span></span><b>{money(s.price_cents / 100, b.currency)}</b></button>))}
+        : <>
+          <label className="sr-only" htmlFor={`booking-service-search-${b.slug}`}>Найти услугу</label>
+          <input id={`booking-service-search-${b.slug}`} className="field" type="search" placeholder="Найти услугу по названию" value={serviceSearch} onChange={(e) => { setServiceSearch(e.target.value); setServiceId(null); }} />
+          {svcCategories.length > 1 && <div className="service-category-filter" aria-label="Категории услуг">
+            {[ALL_SERVICES_CATEGORY, ...svcCategories].map((item) => <button key={item} className={`chip ${serviceCategory === item ? 'sel' : ''}`} aria-pressed={serviceCategory === item} onClick={() => { setServiceCategory(item); setServiceId(null); }}>{item}</button>)}
+          </div>}
+          {filteredServices.length === 0 ? <p className="muted">Услуги не найдены. Измените поиск или категорию.</p> : filteredServices.map((s) => <button key={s.id} className={`card pick ${s.id === serviceId ? 'sel' : ''}`} onClick={() => setServiceId(s.id)}>
+            <span><b>{s.name}</b><br /><span className="muted small">{s.category} · {duration(s.duration_minutes)}</span></span><b>{money(s.price_cents / 100, b.currency)}</b></button>)}
+        </>)}
 
       {step === 2 && <>
         <div className="days">{days.map((d) => <button key={d.iso} className={`day ${d.iso === day ? 'sel' : ''}`} onClick={() => { setDay(d.iso); setSlot(null); }}><span>{d.wd}</span><b>{d.n}</b></button>)}</div>

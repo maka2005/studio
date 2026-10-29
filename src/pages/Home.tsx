@@ -3,13 +3,13 @@ import { useQuery } from '@tanstack/react-query';
 import { assetUrl, type Ctx } from '../lib/tenant';
 import { owner } from '../lib/api';
 import { money, plural, telHref } from '../lib/format';
-import { Arrow, ArrowRight, Car, Clock, Download, Phone, Photo, Pin, Sparkle, Tag, Wrench } from '../lib/icons';
+import { Arrow, ArrowRight, Car, Clock, Download, Grid, Phone, Photo, Pin, Tag, Wrench } from '../lib/icons';
 import { Reveal } from '../components/Reveal';
 import { ServiceList } from './ServiceList';
 import { useServices } from '../lib/useServices';
 import '../lib/install';   // ловит событие установки с самого запуска
 export function Home() {
-  const { b, openBooking, openGuide } = useOutletContext<Ctx>(); const services = useServices(b);
+  const { b, openBooking } = useOutletContext<Ctx>(); const services = useServices(b);
   const reviews = useQuery({ queryKey: ['public-reviews', b.slug], queryFn: () => owner.publicReviews(b.slug), staleTime: 5 * 60_000 });
   const img = (p: string) => `url(${assetUrl(b.slug, p)})`;
   const ranges = [...new Set(Object.values(b.hours).filter(Boolean).map((h) => `${h![0]}–${h![1]}`))];
@@ -29,8 +29,8 @@ export function Home() {
       <Reveal className="col-side"><h2>Запишитесь онлайн</h2>
         <div className="card promo"><Car className="car" /><h3>{b.cards.booking.title}</h3><p className="muted">{b.cards.booking.text}</p>
           <button className="btn" onClick={() => openBooking()}>Выбрать дату и время <Arrow /></button></div>
-        <div className="card col"><div className="row"><span className="ico accent"><Sparkle /></span><div><b>Не знаете, что выбрать?</b><p className="muted small">Расскажите, что хотите сделать с автомобилем, — покажем подходящие услуги.</p></div></div>
-          <button className="btn ghost" onClick={openGuide}>Подобрать услугу <Arrow size={16} /></button></div>
+        <div className="card col"><div className="row"><span className="ico accent"><Grid /></span><div><b>{b.cards.catalog.title}</b><p className="muted small">{b.cards.catalog.text}</p></div></div>
+          <Link className="btn ghost" to={`/s/${b.slug}/services`}>Каталог услуг <Arrow size={16} /></Link></div>
         <div className="card col"><div className="row"><Pin /><b>{b.address}</b></div>
           <div className="row"><Clock /><div>{ranges.length === 1 ? <b>{ranges[0]}</b> : <b>По графику студии</b>}<p className="muted small">часы работы</p></div></div>
           <div className="row"><a className="btn ghost inline" href={routeHref} target="_blank" rel="noreferrer">Маршрут <Arrow size={16} /></a>

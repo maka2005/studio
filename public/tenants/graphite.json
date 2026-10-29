@@ -23,9 +23,9 @@
       "title": "Свежий вид для вашего авто",
       "text": "Выберите услугу и удобное время — остальное возьмём на себя"
     },
-    "ai": {
-      "title": "Запись с ИИ",
-      "text": "Подберёт услугу для автомобиля и покажет актуальное время"
+    "catalog": {
+      "title": "Каталог услуг",
+      "text": "Выберите категорию или найдите услугу в прайсе"
     },
     "install": {
       "title": "Студия всегда под рукой.",
@@ -43,11 +43,12 @@
     "sun": null
   },
   "services": [
-    { "name": "Комплексная мойка", "price": 3500, "duration_minutes": 120 },
-    { "name": "Химчистка салона", "price": 12000, "duration_minutes": 1440, "price_from": true },
-    { "name": "Полировка кузова", "price": 18000, "duration_minutes": 1440, "price_from": true },
+    { "name": "Комплексная мойка", "category": "Мойка", "price": 3500, "duration_minutes": 120 },
+    { "name": "Химчистка салона", "category": "Салон", "price": 12000, "duration_minutes": 1440, "price_from": true },
+    { "name": "Полировка кузова", "category": "Полировка", "price": 18000, "duration_minutes": 1440, "price_from": true },
     {
       "name": "Керамическое покрытие",
+      "category": "Защита кузова",
       "price": 25000,
       "duration_minutes": 2880,
       "price_from": true
