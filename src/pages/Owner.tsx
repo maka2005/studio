@@ -745,8 +745,6 @@ function ServiceRow({
   categoryOptions: string[]
 }) {
   const a = useAct(onSaved)
-  const [deleteError,setDeleteError] = useState<string|null>(null)
-  const remove = useMutation({mutationFn:()=>owner.deleteService(b.slug,s.id!),onSuccess:()=>{setDeleteError(null);onSaved()},onError:(e)=>setDeleteError(errText(e))})
   const [name, setName] = useState(s.name)
   const [category, setCategory] = useState(s.category || 'Другое')
   const [creatingCategory, setCreatingCategory] = useState(false)
@@ -761,7 +759,6 @@ function ServiceRow({
   return (
     <article className="admin-service-row">
       <Err m={a.msg} />
-      <Err m={deleteError} />
       <div className="admin-service-main">
         <div><label className="muted small" htmlFor={`${categoryListId}-name`}>Название услуги</label><input id={`${categoryListId}-name`} aria-label="Название" className="field" value={name} onChange={(e) => setName(e.target.value)} /></div>
         <div><label className="muted small" htmlFor={`${categoryListId}-input`}>Категория</label>{creatingCategory
@@ -774,9 +771,8 @@ function ServiceRow({
         <div><label className="muted small" htmlFor={`${categoryListId}-duration`}>Длительность</label><input id={`${categoryListId}-duration`} className="field" inputMode="numeric" value={min} onChange={(e) => setMin(e.target.value)} /><span className="muted small">{ok ? duration(minutes) : 'Укажите минуты'}</span></div>
       </div>
       <div className="admin-service-footer">
-        <label className="admin-service-active"><input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} /><span className={`admin-service-status ${active ? 'on' : 'off'}`}>{active ? 'Показывается клиентам' : 'Скрыта от клиентов'}</span></label>
+        <label className="admin-service-active"><input type="checkbox" checked={active} disabled={a.busy} onChange={(e) => { const next = e.target.checked; if (!s.id) { setActive(next); return; } if (!next && !window.confirm(`Скрыть услугу «${name}»? Она исчезнет из списка услуг и переместится в архив. Её можно будет вернуть в любой момент.`)) return; a.run(async () => { await owner.upsertService(b.slug, { id: s.id, name, category, cents, minutes, active: next }); setActive(next); }) }} /><span className={`admin-service-status ${active ? 'on' : 'off'}`}>Показывать клиентам</span></label>
         <button className="btn mini admin-service-save" disabled={!ok || a.busy} onClick={() => a.run(() => owner.upsertService(b.slug, { id: s.id, name, category, cents, minutes, active }))}>{a.busy ? 'Сохраняем…' : 'Сохранить'}</button>
-        {s.id&&<MoreMenu label={`Действия для услуги ${s.name}`}><button disabled={a.busy} onClick={()=>{const next=!active;a.run(async()=>{await owner.upsertService(b.slug,{id:s.id,name,category,cents,minutes,active:next});setActive(next)})}}>{active?'Скрыть услугу':'Показать услугу'}</button><button className="danger" disabled={remove.isPending} onClick={()=>{if(window.confirm(`Удалить услугу «${s.name}»?`))remove.mutate()}}>Удалить</button></MoreMenu>}
       </div>
     </article>
   )
@@ -787,7 +783,7 @@ function Services({ b }: { b: Business }) {
   const [n, setN] = useState(0)
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('Все услуги')
-  const [visibilityFilter, setVisibilityFilter] = useState<'Все' | 'Активные' | 'Скрытые'>('Все')
+  const [visibilityFilter, setVisibilityFilter] = useState<'Активные' | 'Архив'>('Активные')
   const [servicePage, setServicePage] = useState(1)
   const pageSize = 10
   const saved = () => {
@@ -814,7 +810,7 @@ function Services({ b }: { b: Business }) {
             const rows = q.data.filter((service) => {
               const matchesSearch = `${service.name} ${service.category}`.toLocaleLowerCase('ru').replaceAll('ё', 'е').includes(needle)
               const matchesCategory = categoryFilter === 'Все услуги' || service.category === categoryFilter
-              const matchesVisibility = visibilityFilter === 'Все' || (visibilityFilter === 'Активные' ? service.active : !service.active)
+              const matchesVisibility = visibilityFilter === 'Активные' ? service.active : !service.active
               return matchesSearch && matchesCategory && matchesVisibility
             })
             const pageCount = Math.max(1, Math.ceil(rows.length / pageSize))
@@ -823,14 +819,14 @@ function Services({ b }: { b: Business }) {
             return <>
               <div className="admin-service-filters">
                 <label><span className="muted small">Категория</span><select className="field" value={categoryFilter} onChange={(e) => { setCategoryFilter(e.target.value); setServicePage(1); }}><option>Все услуги</option>{options.map((item) => <option key={item}>{item}</option>)}</select></label>
-                <label><span className="muted small">Показ</span><select className="field" value={visibilityFilter} onChange={(e) => { setVisibilityFilter(e.target.value as typeof visibilityFilter); setServicePage(1); }}><option>Все</option><option>Активные</option><option>Скрытые</option></select></label>
+                <div className="admin-service-views" role="tablist" aria-label="Услуги и архив"><button type="button" role="tab" aria-selected={visibilityFilter==='Активные'} className={visibilityFilter==='Активные'?'active':''} onClick={()=>{setVisibilityFilter('Активные');setServicePage(1)}}>Услуги <span>{q.data.filter(x=>x.active).length}</span></button><button type="button" role="tab" aria-selected={visibilityFilter==='Архив'} className={visibilityFilter==='Архив'?'active':''} onClick={()=>{setVisibilityFilter('Архив');setServicePage(1)}}>Архив <span>{q.data.filter(x=>!x.active).length}</span></button></div>
                 <span className="admin-service-result-count">Найдено <b>{rows.length}</b> из {q.data.length}</span>
               </div>
               <div className="admin-service-table">
-                <div className="admin-service-table-head"><span>Услуга</span><span>Цена</span><span>Время</span><span>Статус</span><span>Действия</span></div>
+                <div className="admin-service-table-head"><span>Услуга</span><span>Категория</span><span>Цена</span><span>Длительность</span></div>
                 {visibleRows.map((s) => <ServiceRow key={s.id + s.name} b={b} s={s} categoryOptions={options} onSaved={saved} />)}
               </div>
-              {rows.length === 0 && <p className="muted">По этому запросу услуги не найдены.</p>}
+              {rows.length === 0 && <p className="muted">{visibilityFilter === 'Архив' && !search.trim() ? 'Архив пока пуст.' : 'По этому запросу услуги не найдены.'}</p>}
               {rows.length > pageSize && <nav className="admin-service-pagination" aria-label="Страницы списка услуг">
                 <button className="admin-page-button" disabled={currentPage === 1} onClick={() => setServicePage(currentPage - 1)}>Назад</button>
                 <span className="muted small">Страница <b>{currentPage}</b> из {pageCount}</span>
