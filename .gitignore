@@ -5,3 +5,4 @@ dist
 .env.local
 .env.*.local
 "@ | Set-Content .gitignore -Encoding UTF8
+supabase/.temp/

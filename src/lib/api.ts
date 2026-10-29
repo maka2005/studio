@@ -108,6 +108,7 @@ export const owner = {
   payment: (id: string, cents: number, kind: 'payment' | 'refund') => rpc<void>('owner_add_payment', { p_booking: id, p_amount: cents, p_kind: kind }),
   upsertService: (slug: string, s: { id: string | null; name: string; category: string; cents: number; minutes: number; active: boolean }) =>
     rpc<string>('owner_upsert_service', { p_slug: slug, p_id: s.id, p_name: s.name, p_category: s.category, p_price_cents: s.cents, p_duration: s.minutes, p_active: s.active }),
+  deleteService: (slug: string, id: string) => rpc<void>('owner_delete_service', { p_slug: slug, p_id: id }),
   updateConfig: (slug: string, patch: Record<string, unknown>) => rpc<void>('owner_update_config', { p_slug: slug, p_patch: patch }),
   updateLegal: (slug: string, legal: Record<string, unknown>) => rpc<void>('owner_update_legal', { p_slug: slug, p_legal: legal }),
   telegramCode: (slug: string) => rpc<string>('owner_telegram_code', { p_slug: slug }),
@@ -122,6 +123,7 @@ export const owner = {
   waitlistStatus: (id: string, status: 'waiting' | 'contacted' | 'closed') => rpc<void>('owner_waitlist_status', { p_id: id, p_status: status }),
   promos: (slug: string) => rpc<{ id: string; code: string; discount_kind: 'percent' | 'fixed'; discount_value: number; usage_limit: number | null; used_count: number; active: boolean }[]>('owner_promo_codes', { p_slug: slug }),
   upsertPromo: (slug: string, p: { id?: string; code: string; kind: 'percent' | 'fixed'; value: number; limit: number | null; active: boolean }) => rpc<string>('owner_upsert_promo', { p_slug: slug, p_id: p.id ?? null, p_code: p.code, p_kind: p.kind, p_value: p.value, p_limit: p.limit, p_starts: null, p_ends: null, p_active: p.active }),
+  deletePromo: (slug: string, id: string) => rpc<void>('owner_delete_promo', { p_slug: slug, p_id: id }),
   reviews: (slug: string) => rpc<{ id: string; rating: number; comment: string; published: boolean; created_at: string; customer_name: string; service_name: string }[]>('owner_reviews', { p_slug: slug }),
   publishReview: (id: string, published: boolean) => rpc<void>('owner_publish_review', { p_id: id, p_published: published }),
   sourceStats: (slug: string, from: string, to: string) => rpc<{ source: string; visits: number; received_cents: number }[]>('owner_source_stats', { p_slug: slug, p_from: from, p_to: to }),
@@ -132,5 +134,5 @@ const MSG: [string, string][] = [['slot_taken', 'Это время занято.
   ['forbidden', 'Нет прав для этого действия.'], ['rate_limited', 'Слишком много запросов. Попробуйте позже.'], ['bad_amount', 'Проверьте сумму.'],
   ['bad_name', 'Проверьте имя клиента.'], ['bad_phone', 'Проверьте номер телефона.'], ['bad_car', 'Укажите автомобиль.'],
   ['bad_config', 'Проверьте введённые настройки.'], ['bad_url', 'Ссылка должна начинаться с https://'],
-  ['consent_required', 'Нужно согласие на обработку данных.']];
+  ['consent_required', 'Нужно согласие на обработку данных.'], ['service_in_use', 'Услуга уже используется в записи или заявке. Снимите отметку «Показывается клиентам», чтобы скрыть её.']];
 export const errText = (e: unknown) => { const m = String((e as Error)?.message ?? e); return MSG.find(([k]) => m.includes(k))?.[1] ?? 'Не удалось выполнить действие. Повторите.'; };

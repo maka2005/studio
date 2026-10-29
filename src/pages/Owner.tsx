@@ -10,14 +10,12 @@ import { duration, money, telHref } from '../lib/format'
 import { assetUrl, type Business, type Ctx } from '../lib/tenant'
 import { prepareImage, removeByUrl, uploadImage } from '../lib/media'
 import { Sheet } from '../components/Sheet'
-import { AssistantSheet } from '../components/AssistantSheet'
 import { LoadingScreen } from '../components/LoadingScreen'
 import { SERVICE_CATEGORIES, serviceCategories } from '../lib/serviceCatalog'
 import './owner-login.css'
 import './owner-media.css'
-import { AI_ENABLED } from '../lib/features'
 
-const TABS = ['Записи', 'Отчёты', 'Ожидание', 'Промокоды', 'Отзывы', 'Услуги', 'Студия', 'Фото', 'Уведомления', 'Документы', 'Помощник'] as const
+const TABS = ['Записи', 'Отчёты', 'Ожидание', 'Промокоды', 'Отзывы', 'Услуги', 'Студия', 'Фото', 'Уведомления', 'Документы'] as const
 const STATUS: Record<string, string> = {
   booked: 'Записан',
   arrived: 'Принята',
@@ -132,7 +130,6 @@ function Login() {
 
 function Cabinet({ b, onLogout }: { b: Business; onLogout: () => void }) {
   const [tab, setTab] = useState<(typeof TABS)[number]>('Записи')
-  const [ai, setAi] = useState(false)
   const me = useQuery({ queryKey: ['owner', 'me', b.slug], queryFn: () => owner.me(b.slug) })
   if (me.isPending) return <LoadingScreen label="Проверяем доступ…" />
   if (me.isError)
@@ -172,10 +169,9 @@ function Cabinet({ b, onLogout }: { b: Business; onLogout: () => void }) {
             key={t}
             role="tab"
             aria-selected={tab === t}
-            disabled={t === 'Помощник' && !AI_ENABLED}
-            onClick={() => (t === 'Помощник' ? setAi(true) : setTab(t))}
+            onClick={() => setTab(t)}
           >
-            {t === 'Помощник' && !AI_ENABLED ? 'Помощник · скоро' : t}
+            {t}
           </button>
         ))}
       </div>
@@ -189,7 +185,6 @@ function Cabinet({ b, onLogout }: { b: Business; onLogout: () => void }) {
       {tab === 'Фото' && <Media b={b} />}
       {tab === 'Уведомления' && <Notify b={b} />}
       {tab === 'Документы' && <Docs b={b} />}
-      {ai && <AssistantSheet slug={b.slug} onClose={() => setAi(false)} />}
     </section>
   )
 }
@@ -224,13 +219,21 @@ function WaitlistAdmin({ b }: { b: Business }) {
 
 function Promos({ b }: { b: Business }) {
   const qc = useQueryClient(); const q = useQuery({ queryKey: ['owner','promos',b.slug], queryFn: () => owner.promos(b.slug) });
-  const [form,setForm] = useState({code:'',kind:'percent' as 'percent'|'fixed',value:'10',limit:''}); const [msg,setMsg] = useState<string|null>(null);
-  const save = useMutation({ mutationFn: () => owner.upsertPromo(b.slug,{code:form.code.trim().toUpperCase(),kind:form.kind,value:form.kind==='fixed'?Math.round(Number(form.value)*100):Number(form.value),limit:form.limit?Number(form.limit):null,active:true}), onSuccess: () => { setForm({...form,code:''});setMsg(null);void qc.invalidateQueries({queryKey:['owner','promos',b.slug]}); }, onError: () => setMsg('Проверьте код, размер скидки и лимит использований.') });
+  const emptyForm = {code:'',kind:'percent' as 'percent'|'fixed',value:'10',limit:''};
+  const [form,setForm] = useState(emptyForm); const [editingId,setEditingId] = useState<string|null>(null); const [msg,setMsg] = useState<string|null>(null);
+  const refresh = () => void qc.invalidateQueries({queryKey:['owner','promos',b.slug]});
+  const save = useMutation({ mutationFn: () => owner.upsertPromo(b.slug,{id:editingId??undefined,code:form.code.trim().toUpperCase(),kind:form.kind,value:form.kind==='fixed'?Math.round(Number(form.value)*100):Number(form.value),limit:form.limit?Number(form.limit):null,active:editingId ? q.data?.find(p=>p.id===editingId)?.active??true : true}), onSuccess: () => { setForm(emptyForm);setEditingId(null);setMsg(null);refresh(); }, onError: () => setMsg('Проверьте код, размер скидки и лимит использований.') });
   const toggle = useMutation({ mutationFn: (p: NonNullable<typeof q.data>[number]) => owner.upsertPromo(b.slug,{id:p.id,code:p.code,kind:p.discount_kind,value:p.discount_value,limit:p.usage_limit,active:!p.active}), onSuccess: () => void qc.invalidateQueries({queryKey:['owner','promos',b.slug]}) });
+  const remove = useMutation({mutationFn:(id:string)=>owner.deletePromo(b.slug,id),onSuccess:refresh,onError:(e)=>setMsg(errText(e))});
+  const edit = (p: NonNullable<typeof q.data>[number]) => { setEditingId(p.id); setForm({code:p.code,kind:p.discount_kind,value:String(p.discount_kind==='fixed'?p.discount_value/100:p.discount_value),limit:p.usage_limit?String(p.usage_limit):''}); setMsg(null); };
   return <div className="col"><div className="admin-subheading"><div><h2>Промокоды</h2><p className="muted small">Скидка пересчитывается и списывается атомарно при подтверждении записи.</p></div></div>
-    <div className="card col"><input className="field" aria-label="Код промокода" placeholder="Код, например START10" maxLength={24} value={form.code} onChange={(e)=>setForm({...form,code:e.target.value.toUpperCase()})}/><div className="row wrap"><select className="field" value={form.kind} onChange={(e)=>setForm({...form,kind:e.target.value as 'percent'|'fixed'})}><option value="percent">Процент</option><option value="fixed">Сумма</option></select><input className="field" aria-label="Размер скидки" type="number" min="1" max={form.kind==='percent'?100:1000000} value={form.value} onChange={(e)=>setForm({...form,value:e.target.value})}/><input className="field" aria-label="Лимит применений" type="number" min="1" placeholder="Без лимита" value={form.limit} onChange={(e)=>setForm({...form,limit:e.target.value})}/></div>{msg&&<p className="err small">{msg}</p>}<button className="btn" disabled={save.isPending||!form.code.trim()||!Number(form.value)} onClick={()=>save.mutate()}>{save.isPending?'Сохраняем…':'Создать промокод'}</button></div>
-    {q.isPending?<p className="muted">Загрузка промокодов…</p>:q.isError?<p className="err">Не удалось загрузить промокоды.</p>:q.data?.map(p=><div className="card row between" key={p.id}><div><b>{p.code}</b><p className="muted small">{p.discount_kind==='percent'?`${p.discount_value}%`:`${money(p.discount_value/100,b.currency)}`} · использован {p.used_count}{p.usage_limit?` из ${p.usage_limit}`:''}</p></div><button className="btn ghost mini" disabled={toggle.isPending} onClick={()=>toggle.mutate(p)}>{p.active?'Отключить':'Включить'}</button></div>)}
+    <div className="card col"><h3>{editingId?'Изменить промокод':'Добавить промокод'}</h3><input className="field" aria-label="Код промокода" placeholder="Код, например START10" maxLength={24} value={form.code} onChange={(e)=>setForm({...form,code:e.target.value.toUpperCase()})}/><div className="row wrap"><select className="field" value={form.kind} onChange={(e)=>setForm({...form,kind:e.target.value as 'percent'|'fixed'})}><option value="percent">Процент</option><option value="fixed">Сумма</option></select><input className="field" aria-label="Размер скидки" type="number" min="1" max={form.kind==='percent'?100:1000000} value={form.value} onChange={(e)=>setForm({...form,value:e.target.value})}/><input className="field" aria-label="Лимит применений" type="number" min="1" placeholder="Без лимита" value={form.limit} onChange={(e)=>setForm({...form,limit:e.target.value})}/></div>{msg&&<p className="err small">{msg}</p>}<div className="row wrap"><button className="btn" disabled={save.isPending||!form.code.trim()||!Number(form.value)} onClick={()=>save.mutate()}>{save.isPending?'Сохраняем…':editingId?'Сохранить':'Создать промокод'}</button>{editingId&&<button className="btn ghost" onClick={()=>{setEditingId(null);setForm(emptyForm);setMsg(null)}}>Отмена</button>}</div></div>
+    {q.isPending?<p className="muted">Загрузка промокодов…</p>:q.isError?<p className="err">Не удалось загрузить промокоды.</p>:q.data?.map(p=><div className="card row between admin-promo-row" key={p.id}><div><b>{p.code}</b><p className="muted small">{p.discount_kind==='percent'?`${p.discount_value}%`:`${money(p.discount_value/100,b.currency)}`} · использован {p.used_count}{p.usage_limit?` из ${p.usage_limit}`:' · без лимита'} · {p.active?'Активен':'Отключён'}</p></div><MoreMenu label={`Действия для промокода ${p.code}`}><button onClick={()=>edit(p)}>Изменить</button><button disabled={toggle.isPending} onClick={()=>toggle.mutate(p)}>{p.active?'Отключить':'Включить'}</button><button className="danger" disabled={remove.isPending} onClick={()=>{if(window.confirm(`Удалить промокод ${p.code}?`))remove.mutate(p.id)}}>Удалить</button></MoreMenu></div>)}
   </div>;
+}
+
+function MoreMenu({label,children}:{label:string;children:ReactNode}) {
+  return <details className="admin-more-menu"><summary aria-label={label} title={label}>⋯</summary><div className="admin-more-panel">{children}</div></details>
 }
 
 function Reviews({ b }: { b: Business }) {
@@ -742,6 +745,8 @@ function ServiceRow({
   categoryOptions: string[]
 }) {
   const a = useAct(onSaved)
+  const [deleteError,setDeleteError] = useState<string|null>(null)
+  const remove = useMutation({mutationFn:()=>owner.deleteService(b.slug,s.id!),onSuccess:()=>{setDeleteError(null);onSaved()},onError:(e)=>setDeleteError(errText(e))})
   const [name, setName] = useState(s.name)
   const [category, setCategory] = useState(s.category || 'Другое')
   const [creatingCategory, setCreatingCategory] = useState(false)
@@ -756,6 +761,7 @@ function ServiceRow({
   return (
     <article className="admin-service-row">
       <Err m={a.msg} />
+      <Err m={deleteError} />
       <div className="admin-service-main">
         <div><label className="muted small" htmlFor={`${categoryListId}-name`}>Название услуги</label><input id={`${categoryListId}-name`} aria-label="Название" className="field" value={name} onChange={(e) => setName(e.target.value)} /></div>
         <div><label className="muted small" htmlFor={`${categoryListId}-input`}>Категория</label>{creatingCategory
@@ -770,6 +776,7 @@ function ServiceRow({
       <div className="admin-service-footer">
         <label className="admin-service-active"><input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} /><span className={`admin-service-status ${active ? 'on' : 'off'}`}>{active ? 'Показывается клиентам' : 'Скрыта от клиентов'}</span></label>
         <button className="btn mini admin-service-save" disabled={!ok || a.busy} onClick={() => a.run(() => owner.upsertService(b.slug, { id: s.id, name, category, cents, minutes, active }))}>{a.busy ? 'Сохраняем…' : 'Сохранить'}</button>
+        {s.id&&<MoreMenu label={`Действия для услуги ${s.name}`}><button disabled={a.busy} onClick={()=>{const next=!active;a.run(async()=>{await owner.upsertService(b.slug,{id:s.id,name,category,cents,minutes,active:next});setActive(next)})}}>{active?'Скрыть услугу':'Показать услугу'}</button><button className="danger" disabled={remove.isPending} onClick={()=>{if(window.confirm(`Удалить услугу «${s.name}»?`))remove.mutate()}}>Удалить</button></MoreMenu>}
       </div>
     </article>
   )
