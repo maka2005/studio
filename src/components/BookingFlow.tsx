@@ -19,7 +19,7 @@ const Contact = z.object({
   phone: z.string().trim().regex(/^\+?[0-9\s()-]{10,18}$/, 'Проверьте номер телефона'),
   car: z.string().trim().min(2, 'Укажите автомобиль').max(60),
 });
-const TITLES = ['Услуга', 'Дата и время', 'Ваши данные', 'Подтверждение'];
+const TITLES = ['Выберите услугу', 'Выберите время', 'Ваши контакты', 'Проверьте запись'];
 const ERR: Record<string, string> = { slot_taken: 'Это время только что заняли. Выберите другое.', invalid_slot: 'Это время недоступно для записи.',
   past_start: 'Это время уже прошло.', consent_required: 'Нужно согласие на обработку данных.', bad_name: 'Проверьте имя.',
   bad_phone: 'Проверьте номер телефона.', bad_car: 'Проверьте автомобиль.', rate_limited: 'Слишком много попыток записи. Попробуйте позже.',
@@ -86,7 +86,7 @@ export function BookingFlow({ b, initialService, onClose }: { b: Business; initi
   if (step === 5 && svc && slot) return (
     <Sheet title="Запись подтверждена" onClose={onClose}>
       <div className="card col"><b>{svc.name}</b><span>{fmt(slot, "d MMMM 'в' HH:mm")}</span>{mut.data?.discount_cents ? <span className="muted"><s>{money(svc.price_cents / 100, b.currency)}</s> · скидка {money(mut.data.discount_cents / 100, b.currency)}</span> : null}<span className="muted">{money((mut.data?.price_cents ?? svc.price_cents) / 100, b.currency)}</span></div>
-      <p className="muted small">Детали и отмена — в разделе «Моя запись» на этом устройстве.</p>
+      <p className="muted small">Все детали и возможность отмены доступны в разделе «Моя запись» на этом устройстве.</p>
       <Link className="btn" to={`/s/${b.slug}/booking`} onClick={onClose}>Моя запись <ArrowRight /></Link>
     </Sheet>);
 
@@ -105,13 +105,13 @@ export function BookingFlow({ b, initialService, onClose }: { b: Business; initi
         <div className="days">{days.map((d) => <button key={d.iso} className={`day ${d.iso === day ? 'sel' : ''}`} onClick={() => { setDay(d.iso); setSlot(null); }}><span>{d.wd}</span><b>{d.n}</b></button>)}</div>
         <label className="muted small" htmlFor="other-date">Другая дата</label>
         <input id="other-date" className="field" type="date" min={today} value={day} onChange={(e) => { if (e.target.value >= today) { setDay(e.target.value); setSlot(null); } }} />
-        {slotsQ.isPending ? <p className="muted">Загрузка времени…</p> : slotsQ.isError ? <p className="err">Не удалось получить время. <button className="link" onClick={() => slotsQ.refetch()}>Повторить</button></p>
-          : slotsQ.data.length === 0 ? <p className="muted">В этот день студия не принимает. Выберите другую дату.</p>
-          : !slotsQ.data.some((s) => s.free) ? <><p className="muted">Свободного времени на эту дату нет. Оставьте заявку в лист ожидания — студия свяжется с вами, если появится окно.</p><WaitlistForm slug={b.slug} service={serviceId!} day={day} /></>
+        {slotsQ.isPending ? <p className="muted">Ищем свободное время…</p> : slotsQ.isError ? <p className="err">Не удалось загрузить расписание. <button className="link" onClick={() => slotsQ.refetch()}>Попробовать ещё раз</button></p>
+          : slotsQ.data.length === 0 ? <p className="muted">На эту дату записи нет. Выберите другой день — покажем доступное время.</p>
+          : !slotsQ.data.some((s) => s.free) ? <><p className="muted">На эту дату свободных мест уже нет. Оставьте заявку — студия свяжется с вами, если время освободится.</p><WaitlistForm slug={b.slug} service={serviceId!} day={day} /></>
           : <div className="chips">{slotsQ.data.map((s) => <button key={s.slot} disabled={!s.free} aria-pressed={slot === s.slot}
               className={`chip ${slot === s.slot ? 'sel' : ''}`} onClick={() => setSlot(s.slot)}>{fmt(s.slot, 'HH:mm')}</button>)}</div>}
-        <p className="muted small">Серые окна уже заняты. Выберите любое свободное время.</p>
-        {slot && svc && <p className="muted small">Ориентир выдачи: {formatInTimeZone(addMinutes(new Date(slot), svc.duration_minutes), b.timezone, "d MMMM 'в' HH:mm", { locale: ru })}</p>}
+        <p className="muted small">Выберите время, отмеченное как свободное.</p>
+        {slot && svc && <p className="muted small">Ориентировочно автомобиль будет готов: {formatInTimeZone(addMinutes(new Date(slot), svc.duration_minutes), b.timezone, "d MMMM 'в' HH:mm", { locale: ru })}</p>}
       </>}
 
       {step === 3 && (['name', 'phone', 'car'] as const).map((f) => (
@@ -127,10 +127,10 @@ export function BookingFlow({ b, initialService, onClose }: { b: Business; initi
         <b>{svc.name}</b><span>{fmt(slot, "d MMMM 'в' HH:mm")} · {duration(svc.duration_minutes)}</span>
         <span className="muted">{form.name}, {form.phone}</span><span className="muted">{form.car}</span><b>{money(svc.price_cents / 100, b.currency)}</b>
         <label className="muted small" htmlFor="promo-code">Промокод</label><input id="promo-code" className="field" maxLength={24} autoCapitalize="characters" placeholder="Если есть" value={promo} onChange={(e) => setPromo(e.target.value.toUpperCase())} />
-        <span className="muted small">Скидка применится после проверки кода.</span></div>}
+        <span className="muted small">Если промокод действителен, скидка будет учтена при подтверждении.</span></div>}
 
       <button className="btn" disabled={!canNext || mut.isPending} onClick={() => (step === 4 ? mut.mutate() : next())}>
-        {step === 4 ? (mut.isPending ? 'Записываем…' : 'Подтвердить запись') : 'Продолжить'} <ArrowRight /></button>
+        {step === 4 ? (mut.isPending ? 'Подтверждаем…' : 'Подтвердить запись') : step === 3 ? 'Проверить запись' : 'Продолжить'} <ArrowRight /></button>
       {step > 1 && <button className="back" onClick={() => setStep(step - 1)}><ArrowLeft /> Назад</button>}
     </Sheet>);
 }
@@ -144,8 +144,8 @@ function WaitlistForm({ slug, service, day }: { slug: string; service: string; d
     const code = ['already_waiting', 'rate_limited', 'bad_date'].find((x) => e.message.includes(x));
     setMessage(code === 'already_waiting' ? 'Вы уже оставили заявку на эту услугу в этот день.' : code === 'rate_limited' ? 'Слишком много заявок. Попробуйте позже.' : 'Не удалось отправить заявку. Проверьте данные и повторите.');
   } });
-  if (done) return <p className="note" role="status">Заявка добавлена. Студия свяжется с вами, если освободится время.</p>;
-  return <div className="card col"><b>Лист ожидания</b>
+  if (done) return <p className="note" role="status">Заявка принята. Если появится свободное время, студия свяжется с вами.</p>;
+  return <div className="card col"><b>Оставить заявку на свободное время</b>
     <input className="field" aria-label="Имя для листа ожидания" placeholder="Ваше имя" maxLength={80} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
     <input className="field" aria-label="Телефон для листа ожидания" placeholder="Телефон" inputMode="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
     <input className="field" aria-label="Автомобиль для листа ожидания" placeholder="Автомобиль" maxLength={60} value={form.car} onChange={(e) => setForm({ ...form, car: e.target.value })} />

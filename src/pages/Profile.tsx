@@ -49,9 +49,9 @@ function SignIn({ slug }: { slug: string }) {
     if (error) setErr('Неверный или просроченный код. Запросите новый.');
   };
   return (<div className="profile-card"><div className="profile-ico"><User size={26} /></div>
-    <h1>Профиль клиента</h1><p className="muted">Сохраняйте новые записи в одном месте и открывайте их с любого устройства.</p>
+    <h1>Ваши записи — в одном месте</h1><p className="muted">Войдите по почте, чтобы просматривать свои записи с любого устройства.</p>
     {sent ? <>
-      <p role="status">Мы отправили письмо на <b>{email.trim()}</b>. Откройте ссылку из письма или введите код. Если письма нет, проверьте «Спам».</p>
+      <p role="status">Письмо со ссылкой и кодом отправлено на <b>{email.trim()}</b>. Не нашли его? Проверьте папку «Спам».</p>
       <label className="muted small" htmlFor="pc">Код из письма</label>
       <input id="pc" className="field" inputMode="numeric" autoComplete="one-time-code" maxLength={10} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} onKeyDown={(e) => { if (e.key === 'Enter') void verify(); }} />
       {err && <p role="alert" className="err">{err}</p>}
@@ -60,10 +60,10 @@ function SignIn({ slug }: { slug: string }) {
       <button className="link" style={{ marginTop: 12 }} onClick={() => { setSent(false); setErr(null); }}>Изменить почту</button></> : <>
       <label className="muted small" htmlFor="pe">Почта</label>
       <input id="pe" className="field" type="email" autoComplete="email" inputMode="email" value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void send(); }} />
-      <p className="muted small">Пароль не нужен. Отправим ссылку для входа.</p>
+      <p className="muted small">Вход без пароля: отправим вам письмо со ссылкой и кодом.</p>
       <label className="check"><input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} /><span className="small">Я принимаю <a href={`/s/${slug}/legal/terms`} target="_blank" rel="noreferrer">Условия использования</a> и даю <a href={`/s/${slug}/legal/consent`} target="_blank" rel="noreferrer">согласие на обработку персональных данных</a>.</span></label>
       {err && <p role="alert" className="err">{err}</p>}
-      <button className="btn" disabled={!ok || !agree || sending} onClick={() => void send()}>{sending ? 'Отправляем…' : 'Получить ссылку'}</button></>}
+      <button className="btn" disabled={!ok || !agree || sending} onClick={() => void send()}>{sending ? 'Отправляем письмо…' : 'Продолжить по почте'}</button></>}
   </div>);
 }
 
@@ -89,7 +89,7 @@ function Signed({ b, email, confirmed }: { b: Business; email: string; confirmed
       <p className="muted small">{confirmed ? 'Новые записи сохранятся в этом профиле.' : 'Подтвердите почту по ссылке из письма.'}</p></div></div>
     <h2 style={{ marginTop: 28 }}>Мои записи</h2>
     {list.isPending ? <p className="muted">Загрузка…</p> : list.isError ? <p className="err">Не удалось загрузить записи. <button className="link" onClick={() => list.refetch()}>Повторить</button></p>
-      : list.data.length === 0 ? <p className="muted">Здесь появятся записи, которые вы создадите после входа в профиль.</p>
+      : list.data.length === 0 ? <p className="muted">Пока записей нет. Когда вы запишетесь, они появятся здесь.</p>
       : list.data.map((r) => (<div className="bk-row" key={r.id}>
           <b>{r.service_name}</b><span>{f(r.starts_at)}</span><span className="muted small">{STATUS[r.status] ?? r.status} · {r.car} · {money(r.price_cents / 100, b.currency)}</span>
           {r.can_cancel && (sure === r.id ? <button className="btn danger mini" disabled={cancel.isPending} onClick={() => cancel.mutate(r.id)}>{cancel.isPending ? 'Отменяем…' : 'Да, отменить'}</button>

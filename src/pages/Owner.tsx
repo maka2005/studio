@@ -294,12 +294,12 @@ function Bookings({ b }: { b: Business }) {
       </div>
       {stats.data && (
         <>
-          <p className="muted small admin-section-caption">Показатели за {mode === 'day' ? 'этот день' : 'эти 7 дней'}</p>
+          <p className="muted small admin-section-caption">Сводка за {mode === 'day' ? 'день' : 'неделю'}</p>
           <div className="stats admin-stats">
             <div className="card admin-stat"><span className="muted small">Записи</span><b>{stats.data.visits}</b></div>
             <div className="card admin-stat"><span className="muted small">Завершено</span><b>{stats.data.done}</b></div>
             <div className="card admin-stat"><span className="muted small">Получено</span><b>{money(Number(stats.data.received_cents) / 100, b.currency)}</b></div>
-            <div className="card admin-stat"><span className="muted small">Ожидается</span><b>{money(Number(stats.data.expected_cents) / 100, b.currency)}</b></div>
+            <div className="card admin-stat"><span className="muted small">К оплате</span><b>{money(Number(stats.data.expected_cents) / 100, b.currency)}</b></div>
           </div>
         </>
       )}
@@ -338,9 +338,9 @@ function Bookings({ b }: { b: Business }) {
       ) : visible.length === 0 ? (
         <div className="admin-empty">
           <span className="admin-empty-icon">✓</span>
-          <b>{list.data.length === 0 ? 'На этот период записей нет' : 'Ничего не найдено'}</b>
-          <p className="muted small">{list.data.length === 0 ? 'Новые записи появятся здесь автоматически.' : 'Измените запрос или сбросьте фильтры.'}</p>
-          {(search || statusFilter !== 'all' || resourceFilter !== 'all') && <button className="link" onClick={() => { setSearch(''); setStatusFilter('all'); setResourceFilter('all') }}>Сбросить фильтры</button>}
+          <b>{list.data.length === 0 ? 'На этот период записей пока нет' : 'По вашему запросу ничего не найдено'}</b>
+          <p className="muted small">{list.data.length === 0 ? 'Новые записи появятся здесь автоматически.' : 'Попробуйте изменить запрос или очистить фильтры.'}</p>
+          {(search || statusFilter !== 'all' || resourceFilter !== 'all') && <button className="link" onClick={() => { setSearch(''); setStatusFilter('all'); setResourceFilter('all') }}>Очистить фильтры</button>}
         </div>
       ) : mode === 'week' ? (
         <div className="week-calendar">
@@ -1370,8 +1370,8 @@ function Notify({ b }: { b: Business }) {
   })
   return (
     <div className="card col" style={{ gap: 16 }}>
-      <div className="admin-subheading"><div><h2>Telegram-уведомления</h2><p className="muted small">Подключение чата и состояние доставки записей.</p></div></div>
-      <p className="muted small">Получайте уведомления о новых записях и отменах. После открытия ссылки обязательно нажмите «Запустить» в чате с ботом.</p>
+      <div className="admin-subheading"><div><h2>Уведомления в Telegram</h2><p className="muted small">Подключите чат и следите за доставкой сообщений о записях.</p></div></div>
+      <p className="muted small">Получайте сообщения о новых записях и отменах. После перехода к боту нажмите «Запустить».</p>
       {msg && <p className="err" role="alert">{msg}</p>}
       {links.isPending ? <p className="muted small">Проверяем подключённые чаты…</p>
         : links.isError ? <p className="err small">Не удалось загрузить подключения. <button className="link" onClick={() => void links.refetch()}>Повторить</button></p>
@@ -1384,10 +1384,10 @@ function Notify({ b }: { b: Business }) {
         <b>Доставка уведомлений</b>
         {health.isPending ? <span className="muted small">Проверяем очередь…</span>
           : health.isError ? <span className="err small">Не удалось проверить очередь. Обновите статус.</span>
-          : health.data.failed > 0 ? <span className="err small">Не отправлено: {health.data.failed}. Проверьте токен бота и настройки доставки.</span>
-          : health.data.pending > 0 ? <span className="muted small">В очереди: {health.data.pending}. Обычно доставка занимает до минуты.</span>
+          : health.data.failed > 0 ? <span className="err small">Не доставлено: {health.data.failed}. Проверьте настройки бота и доставки.</span>
+          : health.data.pending > 0 ? <span className="muted small">Ожидают отправки: {health.data.pending}. Обычно это занимает до минуты.</span>
           : health.data.last_sent_at ? <span className="muted small">Последнее успешное уведомление: {formatInTimeZone(new Date(health.data.last_sent_at), b.timezone, 'd MMM, HH:mm', { locale: ru })}</span>
-          : <span className="muted small">Подключение подтверждено ботом. Доставка ещё не проверялась.</span>}
+          : <span className="muted small">Бот подтвердил подключение. Уведомления о записях пока не отправлялись.</span>}
         {health.isError && <button className="link" onClick={() => void health.refetch()}>Повторить</button>}
       </div> : null}
       <button className="link" onClick={() => void links.refetch()}>Обновить статус подключения</button>

@@ -12,7 +12,7 @@ type Msg = { who: 'me' | 'ai'; text: string };
 const GOALS = [
   { title: 'Почистить салон', keywords: ['салон', 'химчист', 'чистк', 'уборк'] },
   { title: 'Помыть кузов', keywords: ['мойк', 'кузов', 'комплекс', 'внешн'] },
-  { title: 'Убрать мелкие царапины и вернуть блеск', keywords: ['полир', 'царап', 'блеск', 'глянец'] },
+  { title: 'Вернуть блеск кузову', keywords: ['полир', 'царап', 'блеск', 'глянец'] },
   { title: 'Защитить покрытие', keywords: ['керамик', 'защит', 'покрыт', 'воск'] },
   { title: 'Не знаю, что выбрать', keywords: [] },
 ];
@@ -42,18 +42,18 @@ export function AssistantSheet({ slug, currency = '₸', onClose, onSelectServic
   };
 
   if (scope === 'client') return (
-    <Sheet title="Бесплатный подбор услуги" sub="Выберите, что хотите сделать с автомобилем. Ничего не отправляется в ИИ." onClose={onClose}>
+    <Sheet title="Подберём услугу для автомобиля" sub="Выберите, что хотите сделать — покажем подходящие варианты из прайса." onClose={onClose}>
       <div className="guide-options">{GOALS.map((item, i) => <button key={item.title} className={`chip wide ${goal === i ? 'sel' : ''}`} aria-pressed={goal === i} onClick={() => setGoal(i)}>{item.title}</button>)}</div>
       {goal !== null && <section className="guide-results" aria-live="polite">
         {servicesQ.isPending ? <p className="muted">Загружаем прайс…</p> : servicesQ.isError ? <p className="err">Не удалось загрузить услуги. <button className="link" onClick={() => void servicesQ.refetch()}>Повторить</button></p>
           : servicesQ.data?.length ? <>
-            <p className="muted small">{recommendations.exact ? 'Подходящие услуги из прайса:' : 'Точного совпадения по названию нет — вот услуги студии:'}</p>
+            <p className="muted small">{recommendations.exact ? 'Вам могут подойти:' : 'Похожего варианта в прайсе нет. Посмотрите другие услуги:'}</p>
             {recommendations.items.map((s) => <div className="card col guide-service" key={s.id}>
               <div><b>{s.name}</b><p className="muted small">{duration(s.duration_minutes)} · {money(s.price_cents / 100, currency)}</p></div>
               <button className="btn mini" onClick={() => onSelectService?.(s.id)}>Записаться <ArrowRight size={16} /></button>
             </div>)}
           </> : <p className="muted">Услуги пока не добавлены в прайс.</p>}
-        <p className="muted small guide-note">Подбор работает по названиям услуг на сайте и не использует платные токены. Если сомневаетесь, позвоните в студию.</p>
+        <p className="muted small guide-note">Подбор ориентируется на названия услуг в прайсе. Если нужна помощь, свяжитесь со студией.</p>
       </section>}
     </Sheet>
   );
