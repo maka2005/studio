@@ -8,7 +8,7 @@ test('имя клиента экранируется', () => {
   const m = buildMessage({ ...d, customer: '<b>x</b> & <a href="e">', car: '<script>' });
   assert.ok(!m.includes('<script>') && !m.includes('<a href')); assert.match(m, /&lt;b&gt;x&lt;\/b&gt; &amp;/);
 });
-test('отмена клиентом имеет свой заголовок', () => { assert.match(buildMessage({ ...d, kind: 'booking_cancelled' }), /Клиент отменил запись/); });
+test('отмена имеет понятный заголовок', () => { assert.match(buildMessage({ ...d, kind: 'booking_cancelled' }), /Запись отменена/); });
 test('напоминание владельцу имеет свой заголовок', () => { assert.match(buildMessage({ ...d, kind: 'booking_reminder' }), /Напоминание о записи/); });
 test('escapeHtml', () => { assert.equal(escapeHtml('a<b>&'), 'a&lt;b&gt;&amp;'); });
 test('мёртвые чаты', () => { assert.ok(isDeadChat(403, '')); assert.ok(isDeadChat(400, 'Bad Request: chat not found')); assert.ok(!isDeadChat(429, 'Too Many Requests')); assert.ok(!isDeadChat(500, '')); });

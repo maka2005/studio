@@ -74,10 +74,15 @@ Deno.serve(async (req) => {
       const rating = Number(p.rating);
       const comment = typeof p.comment === 'string' ? p.comment.trim() : '';
       if (!/^[a-f0-9]{32,128}$/i.test(token) || !Number.isInteger(rating) || rating < 1 || rating > 5 || comment.length > 1000) return json({ error: 'bad_review' }, 400);
-      const [ipAllowed, tokenAllowed] = await Promise.all([rate('review', ip, 12, 3600), rate('review', `token:${await sha(token)}`, 2, 86400)]);
+      // Allow a few retries for transient failures and correcting accidental submissions;
+      // the unique booking constraint still guarantees that only one review is saved.
+      const [ipAllowed, tokenAllowed] = await Promise.all([rate('review', ip, 12, 3600), rate('review', `token:${await sha(token)}`, 10, 86400)]);
       if (!ipAllowed || !tokenAllowed) return json({ error: 'rate_limited' }, 429);
       const { error } = await admin.rpc('submit_booking_review', { p_token: token, p_rating: rating, p_comment: comment });
-      if (error) return json({ error: error.message.includes('duplicate') ? 'already_reviewed' : error.message.includes('review_unavailable') ? 'review_unavailable' : 'bad_review' }, 400);
+      if (error?.code === '23505' || error?.message.includes('duplicate')) return json({ error: 'already_reviewed' }, 409);
+      if (error?.message.includes('review_unavailable')) return json({ error: 'review_unavailable' }, 400);
+      if (error?.message.includes('bad_review')) return json({ error: 'bad_review' }, 400);
+      if (error) throw error;
       return json({ ok: true });
     }
     return json({ error: 'unknown_action' }, 400);

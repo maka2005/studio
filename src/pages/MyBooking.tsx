@@ -28,7 +28,14 @@ export function MyBooking() {
   const [rating, setRating] = useState(0); const [reviewText, setReviewText] = useState(''); const [reviewSaved, setReviewSaved] = useState(false); const [reviewError, setReviewError] = useState<string | null>(null);
   const q = useQuery({ queryKey: ['my', b.slug], queryFn: () => getBooking(token!), enabled: !!token });
   const cancel = useMutation({ mutationFn: () => cancelBooking(token!), onSuccess: () => { setSure(false); void qc.invalidateQueries({ queryKey: ['my', b.slug] }); } });
-  const review = useMutation({ mutationFn: () => submitReview(token!, rating, reviewText), onSuccess: () => { setReviewSaved(true); setReviewError(null); void qc.invalidateQueries({ queryKey: ['my', b.slug] }); }, onError: (e: Error) => setReviewError(e.message.includes('already_reviewed') || e.message.includes('duplicate') ? 'Отзыв по этой записи уже оставлен.' : 'Не удалось отправить отзыв. Попробуйте позже.') });
+  const review = useMutation({ mutationFn: () => submitReview(token!, rating, reviewText), onSuccess: () => { setReviewSaved(true); setReviewError(null); void qc.invalidateQueries({ queryKey: ['my', b.slug] }); }, onError: (e: Error) => {
+    const message = e.message;
+    setReviewError(message.includes('already_reviewed') || message.includes('duplicate') ? 'Вы уже оставили отзыв по этой записи.'
+      : message.includes('review_unavailable') ? 'Оценить визит можно после его начала. Если визит уже состоялся, обновите страницу и попробуйте ещё раз.'
+      : message.includes('rate_limited') ? 'Слишком много попыток отправки. Подождите немного и попробуйте снова.'
+      : message.includes('bad_review') ? 'Проверьте оценку и текст отзыва: не более 1 000 символов.'
+      : 'Не удалось отправить отзыв. Проверьте соединение и попробуйте ещё раз.');
+  } });
   if (!token || (q.isSuccess && !q.data)) return <section className="page"><h2>Моя запись</h2><p className="muted">Пока здесь нет записей. Выберите услугу и удобное время, чтобы записаться.</p><button className="btn" onClick={() => openBooking()}>Выбрать услугу</button></section>;
   if (q.isPending) return <p className="page muted">Загрузка…</p>;
   if (q.isError) return <p className="page err">Не удалось загрузить запись. <button className="link" onClick={() => q.refetch()}>Повторить</button></p>;
@@ -59,9 +66,10 @@ export function MyBooking() {
       <button className="act" disabled={d.status === 'cancelled'} onClick={() => download(true)}><span className="ico"><Bell size={16} /></span>Напомнить</button></div>
     {note && <p className="note" role="status">{note}</p>}
     {(d.status === 'done' || d.status === 'cancelled') && <button className="btn ghost" onClick={() => openBooking(d.service_id)}>Записаться на эту услугу ещё раз</button>}
-    {d.status === 'done' && !d.reviewed && !reviewSaved && <div className="card col">
+    {d.status === 'done' && new Date(d.starts_at).getTime() > Date.now() && <p className="muted small">Оценить визит можно после даты записи.</p>}
+    {d.status === 'done' && new Date(d.starts_at).getTime() <= Date.now() && !d.reviewed && !reviewSaved && <div className="card col">
       <b>Оцените визит</b><div className="row" role="group" aria-label="Оценка от 1 до 5">{[1,2,3,4,5].map((n) => <button key={n} type="button" aria-pressed={rating === n} aria-label={`${n} из 5`} className="chip" onClick={() => setRating(n)}>{n} ★</button>)}</div>
-      <textarea className="field" aria-label="Комментарий к отзыву" maxLength={1000} rows={3} placeholder="Комментарий, если хотите" value={reviewText} onChange={(e) => setReviewText(e.target.value)} />
+      <textarea className="field" aria-label="Комментарий к отзыву" maxLength={1000} rows={3} placeholder="Поделитесь впечатлениями — комментарий можно не оставлять" value={reviewText} onChange={(e) => setReviewText(e.target.value)} />
       {reviewError && <p className="err small" role="alert">{reviewError}</p>}
       <button className="btn" disabled={rating === 0 || review.isPending} onClick={() => review.mutate()}>{review.isPending ? 'Отправляем…' : 'Отправить отзыв'}</button>
     </div>}
