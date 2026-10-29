@@ -14,7 +14,12 @@ Deno.serve(async (req) => {
   if (!chat || chat.type !== 'private' || typeof chat.id !== 'number') return ok();
   const admin = createClient(env('SUPABASE_URL'), env('SUPABASE_SERVICE_ROLE_KEY'));
   if (/^\/start\s+[0-9a-f]{16,64}$/i.test(text)) {
-    const { data } = await admin.rpc('telegram_link_consume', { p_code: text.split(/\s+/)[1], p_chat: chat.id });
+    const { data, error } = await admin.rpc('telegram_link_consume', { p_code: text.split(/\s+/)[1], p_chat: chat.id });
+    if (error) {
+      console.error('telegram_link_consume failed:', error.message);
+      await reply(chat.id, 'Не удалось подключить чат из-за ошибки сервера. Проверьте миграции Supabase и попробуйте ещё раз.');
+      return ok();
+    }
     await reply(chat.id, data ? `Готово! Уведомления о записях «${data}» подключены. Отключить: /stop` : 'Код недействителен или истёк. Создайте новый в кабинете студии.');
   } else if (text === '/stop') {
     await admin.rpc('telegram_unlink_chat', { p_chat: chat.id });

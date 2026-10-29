@@ -6,7 +6,7 @@
 3. Скопируйте `.env.example` в `.env.local` и заполните `VITE_SUPABASE_*`.
 
 ## Supabase
-1. SQL Editor, по порядку выполните все ещё не применённые миграции `supabase/migrations/0001_core.sql`–`0010_slot_closing_time.sql`. Если миграции до `0009` уже применены, выполните `0010_slot_closing_time.sql`.
+1. SQL Editor, по порядку выполните все ещё не применённые миграции `supabase/migrations/0001_core.sql`–`0012_reuse_telegram_link_code.sql`. Если проект уже обновлялся по предыдущей инструкции, примените `0012_reuse_telegram_link_code.sql`.
 2. Сид студии: `pnpm tenant:sql graphite`, затем выполнить `supabase/seed/graphite.sql`. Повторный запуск обновляет настройки и цены, записи не трогает.
 3. Владелец: Authentication → Users → Add user (почта + пароль, публичной регистрации нет; отключите «Allow new users to sign up»). Затем в SQL:
    `insert into tenant_members(tenant_id,user_id) select t.id,u.id from tenants t, auth.users u where t.slug='graphite' and u.email='owner@example.com';`

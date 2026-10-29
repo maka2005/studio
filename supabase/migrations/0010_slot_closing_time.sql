@@ -1,7 +1,7 @@
 -- Existing installations already applied 0002, so replace get_slots in a forward migration too.
 create or replace function get_slots(p_slug text, p_service uuid, p_day date)
 returns table(slot timestamptz, free bool) language plpgsql stable security definer set search_path=public as $$
-declare t tenants; s services; h jsonb; k text; ts timestamptz; lim timestamptz; step int;
+declare t tenants; s services; h jsonb; k text; ts timestamptz; lim timestamptz; step int; window_minutes int;
 begin
   select * into t from tenants where slug=p_slug; if not found then return; end if;
   select * into s from services where id=p_service and tenant_id=t.id and active; if not found then return; end if;
@@ -11,8 +11,9 @@ begin
   step := coalesce((t.config->>'slot_minutes')::int, 60);
   ts  := (p_day + (h->>0)::time)::timestamp at time zone t.timezone;
   lim := (p_day + (h->>1)::time)::timestamp at time zone t.timezone;
-  -- slot_minutes defines start times; the service itself must finish by closing.
-  while ts + make_interval(mins => s.duration_minutes) <= lim loop
+  window_minutes := floor(extract(epoch from (lim - ts)) / 60)::int;
+  -- Short jobs must finish by closing. Multi-day services may span several workdays.
+  while ts + make_interval(mins => case when s.duration_minutes > window_minutes then step else s.duration_minutes end) <= lim loop
     slot := ts;
     free := ts > now() and exists(
       select 1 from resources r where r.tenant_id = t.id and not exists(

@@ -1220,7 +1220,7 @@ function Docs({ b }: { b: Business }) {
 const BOT = import.meta.env.VITE_TELEGRAM_BOT as string | undefined
 function Notify({ b }: { b: Business }) {
   const qc = useQueryClient()
-  const [link, setLink] = useState<string | null>(null)
+  const [link, setLink] = useState<{ url: string; code: string } | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
   const bot = BOT?.trim().replace(/^@/, '')
   const links = useQuery({
@@ -1231,9 +1231,9 @@ function Notify({ b }: { b: Business }) {
     mutationFn: async () => {
       if (!bot || !/^[A-Za-z0-9_]{5,32}$/.test(bot)) throw new Error('telegram_bot_not_configured')
       const code = await owner.telegramCode(b.slug)
-      return `https://t.me/${bot}?start=${code}`
+      return { url: `https://t.me/${bot}?start=${code}`, code }
     },
-    onSuccess: (url) => { setLink(url); setMsg(null) },
+    onSuccess: (invite) => { setLink(invite); setMsg(null) },
     onError: (e) => { setLink(null); setMsg(errText(e)) },
   })
   const unlink = useMutation({
@@ -1244,10 +1244,7 @@ function Notify({ b }: { b: Business }) {
   return (
     <div className="card col" style={{ gap: 16 }}>
       <h3>Telegram-уведомления</h3>
-      <p className="muted small">
-        Получайте уведомления о новых записях и отменах. Создайте ссылку и откройте её в Telegram,
-        затем нажмите «Запустить» у бота.
-      </p>
+      <p className="muted small">Получайте уведомления о новых записях и отменах. После открытия ссылки обязательно нажмите «Запустить» в чате с ботом.</p>
       {msg && <p className="err" role="alert">{msg}</p>}
       {links.isPending ? <p className="muted small">Проверяем подключённые чаты…</p>
         : links.isError ? <p className="err small">Не удалось загрузить подключения. <button className="link" onClick={() => void links.refetch()}>Повторить</button></p>
@@ -1256,12 +1253,20 @@ function Notify({ b }: { b: Business }) {
             <span>Чат подключён · {formatInTimeZone(new Date(item.created_at), b.timezone, 'd MMM yyyy', { locale: ru })}</span>
             <button className="btn ghost mini" disabled={unlink.isPending} onClick={() => unlink.mutate(item.id)}>Отключить</button>
           </div>)}
-      {link && <a className="btn" href={link} target="_blank" rel="noreferrer">Открыть Telegram и подключить</a>}
+      <button className="link" onClick={() => void links.refetch()}>Обновить статус подключения</button>
+      {link && <div className="card col">
+        <b>Шаг 1. Откройте бота и нажмите «Запустить»</b>
+        <a className="btn" href={link.url} target="_blank" rel="noreferrer">Открыть Telegram</a>
+        <b>Если Telegram открыл сайт или не передал код</b>
+        <p className="muted small">Откройте чат с ботом вручную и отправьте ему эту команду:</p>
+        <code style={{ overflowWrap: 'anywhere' }}>/start {link.code}</code>
+        <p className="muted small">Код действует 15 минут. Успешное подключение подтвердит бот сообщением «Готово! Уведомления … подключены».</p>
+      </div>}
       {!bot && <p className="muted small">Для кнопки подключения задайте публичную переменную VITE_TELEGRAM_BOT с именем бота.</p>}
       <button className="btn" disabled={!bot || connect.isPending} onClick={() => connect.mutate()}>
         {connect.isPending ? 'Создаём ссылку…' : 'Подключить чат'}
       </button>
-      <p className="muted small">После привязки уведомления отправляет серверный диспетчер. Бот должен быть запущен, а расписание диспетчера настроено.</p>
+      <p className="muted small">Если бот подтвердил привязку, но уведомлений о тестовой клиентской записи нет, проверьте настройку webhook и расписание `notify-dispatch` в Supabase. Одной переменной Vercel недостаточно.</p>
     </div>
   )
 }

@@ -3,9 +3,15 @@ import { buildMessage, isDeadChat, type Kind } from './format.ts';
 const env = (k: string) => Deno.env.get(k) ?? '';
 
 async function send(token: string, chat: number, text: string, url: string) {
+  let cabinetUrl: string | undefined;
+  try {
+    const site = new URL(url);
+    if (site.protocol === 'https:') cabinetUrl = site.toString();
+  } catch { /* still send the notification without a button when SITE_URL is missing */ }
   const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(8000),
-    body: JSON.stringify({ chat_id: chat, text, parse_mode: 'HTML', disable_web_page_preview: true, reply_markup: { inline_keyboard: [[{ text: 'Открыть кабинет', url }]] } }),
+    body: JSON.stringify({ chat_id: chat, text, parse_mode: 'HTML', disable_web_page_preview: true,
+      ...(cabinetUrl ? { reply_markup: { inline_keyboard: [[{ text: 'Открыть кабинет', url: cabinetUrl }]] } } : {}) }),
   });
   const j = await r.json().catch(() => ({}));
   return { ok: r.ok && j.ok === true, code: j.error_code as number | undefined, desc: String(j.description ?? '') };
@@ -35,7 +41,7 @@ Deno.serve(async (req) => {
         customer: bk.customer_name, phone: bk.customer_phone, car: bk.car, priceCents: bk.price_cents, currency: cfg.currency ?? '' });
       let failure: string | null = null;
       for (const l of links as { chat_id: number }[]) {
-        const r = await send(token, l.chat_id, text, `${env('SITE_URL')}/s/${t.slug}/owner`);
+        const r = await send(token, l.chat_id, text, `${env('SITE_URL').replace(/\/+$/, '')}/s/${t.slug}/owner`);
         if (r.ok) continue;
         if (isDeadChat(r.code, r.desc)) { await admin.from('telegram_links').delete().eq('tenant_id', j.tenant_id).eq('chat_id', l.chat_id); continue; }
         failure = `telegram ${r.code ?? ''} ${r.desc}`.slice(0, 200);
