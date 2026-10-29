@@ -21,7 +21,9 @@ const Contact = z.object({
 });
 const TITLES = ['Услуга', 'Дата и время', 'Ваши данные', 'Подтверждение'];
 const ERR: Record<string, string> = { slot_taken: 'Это время только что заняли. Выберите другое.', invalid_slot: 'Это время недоступно для записи.',
-  past_start: 'Это время уже прошло.', consent_required: 'Нужно согласие на обработку данных.' };
+  past_start: 'Это время уже прошло.', consent_required: 'Нужно согласие на обработку данных.', bad_name: 'Проверьте имя.',
+  bad_phone: 'Проверьте номер телефона.', bad_car: 'Проверьте автомобиль.', rate_limited: 'Слишком много попыток записи. Попробуйте позже.',
+  booking_unavailable: 'Сервис записи временно недоступен. Попробуйте позже.' };
 
 export function BookingFlow({ b, initialService, onClose }: { b: Business; initialService?: string; onClose: () => void }) {
   const svcQ = useQuery({ queryKey: ['services', b.slug], queryFn: () => fetchServices(b.slug) });

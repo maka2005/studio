@@ -15,10 +15,15 @@ export async function fetchSlots(slug: string, service: string, day: string): Pr
   return (data ?? []) as Slot[];
 }
 export async function createBooking(a: { slug: string; service: string; start: string; name: string; phone: string; car: string; key: string; token: string; consent: string }) {
-  const { data, error } = await supabase.rpc('create_booking', { p_slug: a.slug, p_service: a.service, p_start: a.start,
-    p_name: a.name, p_phone: a.phone, p_car: a.car, p_key: a.key, p_token: a.token, p_consent: a.consent });
-  if (error) throw error;
-  return (data as { booking_id: string; starts_at: string; ends_at: string }[])[0];
+  const { data, error } = await supabase.functions.invoke('booking-create', { body: a });
+  if (error) {
+    const context = (error as { context?: Response }).context;
+    const body = await context?.clone().json().catch(() => null);
+    if (body?.error) throw new Error(String(body.error));
+    throw error;
+  }
+  if (data?.error) throw new Error(String(data.error));
+  return data?.booking as { booking_id: string; starts_at: string; ends_at: string };
 }
 export async function getBooking(token: string): Promise<MyBooking | null> {
   const { data, error } = await supabase.rpc('get_booking', { p_token: token });
@@ -31,9 +36,10 @@ export async function cancelBooking(token: string) {
 }
 
 const rpc = async <T,>(fn: string, args: Record<string, unknown>): Promise<T> => { const { data, error } = await supabase.rpc(fn, args); if (error) throw error; return data as T; };
-export type OwnerBooking = { id: string; service_name: string; starts_at: string; ends_at: string; status: string; customer_name: string;
+export type OwnerBooking = { id: string; service_id: string; service_name: string; starts_at: string; ends_at: string; status: string; customer_name: string;
   customer_phone: string; car: string; price_cents: number; paid_cents: number; resource_name: string };
 export type OwnerStats = { visits: number; done: number; booked: number; received_cents: number; expected_cents: number };
+export type OwnerNotificationStatus = { pending: number; failed: number; last_sent_at: string | null };
 export const owner = {
   me: (slug: string) => rpc<boolean>('owner_me', { p_slug: slug }),
   bookings: (slug: string, from: string, to: string) => rpc<OwnerBooking[]>('owner_bookings', { p_slug: slug, p_from: from, p_to: to }),
@@ -52,6 +58,7 @@ export const owner = {
   updateLegal: (slug: string, legal: Record<string, unknown>) => rpc<void>('owner_update_legal', { p_slug: slug, p_legal: legal }),
   telegramCode: (slug: string) => rpc<string>('owner_telegram_code', { p_slug: slug }),
   telegramLinks: (slug: string) => rpc<{ id: string; created_at: string }[]>('owner_telegram_links', { p_slug: slug }),
+  notificationStatus: async (slug: string) => (await rpc<OwnerNotificationStatus[]>('owner_notification_status', { p_slug: slug }))[0]!,
   telegramUnlink: (id: string) => rpc<void>('owner_telegram_unlink', { p_id: id }),
   resources: async (slug: string) => {
     const { data, error } = await supabase.from('resources').select('id,name,tenants!inner(slug)').eq('tenants.slug', slug); if (error) throw error;
@@ -60,5 +67,8 @@ export const owner = {
 };
 const MSG: [string, string][] = [['slot_taken', 'Это время занято.'], ['exclusion', 'Это время занято.'], ['invalid_slot', 'На это время приём не ведётся.'],
   ['past_start', 'Это время уже прошло.'], ['refund_exceeds', 'Возврат больше полученной суммы.'], ['bad_transition', 'Это действие недоступно для текущего статуса.'],
-  ['forbidden', 'Нет прав для этого действия.'], ['rate_limited', 'Уже создано несколько ссылок. Используйте действующую ссылку или повторите через 15 минут.'], ['consent_required', 'Нужно согласие на обработку данных.']];
+  ['forbidden', 'Нет прав для этого действия.'], ['rate_limited', 'Слишком много запросов. Попробуйте позже.'], ['bad_amount', 'Проверьте сумму.'],
+  ['bad_name', 'Проверьте имя клиента.'], ['bad_phone', 'Проверьте номер телефона.'], ['bad_car', 'Укажите автомобиль.'],
+  ['bad_config', 'Проверьте введённые настройки.'], ['bad_url', 'Ссылка должна начинаться с https://'],
+  ['consent_required', 'Нужно согласие на обработку данных.']];
 export const errText = (e: unknown) => { const m = String((e as Error)?.message ?? e); return MSG.find(([k]) => m.includes(k))?.[1] ?? 'Не удалось выполнить действие. Повторите.'; };

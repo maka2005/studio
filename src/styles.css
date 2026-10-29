@@ -92,4 +92,9 @@ img,svg{max-width:100%}.row>*{min-width:0}
 .install-block{margin-top:36px}
 .install{padding:24px}.install .row{margin-bottom:8px}.install h2.xl{margin:22px 0 10px}.install p{margin:0 0 14px}.install .btn{margin:8px 0 14px}
 .tabs2 button:disabled{opacity:.5;cursor:not-allowed}
+.week-calendar{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:12px;align-items:start}
+.week-day{min-width:0;padding:14px;background:var(--card);border:1px solid var(--line);border-radius:20px}
+.week-day h3{text-transform:capitalize;font-size:16px;margin:0 0 12px}
+.week-day .card{margin-bottom:8px;padding:14px;border-radius:18px}
+.delivery-status{display:flex;flex-direction:column;gap:6px;padding:14px;border-radius:18px;border:1px solid var(--line);background:#101216}
 @media (max-width:420px){h1{font-size:26px}h2{font-size:22px}.tiles3 .big{font-size:20px}.sheet{padding-left:16px;padding-right:16px}.acts{gap:8px}.act{padding:12px 4px;font-size:13px}.stats b{font-size:20px}.page{padding-left:14px;padding-right:14px}.top{padding-left:14px;padding-right:14px}}

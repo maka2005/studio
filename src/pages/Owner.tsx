@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'r
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useOutletContext } from 'react-router-dom'
 import { z } from 'zod'
-import { addDays, format } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 import { supabase } from '../lib/supabase'
@@ -185,7 +184,10 @@ function Bookings({ b }: { b: Business }) {
   const [sel, setSel] = useState<OwnerBooking | null>(null)
   const [add, setAdd] = useState(false)
   const [block, setBlock] = useState(false)
-  const to = mode === 'day' ? day : format(addDays(new Date(`${day}T12:00:00`), 6), 'yyyy-MM-dd')
+  const weekDays = Array.from({ length: 7 }, (_, i) =>
+    new Date(new Date(`${day}T12:00:00Z`).getTime() + i * 864e5).toISOString().slice(0, 10),
+  )
+  const to = mode === 'day' ? day : weekDays[6]!
   const list = useQuery({
     queryKey: ['owner', 'bookings', b.slug, day, to],
     queryFn: () => owner.bookings(b.slug, day, to),
@@ -220,6 +222,8 @@ function Bookings({ b }: { b: Business }) {
         />
       </div>
       {stats.data && (
+        <>
+        <p className="muted small">Показатели за {mode === 'day' ? 'этот день' : 'эти 7 дней'}</p>
         <div className="stats">
           <div className="card">
             <span className="muted small">Заезды</span>
@@ -238,6 +242,7 @@ function Bookings({ b }: { b: Business }) {
             <b>{money(Number(stats.data.expected_cents) / 100, b.currency)}</b>
           </div>
         </div>
+        </>
       )}
       {stats.isError && <p className="err small">Статистика недоступна.</p>}
       <div className="row wrap">
@@ -260,6 +265,23 @@ function Bookings({ b }: { b: Business }) {
         </p>
       ) : list.data.length === 0 ? (
         <p className="muted">Записей на этот период нет.</p>
+      ) : mode === 'week' ? (
+        <div className="week-calendar">
+          {weekDays.map((iso) => {
+            const entries = list.data.filter((x) => fmtT(b, x.starts_at, 'yyyy-MM-dd') === iso)
+            return <section className="week-day" key={iso}>
+              <h3>{formatInTimeZone(new Date(`${iso}T12:00:00Z`), b.timezone, 'EEEE, d MMMM', { locale: ru })}</h3>
+              {entries.length === 0 ? <p className="muted small">Записей нет</p> : entries.map((x) => (
+                <button key={x.id} className="card bk" onClick={() => setSel(x)}>
+                  <span className="row between"><b>{fmtT(b, x.starts_at, 'HH:mm')}</b><span className="pill">{STATUS[x.status] ?? x.status}</span></span>
+                  <span>{x.service_name} · {x.resource_name}</span>
+                  <span className="muted small">{x.car} · {x.customer_name} · {x.customer_phone}</span>
+                  <span className="muted small">{money(x.price_cents / 100, b.currency)} · оплачено {money(x.paid_cents / 100, b.currency)}</span>
+                </button>
+              ))}
+            </section>
+          })}
+        </div>
       ) : (
         list.data.map((x) => (
           <button key={x.id} className="card bk" onClick={() => setSel(x)}>
@@ -375,7 +397,7 @@ function Actions({
   const [move, setMove] = useState(false)
   const [slot, setSlot] = useState<string | null>(null)
   const svc = useQuery({ queryKey: ['owner', 'svc', b.slug], queryFn: () => fetchServices(b.slug) })
-  const sid = svc.data?.find((s) => s.name === bk.service_name)?.id ?? null
+  const sid = svc.data?.find((s) => s.id === bk.service_id)?.id ?? null
   const cents = Math.round(Number(amount.replace(',', '.')) * 100)
   const okAmt = Number.isFinite(cents) && cents > 0
   return (
@@ -1227,6 +1249,11 @@ function Notify({ b }: { b: Business }) {
     queryKey: ['owner', 'telegram', b.slug],
     queryFn: () => owner.telegramLinks(b.slug),
   })
+  const health = useQuery({
+    queryKey: ['owner', 'notification-status', b.slug],
+    queryFn: () => owner.notificationStatus(b.slug),
+    refetchInterval: 30_000,
+  })
   const connect = useMutation({
     mutationFn: async () => {
       if (!bot || !/^[A-Za-z0-9_]{5,32}$/.test(bot)) throw new Error('telegram_bot_not_configured')
@@ -1253,6 +1280,16 @@ function Notify({ b }: { b: Business }) {
             <span>Чат подключён · {formatInTimeZone(new Date(item.created_at), b.timezone, 'd MMM yyyy', { locale: ru })}</span>
             <button className="btn ghost mini" disabled={unlink.isPending} onClick={() => unlink.mutate(item.id)}>Отключить</button>
           </div>)}
+      {links.data?.length ? <div className="delivery-status" role="status">
+        <b>Доставка уведомлений</b>
+        {health.isPending ? <span className="muted small">Проверяем очередь…</span>
+          : health.isError ? <span className="err small">Не удалось проверить очередь. Обновите статус.</span>
+          : health.data.failed > 0 ? <span className="err small">Не отправлено: {health.data.failed}. Проверьте токен бота и настройки доставки.</span>
+          : health.data.pending > 0 ? <span className="muted small">В очереди: {health.data.pending}. Обычно доставка занимает до минуты.</span>
+          : health.data.last_sent_at ? <span className="muted small">Последнее успешное уведомление: {formatInTimeZone(new Date(health.data.last_sent_at), b.timezone, 'd MMM, HH:mm', { locale: ru })}</span>
+          : <span className="muted small">Подключение подтверждено ботом. Доставка ещё не проверялась.</span>}
+        {health.isError && <button className="link" onClick={() => void health.refetch()}>Повторить</button>}
+      </div> : null}
       <button className="link" onClick={() => void links.refetch()}>Обновить статус подключения</button>
       {link && <div className="card col">
         <b>Шаг 1. Откройте бота и нажмите «Запустить»</b>

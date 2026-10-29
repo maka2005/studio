@@ -1,15 +1,56 @@
-{"slug":"graphite","name":"SGX Detailing","short_name":"SGX","accent":"#4690FF","timezone":"Europe/Moscow","currency":"₽",
- "buffer_minutes":30,"slot_minutes":60,"cancel_hours":24,"demo":true,
- "phone":"+7 495 000 00 00","address":"Москва, Примерная улица, 12",
- "description":"Детейлинг, который возвращает кузову глубину, а салону — чистоту",
- "images":{"logo":"images/logo.svg","hero":"images/hero.svg"},
- "gallery":[{"image":"images/work1.svg","caption":"Полировка кузова"},{"image":"images/work2.svg","caption":"Керамическое покрытие"},{"image":"images/work3.svg","caption":"Химчистка салона"}],
- "cards":{"booking":{"title":"Свежий вид для вашего авто","text":"Выберите услугу и удобное время — остальное возьмём на себя"},
-  "ai":{"title":"Запись с ИИ","text":"Подберёт услугу для автомобиля и покажет актуальное время"},
-  "install":{"title":"Студия всегда под рукой.","text":"Записывайтесь за несколько касаний, без поиска ссылки и звонков."}},
- "resources":["Бокс 1","Бокс 2","Бокс 3"],
- "hours":{"mon":["09:00","17:00"],"tue":["09:00","17:00"],"wed":["09:00","17:00"],"thu":["09:00","17:00"],"fri":["09:00","17:00"],"sat":["09:00","17:00"],"sun":null},
- "services":[{"name":"Комплексная мойка","price":3500,"duration_minutes":120},
-  {"name":"Химчистка салона","price":12000,"duration_minutes":1440,"price_from":true},
-  {"name":"Полировка кузова","price":18000,"duration_minutes":1440,"price_from":true},
-  {"name":"Керамическое покрытие","price":25000,"duration_minutes":2880,"price_from":true}]}
+{
+  "slug": "graphite",
+  "name": "KostAutoHub ",
+  "short_name": "KostAutoHub ",
+  "accent": "#4690FF",
+  "timezone": "Asia/Aqtobe",
+  "currency": "₸",
+  "buffer_minutes": 30,
+  "slot_minutes": 60,
+  "cancel_hours": 24,
+  "demo": true,
+  "phone": "+7 7470356684",
+  "address": "костанай",
+  "description": "Детейлинг, который возвращает кузову глубину, а салону — чистоту",
+  "images": { "logo": "images/logo.svg", "hero": "images/hero.svg" },
+  "gallery": [
+    { "image": "images/work1.svg", "caption": "Полировка кузова" },
+    { "image": "images/work2.svg", "caption": "Керамическое покрытие" },
+    { "image": "images/work3.svg", "caption": "Химчистка салона" }
+  ],
+  "cards": {
+    "booking": {
+      "title": "Свежий вид для вашего авто",
+      "text": "Выберите услугу и удобное время — остальное возьмём на себя"
+    },
+    "ai": {
+      "title": "Запись с ИИ",
+      "text": "Подберёт услугу для автомобиля и покажет актуальное время"
+    },
+    "install": {
+      "title": "Студия всегда под рукой.",
+      "text": "Записывайтесь за несколько касаний, без поиска ссылки и звонков."
+    }
+  },
+  "resources": ["Бокс 1", "Бокс 2", "Бокс 3"],
+  "hours": {
+    "mon": ["09:00", "17:00"],
+    "tue": ["09:00", "17:00"],
+    "wed": ["09:00", "17:00"],
+    "thu": ["09:00", "17:00"],
+    "fri": ["09:00", "17:00"],
+    "sat": ["09:00", "17:00"],
+    "sun": null
+  },
+  "services": [
+    { "name": "Комплексная мойка", "price": 3500, "duration_minutes": 120 },
+    { "name": "Химчистка салона", "price": 12000, "duration_minutes": 1440, "price_from": true },
+    { "name": "Полировка кузова", "price": 18000, "duration_minutes": 1440, "price_from": true },
+    {
+      "name": "Керамическое покрытие",
+      "price": 25000,
+      "duration_minutes": 2880,
+      "price_from": true
+    }
+  ]
+}
