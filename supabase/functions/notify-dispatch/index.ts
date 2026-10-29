@@ -21,11 +21,15 @@ Deno.serve(async (req) => {
   let sent = 0, retry = 0;
   for (const j of (jobs ?? []) as { id: string; tenant_id: string; kind: Kind; booking_id: string }[]) {
     try {
-      const { data: bk } = await admin.from('bookings').select('starts_at,price_cents,customer_name,customer_phone,car,service_id').eq('id', j.booking_id).maybeSingle();
-      const { data: t } = await admin.from('tenants').select('slug,timezone,config').eq('id', j.tenant_id).maybeSingle();
-      const { data: links } = await admin.from('telegram_links').select('chat_id').eq('tenant_id', j.tenant_id);
+      const { data: bk, error: bookingError } = await admin.from('bookings').select('starts_at,price_cents,customer_name,customer_phone,car,service_id').eq('id', j.booking_id).maybeSingle();
+      if (bookingError) throw bookingError;
+      const { data: t, error: tenantError } = await admin.from('tenants').select('slug,timezone,config').eq('id', j.tenant_id).maybeSingle();
+      if (tenantError) throw tenantError;
+      const { data: links, error: linksError } = await admin.from('telegram_links').select('chat_id').eq('tenant_id', j.tenant_id);
+      if (linksError) throw linksError;
       if (!bk || !t || !links?.length) { await admin.rpc('finish_notification_job', { p_id: j.id, p_ok: true, p_error: null }); sent++; continue; }
-      const { data: svc } = await admin.from('services').select('name').eq('tenant_id', j.tenant_id).eq('id', bk.service_id).maybeSingle();
+      const { data: svc, error: serviceError } = await admin.from('services').select('name').eq('tenant_id', j.tenant_id).eq('id', bk.service_id).maybeSingle();
+      if (serviceError) throw serviceError;
       const cfg = t.config as { name?: string; currency?: string };
       const text = buildMessage({ kind: j.kind, studio: cfg.name ?? t.slug, service: svc?.name ?? '', startsAt: bk.starts_at, timezone: t.timezone,
         customer: bk.customer_name, phone: bk.customer_phone, car: bk.car, priceCents: bk.price_cents, currency: cfg.currency ?? '' });

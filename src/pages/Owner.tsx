@@ -1219,27 +1219,49 @@ function Docs({ b }: { b: Business }) {
 
 const BOT = import.meta.env.VITE_TELEGRAM_BOT as string | undefined
 function Notify({ b }: { b: Business }) {
+  const qc = useQueryClient()
+  const [link, setLink] = useState<string | null>(null)
+  const [msg, setMsg] = useState<string | null>(null)
+  const bot = BOT?.trim().replace(/^@/, '')
+  const links = useQuery({
+    queryKey: ['owner', 'telegram', b.slug],
+    queryFn: () => owner.telegramLinks(b.slug),
+  })
+  const connect = useMutation({
+    mutationFn: async () => {
+      if (!bot || !/^[A-Za-z0-9_]{5,32}$/.test(bot)) throw new Error('telegram_bot_not_configured')
+      const code = await owner.telegramCode(b.slug)
+      return `https://t.me/${bot}?start=${code}`
+    },
+    onSuccess: (url) => { setLink(url); setMsg(null) },
+    onError: (e) => { setLink(null); setMsg(errText(e)) },
+  })
+  const unlink = useMutation({
+    mutationFn: (id: string) => owner.telegramUnlink(id),
+    onSuccess: () => { setMsg(null); void qc.invalidateQueries({ queryKey: ['owner', 'telegram', b.slug] }) },
+    onError: (e) => setMsg(errText(e)),
+  })
   return (
     <div className="card col" style={{ gap: 16 }}>
       <h3>Telegram-уведомления</h3>
       <p className="muted small">
-        Здесь можно будет настроить отправку мгновенных уведомлений о новых записях, отмене или
-        переносе прямо в ваш Telegram-чат.
+        Получайте уведомления о новых записях и отменах. Создайте ссылку и откройте её в Telegram,
+        затем нажмите «Запустить» у бота.
       </p>
-
-      <div
-        className="card"
-        style={{ background: 'rgba(255, 255, 255, 0.03)', borderStyle: 'dashed' }}
-      >
-        <p style={{ margin: 0, fontWeight: 500 }}>🔔 Функция находится в разработке</p>
-        <p className="muted small" style={{ margin: '4px 0 0 0' }}>
-          Скоро здесь появится кнопка для быстрой привязки Telegram-бота к вашей студии.
-        </p>
-      </div>
-
-      <button className="btn" disabled style={{ opacity: 0.6, cursor: 'not-allowed' }}>
-        Подключить Telegram (скоро)
+      {msg && <p className="err" role="alert">{msg}</p>}
+      {links.isPending ? <p className="muted small">Проверяем подключённые чаты…</p>
+        : links.isError ? <p className="err small">Не удалось загрузить подключения. <button className="link" onClick={() => void links.refetch()}>Повторить</button></p>
+        : links.data.length === 0 ? <p className="muted small">Пока нет подключённых чатов.</p>
+        : links.data.map((item) => <div className="row between" key={item.id}>
+            <span>Чат подключён · {formatInTimeZone(new Date(item.created_at), b.timezone, 'd MMM yyyy', { locale: ru })}</span>
+            <button className="btn ghost mini" disabled={unlink.isPending} onClick={() => unlink.mutate(item.id)}>Отключить</button>
+          </div>)}
+      {link && <a className="btn" href={link} target="_blank" rel="noreferrer">Открыть Telegram и подключить</a>}
+      {!bot && <p className="muted small">Для кнопки подключения задайте публичную переменную VITE_TELEGRAM_BOT с именем бота.</p>}
+      <button className="btn" disabled={!bot || connect.isPending} onClick={() => connect.mutate()}>
+        {connect.isPending ? 'Создаём ссылку…' : 'Подключить чат'}
       </button>
+      <p className="muted small">После привязки уведомления отправляет серверный диспетчер. Бот должен быть запущен, а расписание диспетчера настроено.</p>
     </div>
   )
 }

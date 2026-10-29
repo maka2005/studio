@@ -12,7 +12,8 @@ begin
   step := coalesce((t.config->>'slot_minutes')::int, 60);
   ts  := (p_day + (h->>0)::time)::timestamp at time zone t.timezone;
   lim := (p_day + (h->>1)::time)::timestamp at time zone t.timezone;
-  while ts + make_interval(mins => step) <= lim loop
+  -- Услуга должна завершиться до закрытия; slot_minutes задаёт только сетку стартов.
+  while ts + make_interval(mins => s.duration_minutes) <= lim loop
     slot := ts;
     free := ts > now() and exists(
       select 1 from resources r where r.tenant_id = t.id and not exists(
