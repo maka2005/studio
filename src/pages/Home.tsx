@@ -7,10 +7,9 @@ import { Arrow, ArrowRight, Car, Clock, Download, Phone, Photo, Pin, Sparkle, Ta
 import { Reveal } from '../components/Reveal';
 import { ServiceList } from './ServiceList';
 import { useServices } from '../lib/useServices';
-import { AI_ENABLED } from '../lib/features';
 import '../lib/install';   // ловит событие установки с самого запуска
 export function Home() {
-  const { b, openBooking, openAI } = useOutletContext<Ctx>(); const services = useServices(b);
+  const { b, openBooking, openGuide } = useOutletContext<Ctx>(); const services = useServices(b);
   const reviews = useQuery({ queryKey: ['public-reviews', b.slug], queryFn: () => owner.publicReviews(b.slug), staleTime: 5 * 60_000 });
   const img = (p: string) => `url(${assetUrl(b.slug, p)})`;
   const ranges = [...new Set(Object.values(b.hours).filter(Boolean).map((h) => `${h![0]}–${h![1]}`))];
@@ -30,8 +29,8 @@ export function Home() {
       <Reveal className="col-side"><h2>Запись в студию</h2>
         <div className="card promo"><Car className="car" /><h3>{b.cards.booking.title}</h3><p className="muted">{b.cards.booking.text}</p>
           <button className="btn" onClick={() => openBooking()}>Выбрать время <Arrow /></button></div>
-        <div className="card col"><div className="row"><span className="ico accent"><Sparkle /></span><div><b>{b.cards.ai.title}</b><p className="muted small">{b.cards.ai.text}</p></div></div>
-          <button className="btn ghost" disabled={!AI_ENABLED} onClick={openAI}>{AI_ENABLED ? <>Подобрать услугу <Arrow size={16} /></> : 'Скоро будет доступно'}</button></div>
+        <div className="card col"><div className="row"><span className="ico accent"><Sparkle /></span><div><b>Бесплатный подбор услуги</b><p className="muted small">Ответьте на один вопрос — покажем подходящие услуги из прайса. Без ИИ и платных токенов.</p></div></div>
+          <button className="btn ghost" onClick={openGuide}>Подобрать услугу <Arrow size={16} /></button></div>
         <div className="card col"><div className="row"><Pin /><b>{b.address}</b></div>
           <div className="row"><Clock /><div>{ranges.length === 1 ? <b>{ranges[0]}</b> : <b>по графику</b>}<p className="muted small">по времени студии</p></div></div>
           <div className="row"><a className="btn ghost inline" href={routeHref} target="_blank" rel="noreferrer">Маршрут <Arrow size={16} /></a>

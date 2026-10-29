@@ -15,7 +15,11 @@ export function ServiceList({ limit }: { limit?: number }) {
     <div className="card list">{shown.map((s, i) => { const Icon = ICONS[i % ICONS.length]!; const saved = favorites.has(s.name); return (
       <div key={s.name} className="svc">
         <span className="sico"><Icon /></span>
-        <button className="service-choice" onClick={() => openBooking(s.name)}><b>{s.name}</b><br /><span className="muted small">{duration(s.duration_minutes)}</span><span className="right"><b>{s.price_from ? 'от ' : ''}{money(s.price, b.currency)}</b><br /><span className="muted small">Выбрать</span></span><Arrow /></button>
+        <button className="service-choice" onClick={() => openBooking(s.name)}>
+          <span className="service-info"><b>{s.name}</b><span className="muted small">{duration(s.duration_minutes)}</span></span>
+          <span className="service-price"><b>{s.price_from ? 'от ' : ''}{money(s.price, b.currency)}</b><span className="muted small">Выбрать</span></span>
+          <Arrow className="service-arrow" />
+        </button>
         <button className={`favorite-toggle ${saved ? 'is-favorite' : ''}`} type="button" aria-label={saved ? `Убрать ${s.name} из избранного` : `Добавить ${s.name} в избранное`} aria-pressed={saved} onClick={() => favorites.toggle(s.name)}>{saved ? '♥' : '♡'}</button>
       </div>); })}
       {shown.length === 0 && <p className="muted">В избранном пока пусто. Нажмите ♡ рядом с услугой.</p>}
