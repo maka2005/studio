@@ -752,52 +752,21 @@ function ServiceRow({
     name.trim() && category.trim().length > 0 && category.trim().length <= 60 && Number.isFinite(cents) && cents >= 0 && Number.isInteger(minutes) && minutes > 0
   const categoryListId = `service-categories-${b.slug}-${s.id ?? 'new'}`
   return (
-    <div className="card col">
+    <article className="admin-service-row">
       <Err m={a.msg} />
-      <input
-        aria-label="Название"
-        className="field"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-      />
-      <label className="muted small" htmlFor={`${categoryListId}-input`}>Категория</label>
-      <select id={`${categoryListId}-input`} aria-label="Категория услуги" className="field" value={category} onChange={(e) => setCategory(e.target.value)}>
-        {[...new Set([...SERVICE_CATEGORIES, ...categoryOptions])].map((item) => <option key={item} value={item}>{item}</option>)}
-      </select>
-      <div className="row">
-        <div style={{ flex: 1 }}>
-          <label className="muted small">Цена, {b.currency}</label>
-          <input
-            className="field"
-            inputMode="decimal"
-            value={price}
-            onChange={(e) => setPrice(e.target.value)}
-          />
-        </div>
-        <div style={{ flex: 1 }}>
-          <label className="muted small">Минут ({ok ? duration(minutes) : '—'})</label>
-          <input
-            className="field"
-            inputMode="numeric"
-            value={min}
-            onChange={(e) => setMin(e.target.value)}
-          />
-        </div>
+      <div className="admin-service-main">
+        <div><label className="muted small" htmlFor={`${categoryListId}-name`}>Название услуги</label><input id={`${categoryListId}-name`} aria-label="Название" className="field" value={name} onChange={(e) => setName(e.target.value)} /></div>
+        <div><label className="muted small" htmlFor={`${categoryListId}-input`}>Категория</label><select id={`${categoryListId}-input`} aria-label="Категория услуги" className="field" value={category} onChange={(e) => setCategory(e.target.value)}>
+          {[...new Set([...SERVICE_CATEGORIES, ...categoryOptions])].map((item) => <option key={item} value={item}>{item}</option>)}
+        </select></div>
+        <div><label className="muted small" htmlFor={`${categoryListId}-price`}>Цена, {b.currency}</label><input id={`${categoryListId}-price`} className="field" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} /></div>
+        <div><label className="muted small" htmlFor={`${categoryListId}-duration`}>Длительность</label><input id={`${categoryListId}-duration`} className="field" inputMode="numeric" value={min} onChange={(e) => setMin(e.target.value)} /><span className="muted small">{ok ? duration(minutes) : 'Укажите минуты'}</span></div>
       </div>
-      <label className="row">
-        <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />{' '}
-        Показывать клиентам
-      </label>
-      <button
-        className="btn mini"
-        disabled={!ok || a.busy}
-        onClick={() =>
-          a.run(() => owner.upsertService(b.slug, { id: s.id, name, category, cents, minutes, active }))
-        }
-      >
-        Сохранить
-      </button>
-    </div>
+      <div className="admin-service-footer">
+        <label className="admin-service-active"><input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} /><span className={`admin-service-status ${active ? 'on' : 'off'}`}>{active ? 'Показывается клиентам' : 'Скрыта от клиентов'}</span></label>
+        <button className="btn mini admin-service-save" disabled={!ok || a.busy} onClick={() => a.run(() => owner.upsertService(b.slug, { id: s.id, name, category, cents, minutes, active }))}>{a.busy ? 'Сохраняем…' : 'Сохранить'}</button>
+      </div>
+    </article>
   )
 }
 function Services({ b }: { b: Business }) {
@@ -805,6 +774,8 @@ function Services({ b }: { b: Business }) {
   const q = useQuery({ queryKey: ['owner', 'services', b.slug], queryFn: () => fetchServices(b.slug, true) })
   const [n, setN] = useState(0)
   const [search, setSearch] = useState('')
+  const [categoryFilter, setCategoryFilter] = useState('Все услуги')
+  const [visibilityFilter, setVisibilityFilter] = useState<'Все' | 'Активные' | 'Скрытые'>('Все')
   const saved = () => {
     void qc.invalidateQueries({ queryKey: ['services', b.slug] })
     void qc.invalidateQueries({ queryKey: ['owner', 'services', b.slug] })
@@ -825,11 +796,21 @@ function Services({ b }: { b: Business }) {
           <input id={`admin-service-search-${b.slug}`} className="field" type="search" placeholder="Поиск по названию или категории" value={search} onChange={(e) => setSearch(e.target.value)} />
           {(() => {
             const needle = search.trim().toLocaleLowerCase('ru').replaceAll('ё', 'е')
-            const rows = q.data.filter((service) => `${service.name} ${service.category}`.toLocaleLowerCase('ru').replaceAll('ё', 'е').includes(needle))
             const options = [...new Set([...SERVICE_CATEGORIES, ...serviceCategories(q.data)])]
+            const rows = q.data.filter((service) => {
+              const matchesSearch = `${service.name} ${service.category}`.toLocaleLowerCase('ru').replaceAll('ё', 'е').includes(needle)
+              const matchesCategory = categoryFilter === 'Все услуги' || service.category === categoryFilter
+              const matchesVisibility = visibilityFilter === 'Все' || (visibilityFilter === 'Активные' ? service.active : !service.active)
+              return matchesSearch && matchesCategory && matchesVisibility
+            })
             return <>
-              <p className="muted small">Показано {rows.length} из {q.data.length}</p>
-              <div className="admin-services-grid">
+              <div className="admin-service-filters">
+                <label><span className="muted small">Категория</span><select className="field" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}><option>Все услуги</option>{options.map((item) => <option key={item}>{item}</option>)}</select></label>
+                <label><span className="muted small">Показ</span><select className="field" value={visibilityFilter} onChange={(e) => setVisibilityFilter(e.target.value as typeof visibilityFilter)}><option>Все</option><option>Активные</option><option>Скрытые</option></select></label>
+                <span className="admin-service-result-count">Найдено <b>{rows.length}</b> из {q.data.length}</span>
+              </div>
+              <div className="admin-service-table">
+                <div className="admin-service-table-head"><span>Услуга</span><span>Цена</span><span>Время</span><span>Статус</span><span>Действия</span></div>
                 {rows.map((s) => <ServiceRow key={s.id + s.name} b={b} s={s} categoryOptions={options} onSaved={saved} />)}
               </div>
               {rows.length === 0 && <p className="muted">По этому запросу услуги не найдены.</p>}

@@ -20,7 +20,7 @@ export function ServiceList({ limit }: { limit?: number }) {
       {categories.length > 1 && <div className="service-category-filter" aria-label="Категории услуг">
         {[ALL_SERVICES_CATEGORY, ...categories].map((item) => <button key={item} className={`chip ${category === item ? 'sel' : ''}`} aria-pressed={category === item} onClick={() => setCategory(item)}>{item}</button>)}
       </div>}
-      <div className="row between" style={{ margin: '0 0 12px' }}><span className="muted small">{matching.length} из {services.length} услуг</span><button className="link" aria-pressed={onlyFavorites} onClick={() => setOnlyFavorites((v) => !v)}>{onlyFavorites ? 'Показать все' : `Избранное · ${favorites.items.length}`}</button></div>
+      <div className="catalog-toolbar"><span className="muted small">{shown.length} из {matching.length} услуг</span><button className={`favorites-filter ${onlyFavorites ? 'active' : ''}`} aria-pressed={onlyFavorites} onClick={() => setOnlyFavorites((v) => !v)}><span aria-hidden="true">♡</span>{onlyFavorites ? 'Избранное' : 'Избранное'}<span className="favorites-count">{favorites.items.length}</span></button></div>
     </>}
     <div className="card list">{shown.map((s, i) => { const Icon = ICONS[i % ICONS.length]!; const saved = favorites.has(s.name); return (
       <div key={s.name} className="svc">
@@ -30,7 +30,7 @@ export function ServiceList({ limit }: { limit?: number }) {
           <span className="service-price"><b>{s.price_from ? 'от ' : ''}{money(s.price, b.currency)}</b><span className="muted small">Записаться</span></span>
           <Arrow className="service-arrow" />
         </button>
-        <button className={`favorite-toggle ${saved ? 'is-favorite' : ''}`} type="button" aria-label={saved ? `Убрать ${s.name} из избранного` : `Добавить ${s.name} в избранное`} aria-pressed={saved} onClick={() => favorites.toggle(s.name)}>{saved ? '♥' : '♡'}</button>
+        <button className={`favorite-toggle ${saved ? 'is-favorite' : ''}`} type="button" aria-label={saved ? `Убрать ${s.name} из избранного` : `Добавить ${s.name} в избранное`} aria-pressed={saved} onClick={() => favorites.toggle(s.name)}><span aria-hidden="true">{saved ? '♥' : '♡'}</span></button>
       </div>); })}
       {shown.length === 0 && <p className="muted">{onlyFavorites ? 'Под этим фильтром нет избранных услуг. Нажмите ♡ рядом с услугой, чтобы добавить её.' : !limit && (search || category !== ALL_SERVICES_CATEGORY) ? 'По этому запросу услуг нет. Измените поиск или категорию.' : 'Услуг пока нет.'}</p>}
     </div></>);
