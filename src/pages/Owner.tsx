@@ -761,8 +761,9 @@ function ServiceRow({
         onChange={(e) => setName(e.target.value)}
       />
       <label className="muted small" htmlFor={`${categoryListId}-input`}>Категория</label>
-      <input id={`${categoryListId}-input`} aria-label="Категория услуги" list={categoryListId} className="field" maxLength={60} value={category} onChange={(e) => setCategory(e.target.value)} />
-      <datalist id={categoryListId}>{[...new Set([...SERVICE_CATEGORIES, ...categoryOptions])].map((item) => <option key={item} value={item} />)}</datalist>
+      <select id={`${categoryListId}-input`} aria-label="Категория услуги" className="field" value={category} onChange={(e) => setCategory(e.target.value)}>
+        {[...new Set([...SERVICE_CATEGORIES, ...categoryOptions])].map((item) => <option key={item} value={item}>{item}</option>)}
+      </select>
       <div className="row">
         <div style={{ flex: 1 }}>
           <label className="muted small">Цена, {b.currency}</label>
