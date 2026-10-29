@@ -10,6 +10,7 @@ import { Arrow, ArrowLeft, Check, User } from '../lib/icons';
 import { money, telHref } from '../lib/format';
 import { allTokens } from '../lib/tokens';
 import { LEGAL_VERSION } from '../lib/legal';
+import { LoadingScreen } from '../components/LoadingScreen';
 import './profile.css';
 
 const STATUS: Record<string, string> = { booked: 'Подтверждена', arrived: 'Машина принята', done: 'Выполнена', cancelled: 'Отменена' };
@@ -23,7 +24,7 @@ function ProfileInner() {
   useEffect(() => { const { data } = supabase.auth.onAuthStateChange(() => { void qc.invalidateQueries({ queryKey: ['client'] }); }); return () => data.subscription.unsubscribe(); }, [qc]);
   return (<div className="page"><div className="profile-wrap">
     <Link to={`/s/${b.slug}`} className="back-link"><ArrowLeft size={18} /> На главную</Link>
-    {sess.isPending ? <p className="muted">Загрузка…</p>
+    {sess.isPending ? <LoadingScreen label="Загружаем профиль…" compact />
       : sess.data ? <><Signed b={b} email={sess.data.user.email ?? ''} confirmed={!!sess.data.user.email_confirmed_at} />
           <footer className="row between muted prof-foot"><span>{b.short_name}</span><a href={telHref(b.phone)}>Связаться <Arrow size={14} /></a></footer></>
       : <><SignIn slug={b.slug} /><p className="owner-link"><MailIcon />Вы владелец студии? <Link to={`/s/${b.slug}/owner`}>Открыть кабинет студии</Link></p></>}</div></div>);
@@ -88,7 +89,7 @@ function Signed({ b, email, confirmed }: { b: Business; email: string; confirmed
     <div className="card okcard"><span className="okc"><Check size={16} /></span><div><b>{confirmed ? 'Почта подтверждена' : 'Почта не подтверждена'}</b>
       <p className="muted small">{confirmed ? 'Новые записи сохранятся в этом профиле.' : 'Подтвердите почту по ссылке из письма.'}</p></div></div>
     <h2 style={{ marginTop: 28 }}>Мои записи</h2>
-    {list.isPending ? <p className="muted">Загрузка…</p> : list.isError ? <p className="err">Не удалось загрузить записи. <button className="link" onClick={() => list.refetch()}>Повторить</button></p>
+    {list.isPending ? <LoadingScreen label="Загружаем записи…" compact /> : list.isError ? <p className="err">Не удалось загрузить записи. <button className="link" onClick={() => list.refetch()}>Повторить</button></p>
       : list.data.length === 0 ? <p className="muted">Пока записей нет. Когда вы запишетесь, они появятся здесь.</p>
       : list.data.map((r) => (<div className="bk-row" key={r.id}>
           <b>{r.service_name}</b><span>{f(r.starts_at)}</span><span className="muted small">{STATUS[r.status] ?? r.status} · {r.car} · {money(r.price_cents / 100, b.currency)}</span>

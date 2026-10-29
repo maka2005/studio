@@ -11,6 +11,7 @@ import { assetUrl, type Business, type Ctx } from '../lib/tenant'
 import { prepareImage, removeByUrl, uploadImage } from '../lib/media'
 import { Sheet } from '../components/Sheet'
 import { AssistantSheet } from '../components/AssistantSheet'
+import { LoadingScreen } from '../components/LoadingScreen'
 import { SERVICE_CATEGORIES, serviceCategories } from '../lib/serviceCatalog'
 import './owner-login.css'
 import './owner-media.css'
@@ -41,7 +42,7 @@ export function Owner() {
     await supabase.auth.signOut()
     qc.removeQueries({ queryKey: ['owner'] })
   } // приватный кэш очищается при выходе
-  if (sess.isPending) return <p className="pad muted">Загрузка…</p>
+  if (sess.isPending) return <LoadingScreen label="Открываем кабинет…" />
   if (!sess.data) return <Login />
   return <Cabinet b={b} onLogout={logout} />
 }
@@ -133,7 +134,7 @@ function Cabinet({ b, onLogout }: { b: Business; onLogout: () => void }) {
   const [tab, setTab] = useState<(typeof TABS)[number]>('Записи')
   const [ai, setAi] = useState(false)
   const me = useQuery({ queryKey: ['owner', 'me', b.slug], queryFn: () => owner.me(b.slug) })
-  if (me.isPending) return <p className="pad muted">Проверяем доступ…</p>
+  if (me.isPending) return <LoadingScreen label="Проверяем доступ…" />
   if (me.isError)
     return (
       <p className="pad err">

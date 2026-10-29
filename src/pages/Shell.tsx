@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { assetUrl, loadBusiness, type Ctx } from '../lib/tenant';
 import { Calendar, Grid, Home, User } from '../lib/icons';
 import { BookingFlow } from '../components/BookingFlow';
+import { LoadingScreen } from '../components/LoadingScreen';
 export function Shell() {
   const { slug = '' } = useParams();
   const location = useLocation();
@@ -17,7 +18,7 @@ export function Shell() {
     const l = document.createElement('link'); l.rel = 'manifest'; l.href = `/tenants/${slug}.webmanifest`; document.head.appendChild(l);
     return () => { l.remove(); };
   }, [b, slug]);
-  if (q.isPending) return <p className="pad muted">Загрузка…</p>;
+  if (q.isPending) return <LoadingScreen />;
   if (q.isError || !b) return <p className="pad">Студия не найдена. <button className="link" onClick={() => q.refetch()}>Повторить</button></p>;
   const base = `/s/${slug}`;
   const ctx: Ctx = { b, openBooking: (service) => setBooking({ service }) };

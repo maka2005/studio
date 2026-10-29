@@ -9,6 +9,7 @@ import { money, telHref } from '../lib/format';
 import { saveToken } from '../lib/tokens';
 import { Bell, Calendar, Check, Copy, Phone } from '../lib/icons';
 import { CustomerTelegramOptIn } from '../components/CustomerTelegramOptIn';
+import { LoadingScreen } from '../components/LoadingScreen';
 const STATUS: Record<string, string> = { booked: 'Подтверждена', arrived: 'Машина принята', done: 'Работа выполнена', cancelled: 'Отменена' };
 
 // Токен берётся из приватной ссылки (#t=...) либо из хранилища этого устройства. Фрагмент не уходит на сервер.
@@ -38,7 +39,7 @@ export function MyBooking() {
       : 'Не удалось отправить отзыв. Проверьте соединение и попробуйте ещё раз.');
   } });
   if (!token || (q.isSuccess && !q.data)) return <section className="page"><h2>Моя запись</h2><p className="muted">Пока здесь нет записей. Выберите услугу и удобное время, чтобы записаться.</p><button className="btn" onClick={() => openBooking()}>Выбрать услугу</button></section>;
-  if (q.isPending) return <p className="page muted">Загрузка…</p>;
+  if (q.isPending) return <LoadingScreen label="Загружаем вашу запись…" compact />;
   if (q.isError) return <p className="page err">Не удалось загрузить запись. <button className="link" onClick={() => q.refetch()}>Повторить</button></p>;
   const d = q.data!; const f = (s: string, p: string) => formatInTimeZone(new Date(s), b.timezone, p, { locale: ru });
   const z = (s: string) => new Date(s).toISOString().replace(/[-:]|\.\d{3}/g, '');
