@@ -131,6 +131,7 @@ function Login() {
 function Cabinet({ b, onLogout }: { b: Business; onLogout: () => void }) {
   const [tab, setTab] = useState<(typeof TABS)[number]>('Записи')
   const me = useQuery({ queryKey: ['owner', 'me', b.slug], queryFn: () => owner.me(b.slug) })
+  const access = useQuery({ queryKey: ['owner', 'access', b.slug], queryFn: () => owner.access(b.slug), enabled: !!me.data })
   if (me.isPending) return <LoadingScreen label="Проверяем доступ…" />
   if (me.isError)
     return (
@@ -151,6 +152,11 @@ function Cabinet({ b, onLogout }: { b: Business; onLogout: () => void }) {
         </button>
       </section>
     )
+  if (access.isPending) return <LoadingScreen label="Загружаем права доступа…" />
+  if (access.isError || !access.data) return <p className="pad err">Не удалось определить роль. Обновите страницу или обратитесь к владельцу.</p>
+  const role = access.data
+  const visibleTabs = (role === 'staff' ? ['Записи'] : role === 'manager' ? TABS.filter((t) => !['Студия','Фото','Уведомления','Документы'].includes(t)) : TABS) as readonly (typeof TABS)[number][]
+  if (!visibleTabs.includes(tab)) setTab('Записи')
   return (
     <section className="pad admin-shell">
       <div className="admin-heading">
@@ -164,7 +170,7 @@ function Cabinet({ b, onLogout }: { b: Business; onLogout: () => void }) {
         </button>
       </div>
       <div className="tabs2 admin-tabs" role="tablist" aria-label="Разделы кабинета">
-        {TABS.map((t) => (
+        {visibleTabs.map((t) => (
           <button
             key={t}
             role="tab"
@@ -175,7 +181,7 @@ function Cabinet({ b, onLogout }: { b: Business; onLogout: () => void }) {
           </button>
         ))}
       </div>
-      {tab === 'Записи' && <Bookings b={b} />}
+      {tab === 'Записи' && <Bookings b={b} role={role} />}
       {tab === 'Отчёты' && <Reports b={b} />}
       {tab === 'Команда и посты' && <TeamResources b={b} />}
       {tab === 'История' && <AuditHistory b={b} />}
@@ -318,7 +324,7 @@ const today = (b: Business) => formatInTimeZone(new Date(), b.timezone, 'yyyy-MM
 const fmtT = (b: Business, s: string, p: string) =>
   formatInTimeZone(new Date(s), b.timezone, p, { locale: ru })
 
-function Bookings({ b }: { b: Business }) {
+function Bookings({ b, role = 'owner' }: { b: Business; role?: 'owner'|'manager'|'staff' }) {
   const qc = useQueryClient()
   const [mode, setMode] = useState<'day' | 'week'>('day')
   const [day, setDay] = useState(today(b))
@@ -337,11 +343,12 @@ function Bookings({ b }: { b: Business }) {
   const to = mode === 'day' ? day : weekDays[6]!
   const list = useQuery({
     queryKey: ['owner', 'bookings', b.slug, day, to],
-    queryFn: () => owner.bookings(b.slug, day, to),
+    queryFn: () => role === 'staff' ? owner.staffBookings(b.slug, day, to) : owner.bookings(b.slug, day, to),
   })
   const stats = useQuery({
     queryKey: ['owner', 'stats', b.slug, day, to],
     queryFn: () => owner.stats(b.slug, day, to),
+    enabled: role !== 'staff',
   })
   const refresh = () => void qc.invalidateQueries({ queryKey: ['owner'] })
   const visible = (list.data ?? []).filter((x) => {
@@ -367,7 +374,7 @@ function Bookings({ b }: { b: Business }) {
           {list.isFetching || stats.isFetching ? 'Обновляем…' : 'Обновить'}
         </button>
       </div>
-      {stats.data && (
+      {role !== 'staff' && stats.data && (
         <>
           <p className="muted small admin-section-caption">Сводка за {mode === 'day' ? 'день' : 'неделю'}</p>
           <div className="stats admin-stats">
@@ -378,15 +385,15 @@ function Bookings({ b }: { b: Business }) {
           </div>
         </>
       )}
-      {stats.isError && <p className="err small">Статистика недоступна.</p>}
-      <div className="admin-actions">
+      {role !== 'staff' && stats.isError && <p className="err small">Статистика недоступна.</p>}
+      {role !== 'staff' && <div className="admin-actions">
         <button className="btn mini" onClick={() => setAdd(true)}>
           + Запись
         </button>
         <button className="btn ghost mini" onClick={() => setBlock(true)}>
           Заблокировать пост
         </button>
-      </div>
+      </div>}
       <div className="admin-list-heading">
         <div><h2>Записи</h2><span className="muted small">{visible.length} из {list.data?.length ?? 0}</span></div>
         <div className="admin-filters">
@@ -428,7 +435,7 @@ function Bookings({ b }: { b: Business }) {
                   <span className="row between"><b>{fmtT(b, x.starts_at, 'HH:mm')}</b><span className="pill">{STATUS[x.status] ?? x.status}</span></span>
                   <span>{x.service_name} · {x.resource_name}</span>
                   <span className="muted small">{x.car} · {x.customer_name} · {x.customer_phone}</span>
-                  <span className="muted small">{money(x.price_cents / 100, b.currency)} · оплачено {money(x.paid_cents / 100, b.currency)}</span>
+                  {role !== 'staff' && <span className="muted small">{money(x.price_cents / 100, b.currency)} · оплачено {money(x.paid_cents / 100, b.currency)}</span>}
                 </button>
               ))}
             </section>
@@ -444,9 +451,9 @@ function Bookings({ b }: { b: Business }) {
             <span>
               {x.service_name} · {x.resource_name}
             </span>
-            <span className="muted small">
+            {role !== 'staff' && <span className="muted small">
               {x.car} · {x.customer_name} · {x.customer_phone}
-            </span>
+            </span>}
             <span className="muted small">
               {money(x.price_cents / 100, b.currency)} · оплачено{' '}
               {money(x.paid_cents / 100, b.currency)}
@@ -454,7 +461,7 @@ function Bookings({ b }: { b: Business }) {
           </button>
         ))
       )}
-      {sel && <Actions b={b} bk={sel} onClose={() => setSel(null)} onDone={refresh} />}
+      {sel && <Actions b={b} bk={sel} role={role} onClose={() => setSel(null)} onDone={refresh} />}
       {add && <AddBooking b={b} onClose={() => setAdd(false)} onDone={refresh} />}
       {block && <BlockPost b={b} onClose={() => setBlock(false)} onDone={refresh} />}
     </>
@@ -536,11 +543,13 @@ function SlotPicker({
 function Actions({
   b,
   bk,
+  role = 'owner',
   onClose,
   onDone,
 }: {
   b: Business
   bk: OwnerBooking
+  role?: 'owner'|'manager'|'staff'
   onClose: () => void
   onDone: () => void
 }) {
@@ -561,16 +570,14 @@ function Actions({
       <Err m={a.msg} />
       <p className="muted small">
         {bk.customer_name}, <a href={telHref(bk.customer_phone)}>{bk.customer_phone}</a>
-        <br />
-        {money(bk.price_cents / 100, b.currency)} · оплачено{' '}
-        {money(bk.paid_cents / 100, b.currency)}
+        {role !== 'staff' && <><br />{money(bk.price_cents / 100, b.currency)} · оплачено {money(bk.paid_cents / 100, b.currency)}</>}
       </p>
       <div className="row wrap">
         {bk.status === 'booked' && (
           <button
             className="btn mini"
             disabled={a.busy}
-            onClick={() => a.run(() => owner.setStatus(bk.id, 'arrived'))}
+            onClick={() => a.run(() => role === 'staff' ? owner.staffSetStatus(bk.id, 'arrived') : owner.setStatus(bk.id, 'arrived'))}
           >
             Машина принята
           </button>
@@ -579,13 +586,13 @@ function Actions({
           <button
             className="btn mini"
             disabled={a.busy}
-            onClick={() => a.run(() => owner.setStatus(bk.id, 'done'))}
+            onClick={() => a.run(() => role === 'staff' ? owner.staffSetStatus(bk.id, 'done') : owner.setStatus(bk.id, 'done'))}
           >
             Готова
           </button>
         )}
       </div>
-      <label className="muted small" htmlFor="amt">
+      {role !== 'staff' && <><label className="muted small" htmlFor="amt">
         Сумма оплаты или возврата, {b.currency}
       </label>
       <input
@@ -625,7 +632,8 @@ function Actions({
       >
         Удалить данные клиента
       </button>
-      {bk.status === 'booked' && (
+      </>}
+      {role !== 'staff' && bk.status === 'booked' && (
         <>
           <button className="btn ghost" onClick={() => setMove(!move)}>
             Перенести
