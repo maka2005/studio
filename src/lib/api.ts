@@ -89,7 +89,32 @@ export async function getCustomerTelegramStatus(token: string): Promise<boolean>
   return data?.connected === true;
 }
 
-const rpc = async <T,>(fn: string, args: Record<string, unknown>): Promise<T> => { const { data, error } = await supabase.rpc(fn, args); if (error) throw error; return data as T; };
+const rpc = async <T,>(fn: string, args: Record<string, unknown>): Promise<T> => {
+  let result = await supabase.rpc(fn, args);
+  const invalidJwt=(error:unknown)=>{const e=error as {code?:string;status?:number;message?:string}|null;return e?.status===401||e?.code==='PGRST301'||/jwt|unauthorized/i.test(e?.message??'')};
+  if (invalidJwt(result.error)) {
+    const refreshed = await supabase.auth.refreshSession();
+    if (refreshed.data.session) {
+      result = await supabase.rpc(fn, args);
+      if(invalidJwt(result.error)){await supabase.auth.signOut();throw new Error('session_expired')}
+    }
+    else { await supabase.auth.signOut(); throw new Error('session_expired'); }
+  }
+  if (result.error) throw result.error;
+  return result.data as T;
+};
+const invokeOwnerTeam = async (body:Record<string,unknown>) => {
+  let result=await supabase.functions.invoke('owner-team',{body});
+  const status=(result.error as {context?:Response}|null)?.context?.status;
+  if(status===401){
+    const refreshed=await supabase.auth.refreshSession();
+    if(refreshed.data.session)result=await supabase.functions.invoke('owner-team',{body});
+    else{await supabase.auth.signOut();throw new Error('session_expired')}
+    const retryStatus=(result.error as {context?:Response}|null)?.context?.status;
+    if(retryStatus===401){await supabase.auth.signOut();throw new Error('session_expired')}
+  }
+  return result;
+};
 export type OwnerBooking = { id: string; service_id: string; service_name: string; starts_at: string; ends_at: string; status: string; customer_name: string;
   customer_phone: string; car: string; price_cents: number; paid_cents: number; resource_name: string };
 export type OwnerStats = { visits: number; done: number; booked: number; received_cents: number; expected_cents: number };
@@ -108,13 +133,13 @@ export const owner = {
   setStatus: (id: string, status: 'arrived' | 'done') => rpc<void>('owner_set_status', { p_booking: id, p_status: status }),
   staffSetStatus: (id: string, status: 'arrived' | 'done') => rpc<void>('staff_set_status', { p_booking: id, p_status: status }),
   team: async (slug: string, action: 'list'|'create'|'set_role'|'remove', args: Record<string,unknown> = {}) => {
-    const { data, error } = await supabase.functions.invoke('owner-team', { body: { slug, action, ...args } });
-    if (error) { const body=await (error as {context?:Response}).context?.clone().json().catch(()=>null); throw new Error(body?.error ?? 'team_request_failed'); }
+    const { data, error } = await invokeOwnerTeam({ slug, action, ...args });
+    if (error) { const context=(error as {context?:Response}).context;const body=await context?.clone().json().catch(()=>null);throw new Error(context?.status===429?'rate_limited':body?.error??'team_request_failed'); }
     if (data?.error) throw new Error(String(data.error)); return data as {members:{user_id:string;email:string;role:'manager'|'staff';resource_id:string|null;resource_name:string|null}[];ok?:boolean;created?:boolean;temporary_password?:string|null};
   },
   teamAction: async (slug:string,action:'reset_password'|'enroll_recovery'|'recover',args:Record<string,unknown>={})=>{
-    const {data,error}=await supabase.functions.invoke('owner-team',{body:{slug,action,...args}});
-    if(error){const body=await(error as {context?:Response}).context?.clone().json().catch(()=>null);throw new Error(body?.error??'recovery_failed')}
+    const {data,error}=await invokeOwnerTeam({slug,action,...args});
+    if(error){const context=(error as {context?:Response}).context;const body=await context?.clone().json().catch(()=>null);throw new Error(context?.status===429?'rate_limited':body?.error??'recovery_failed')}
     if(data?.error)throw new Error(String(data.error));return data as {ok:boolean;temporary_password?:string;recovery_key?:string|null}
   },
   cancel: (id: string) => rpc<void>('owner_cancel', { p_booking: id }),

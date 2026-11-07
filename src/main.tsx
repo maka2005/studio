@@ -48,7 +48,20 @@ const Legal = lazy(() => import('./pages/Legal').then((m) => ({ default: m.Legal
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <QueryClientProvider client={new QueryClient()}>
+    <QueryClientProvider client={new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: (failureCount, error) => {
+            const status = (error as { status?: number; context?: Response })?.status
+              ?? (error as { context?: Response })?.context?.status
+            const message = String((error as Error)?.message ?? '')
+            if (status === 401 || status === 429) return false
+            if (/rate_limited|session_expired/i.test(message)) return false
+            return failureCount < 1
+          },
+        },
+      },
+    })}>
       <BrowserRouter>
         <Suspense fallback={<LoadingScreen />}>
           <Routes>
