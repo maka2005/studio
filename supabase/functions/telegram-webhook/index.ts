@@ -31,9 +31,9 @@ Deno.serve(async (req) => {
       return ok();
     }
     if (customer) {
-      const d = customer as { studio: string; service: string; starts_at: string; timezone: string; address: string };
+      const d = customer as { studio: string; service: string; starts_at: string; timezone: string; address: string; reminder_hours_before: number; repeat_consent: boolean };
       const when = new Intl.DateTimeFormat('ru-RU', { timeZone: d.timezone, weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }).format(new Date(d.starts_at));
-      await reply(chat.id, `✅ Запись подключена\n\n🏁 ${d.studio}\n🧽 ${d.service}\n📅 ${when}${d.address ? `\n📍 ${d.address}` : ''}\n\nНапомним о визите за сутки и сообщим, если запись изменится. Отключить все уведомления: /stop`);
+      await reply(chat.id, `✅ Запись подключена\n\n🏁 ${d.studio}\n🧽 ${d.service}\n📅 ${when}${d.address ? `\n📍 ${d.address}` : ''}\n\nНапомним о визите за ${d.reminder_hours_before} ч. и сообщим, если запись изменится.${d.repeat_consent ? '\nТакже пришлём одно напоминание о повторном визите.' : ''}\nОтключить все уведомления: /stop`);
       return ok();
     }
     await reply(chat.id, 'Ссылка уже использована, устарела или запись больше не активна. Создайте новую ссылку на странице «Моя запись».');

@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { ru } from 'date-fns/locale'
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 import { supabase } from '../lib/supabase'
-import { errText, fetchServices, fetchSlots, owner, type OwnerBooking } from '../lib/api'
+import { errText, fetchServices, fetchSlots, owner, type OwnerBooking, type OwnerNotificationSettings, type OwnerAuditEvent } from '../lib/api'
 import { duration, money, telHref } from '../lib/format'
 import { assetUrl, type Business, type Ctx } from '../lib/tenant'
 import { prepareImage, removeByUrl, uploadImage } from '../lib/media'
@@ -15,7 +15,7 @@ import { SERVICE_CATEGORIES, serviceCategories } from '../lib/serviceCatalog'
 import './owner-login.css'
 import './owner-media.css'
 
-const TABS = ['Записи', 'Отчёты', 'Ожидание', 'Промокоды', 'Отзывы', 'Услуги', 'Студия', 'Фото', 'Уведомления', 'Документы'] as const
+const TABS = ['Записи', 'Отчёты', 'Команда и посты', 'История', 'Ожидание', 'Промокоды', 'Отзывы', 'Услуги', 'Студия', 'Фото', 'Уведомления', 'Документы'] as const
 const STATUS: Record<string, string> = {
   booked: 'Записан',
   arrived: 'Принята',
@@ -177,6 +177,8 @@ function Cabinet({ b, onLogout }: { b: Business; onLogout: () => void }) {
       </div>
       {tab === 'Записи' && <Bookings b={b} />}
       {tab === 'Отчёты' && <Reports b={b} />}
+      {tab === 'Команда и посты' && <TeamResources b={b} />}
+      {tab === 'История' && <AuditHistory b={b} />}
       {tab === 'Ожидание' && <WaitlistAdmin b={b} />}
       {tab === 'Промокоды' && <Promos b={b} />}
       {tab === 'Отзывы' && <Reviews b={b} />}
@@ -202,7 +204,18 @@ function Reports({ b }: { b: Business }) {
   const occupancy=capacityMinutes?Math.min(100,Math.round(reservedMinutes/capacityMinutes*100)):0;
   const popularServices = Object.values((bookings.data??[]).reduce<Record<string,{id:string;name:string;bookings:number;done:number;received:number}>>((acc,x)=>{const item=acc[x.service_id]??{id:x.service_id,name:x.service_name,bookings:0,done:0,received:0};if(x.status!=='cancelled')item.bookings++;if(x.status==='done')item.done++;item.received+=x.paid_cents;acc[x.service_id]=item;return acc},{})).sort((a,z)=>z.bookings-a.bookings||z.done-a.done);
   const returningRate=repeat.data?.unique_clients?Math.round(repeat.data.returning_clients/repeat.data.unique_clients*100):0;
-  return <div className="col"><div className="admin-subheading"><div><h2>Отчёты за 30 дней</h2><p className="muted small">Выручка, загрузка постов и источники обращений.</p></div></div>
+  const reportReady=!bookings.isPending&&!kpis.isPending&&!repeat.isPending&&!bookings.isError&&!kpis.isError&&!repeat.isError;
+  const exportReport = () => {
+    const rows: unknown[][] = [['Раздел','Показатель','Значение'],['Период','С',''],['Период','По',''],['Общее','Получено',kpis.data?.received_cents ? kpis.data.received_cents/100 : 0],['Общее','Записей',kpis.data?.booked ?? 0],['Общее','Визитов',kpis.data?.visits ?? 0],['Общее','Загрузка постов',`${occupancy}%`],['Клиенты','Средний чек',repeat.data?.average_check_cents ? repeat.data.average_check_cents/100 : 0],['Клиенты','Всего клиентов',repeat.data?.unique_clients ?? 0],['Клиенты','Вернувшиеся клиенты',repeat.data?.returning_clients ?? 0],['Клиенты','Повторные визиты',repeat.data?.returning_visits ?? 0],[],['Популярные услуги','Услуга','Записи','Визиты','Получено']];
+    rows[1]![2]=from; rows[2]![2]=to;
+    popularServices.forEach((s)=>rows.push(['Популярные услуги',s.name,s.bookings,s.done,s.received/100]));
+    downloadCsv(`report-${b.slug}-${from}-${to}.csv`,rows);
+  };
+  const exportBookings = () => downloadCsv(`bookings-${b.slug}-${from}-${to}.csv`,[
+    ['Дата и время','Услуга','Клиент','Телефон','Автомобиль','Мастер / пост','Статус','Стоимость','Получено'],
+    ...(bookings.data??[]).map(x=>[fmtT(b,x.starts_at,'yyyy-MM-dd HH:mm'),x.service_name,x.customer_name,x.customer_phone,x.car,x.resource_name,({booked:'Записан',arrived:'Прибыл',done:'Завершён',cancelled:'Отменён'} as Record<string,string>)[x.status]??x.status,x.price_cents/100,x.paid_cents/100])
+  ]);
+  return <div className="col"><div className="admin-subheading"><div><h2>Отчёты за 30 дней</h2><p className="muted small">Выручка, загрузка постов и источники обращений.</p></div><div className="row wrap"><button className="btn ghost mini" disabled={!reportReady} onClick={exportReport}>Скачать отчёт для Excel</button><button className="btn ghost mini" disabled={bookings.isPending||bookings.isError} onClick={exportBookings}>Скачать записи</button></div></div>
     {kpis.data&&<div className="stats admin-stats"><div className="card admin-stat"><span className="muted small">Получено</span><b>{money(kpis.data.received_cents/100,b.currency)}</b></div><div className="card admin-stat"><span className="muted small">Записей</span><b>{kpis.data.booked}</b></div><div className="card admin-stat"><span className="muted small">Визитов</span><b>{kpis.data.visits}</b></div><div className="card admin-stat"><span className="muted small">Загрузка постов</span><b>{bookings.isPending||resources.isPending?'…':`${occupancy}%`}</b></div></div>}
     <p className="muted small">Загрузка — оценка занятых минут к рабочим минутам всех постов по недельному графику.</p>
     <div className="admin-subheading"><div><h2>Популярные услуги</h2><p className="muted small">За последние 30 дней, по числу записей.</p></div></div>
@@ -215,6 +228,12 @@ function Reports({ b }: { b: Business }) {
   </div>;
 }
 
+function downloadCsv(fileName:string, rows:unknown[][]) {
+  const cell=(value:unknown)=>{const raw=String(value??'');const safe=/^[\s]*[=+\-@]/.test(raw)?`'${raw}`:raw;return `"${safe.replaceAll('"','""')}"`;};
+  const csv='\ufeff'+rows.map(row=>row.map(cell).join(';')).join('\r\n');
+  const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download=fileName;a.click();window.setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
 function WaitlistAdmin({ b }: { b: Business }) {
   const qc = useQueryClient(); const q = useQuery({ queryKey: ['owner','waitlist',b.slug], queryFn: () => owner.waitlist(b.slug) });
   const setStatus = useMutation({ mutationFn: ({ id,status }: {id:string;status:'waiting'|'contacted'|'closed'}) => owner.waitlistStatus(id,status), onSuccess: () => void qc.invalidateQueries({ queryKey: ['owner','waitlist',b.slug] }) });
@@ -222,6 +241,50 @@ function WaitlistAdmin({ b }: { b: Business }) {
     {q.isPending ? <p className="muted">Загрузка…</p> : q.isError ? <p className="err">Не удалось загрузить лист ожидания. <button className="link" onClick={() => void q.refetch()}>Повторить</button></p> : !q.data?.length ? <p className="muted">Заявок пока нет.</p> : q.data.map((w) => <div className="card col" key={w.id}><div className="row between"><b>{w.customer_name} · {w.preferred_day}</b><span className="pill">{{waiting:'Ожидает',contacted:'Связались',closed:'Закрыта'}[w.status] ?? w.status}</span></div><span>{w.service_name} · {w.car}</span><a href={telHref(w.customer_phone)}>{w.customer_phone}</a><div className="row wrap"><button className="btn ghost mini" disabled={setStatus.isPending} onClick={() => setStatus.mutate({id:w.id,status:'contacted'})}>Связались</button><button className="btn ghost mini" disabled={setStatus.isPending} onClick={() => setStatus.mutate({id:w.id,status:'closed'})}>Закрыть заявку</button></div></div>)}
     {setStatus.isError && <p className="err small">Не удалось обновить статус заявки.</p>}
   </div>;
+}
+
+function TeamResources({b}:{b:Business}) {
+  const qc=useQueryClient();const q=useQuery({queryKey:['owner','resources',b.slug],queryFn:()=>owner.resources(b.slug)});
+  const [name,setName]=useState('');const [msg,setMsg]=useState<string|null>(null);const [saved,setSaved]=useState(false);
+  const refresh=()=>{void qc.invalidateQueries({queryKey:['owner','resources',b.slug]});void qc.invalidateQueries({queryKey:['owner','bookings',b.slug]});void qc.invalidateQueries({queryKey:['owner','report-bookings',b.slug]});void qc.invalidateQueries({queryKey:['slots',b.slug]})};
+  const add=useMutation({mutationFn:()=>owner.upsertResource(b.slug,null,name.trim()),onSuccess:()=>{setName('');setMsg(null);setSaved(true);refresh()},onError:e=>{setSaved(false);setMsg(errText(e))}});
+  return <div className="col"><div className="admin-subheading"><div><h2>Команда и посты</h2><p className="muted small">Каждый мастер или пост получает отдельное расписание и учитывается при подборе свободного времени. Для ресурса с прошлыми записями можно изменить название, но удалить его нельзя.</p></div></div>
+    {q.isPending?<p className="muted">Загружаем…</p>:q.isError?<p className="err">Не удалось загрузить список. <button className="link" onClick={()=>void q.refetch()}>Повторить</button></p>:q.data.map((r)=><TeamResourceRow key={r.id} b={b} resource={r} onSaved={refresh}/>)}
+    <div className="card col"><b>Добавить мастера или пост</b><p className="muted small">Укажите рабочее место, например «Мастер Арман» или «Пост 2». Если запись занимает мастера и конкретный пост, объедините их в названии: «Арман — пост 2».</p><input className="field" maxLength={80} placeholder="Имя мастера или название поста" value={name} onChange={e=>{setName(e.target.value);setSaved(false);setMsg(null)}}/>{msg&&<p className="err small">{msg}</p>}{saved&&<p className="muted small" role="status">Добавлено.</p>}<button className="btn" disabled={add.isPending||!name.trim()} onClick={()=>add.mutate()}>{add.isPending?'Добавляем…':'Добавить'}</button></div>
+  </div>
+}
+
+function TeamResourceRow({b,resource,onSaved}:{b:Business;resource:{id:string;name:string};onSaved:()=>void}) {
+  const [name,setName]=useState(resource.name);const [msg,setMsg]=useState<string|null>(null);
+  const save=useMutation({mutationFn:()=>owner.upsertResource(b.slug,resource.id,name.trim()),onSuccess:()=>{setMsg(null);onSaved()},onError:e=>setMsg(errText(e))});
+  const remove=useMutation({mutationFn:()=>owner.deleteResource(b.slug,resource.id),onSuccess:()=>{setMsg(null);onSaved()},onError:e=>setMsg(errText(e))});
+  return <div className="card col"><div className="row wrap"><input className="field" aria-label="Название рабочего ресурса" maxLength={80} value={name} onChange={e=>setName(e.target.value)}/><button className="btn ghost mini" disabled={save.isPending||name.trim()===resource.name||!name.trim()} onClick={()=>save.mutate()}>{save.isPending?'Сохраняем…':'Сохранить'}</button><button className="btn ghost mini" disabled={remove.isPending} onClick={()=>{if(window.confirm(`Удалить «${resource.name}»?`))remove.mutate()}}>{remove.isPending?'Удаляем…':'Удалить'}</button></div>{msg&&<p className="err small" role="alert">{msg}</p>}</div>
+}
+
+function AuditHistory({b}:{b:Business}) {
+  const [page,setPage]=useState(0);const limit=50;
+  const q=useQuery({queryKey:['owner','audit',b.slug,page],queryFn:()=>owner.auditHistory(b.slug,limit+1,page*limit)});
+  const items=q.data?.slice(0,limit)??[];const hasNext=(q.data?.length??0)>limit;
+  return <div className="col"><div className="admin-subheading"><div><h2>История изменений</h2><p className="muted small">Записи, услуги, команда, оплаты и настройки студии.</p></div></div>
+    {q.isPending?<p className="muted">Загрузка истории…</p>:q.isError?<p className="err">Не удалось загрузить историю. <button className="link" onClick={()=>void q.refetch()}>Повторить</button></p>:items.length===0?<p className="muted">Изменений пока нет.</p>:<div className="admin-audit-list">{items.map(e=><article className="card admin-audit-event" key={e.id}><div className="row between wrap"><b>{auditEntity(e.entity)} · {auditAction(e.action)}</b><time className="muted small">{fmtT(b,e.created_at,'d MMM yyyy, HH:mm')}</time></div><p className="muted small">{auditDetail(e,b.currency)}{e.actor_email?` · ${e.actor_email}`:''}</p></article>)}</div>}
+    {(page>0||hasNext)&&<nav className="admin-service-pagination" aria-label="История изменений"><button className="admin-page-button" disabled={page===0} onClick={()=>setPage(page-1)}>Назад</button><span className="muted small">Страница <b>{page+1}</b></span><button className="admin-page-button" disabled={!hasNext} onClick={()=>setPage(page+1)}>Далее</button></nav>}
+  </div>
+}
+
+function auditEntity(entity:string) { return ({booking:'Запись',service:'Услуга',resource:'Мастер / пост',payment:'Оплата',studio:'Студия',notifications:'Уведомления'} as Record<string,string>)[entity]??entity }
+function auditAction(action:string) { return ({created:'создано',updated:'изменено',deleted:'удалено',payment:'оплата добавлена',refund:'возврат добавлен',settings_changed:'настройки обновлены'} as Record<string,string>)[action]??action }
+function auditDetail(e:OwnerAuditEvent,currency:string) {
+  const d=e.details??{};
+  if(e.entity==='service'||e.entity==='resource') {
+    const pieces:string[]=[];
+    const format=(key:string,value:unknown)=>key==='price_cents'?money(Number(value)/100,currency):key==='active'?(value===true||value==='true'?'показывается клиентам':'скрыта от клиентов'):String(value??'—');
+    for(const key of ['name','category','price_cents','active'])if(d[key]!==undefined){const value=d[key];const label:Record<string,string>={name:'Название',category:'Категория',price_cents:'Цена',active:'Показ'};const change=value&&typeof value==='object'?value as Record<string,unknown>:null;pieces.push(change?`${label[key]}: ${format(key,change.from)} → ${format(key,change.to)}`:`${label[key]}: ${format(key,value)}`)}
+    return pieces.join(' · ')||`ID ${e.entity_id?.slice(0,8)??''}`;
+  }
+  if(e.entity==='payment')return `${money(Number(d.amount_cents??0)/100,currency)}${e.action==='refund'?' возвращено':' получено'}`;
+  if(e.entity==='studio'||e.entity==='notifications') {const names:Record<string,string>={phone:'телефон',address:'адрес',description:'описание',cards:'текст главной',hours:'часы работы',gallery:'галерея',client_telegram_enabled:'Telegram для клиентов',reminder_hours_before:'время напоминания',repeat_after_days:'период повторного визита',reminder_message:'текст напоминания',repeat_message:'текст повторного сообщения'};const fields=Array.isArray(d.fields)?d.fields.map(x=>names[String(x)]??String(x)).join(', '):'настройки';const hours=d.hours as {from?:unknown;to?:unknown}|undefined;const days:Record<string,string>={mon:'Пн',tue:'Вт',wed:'Ср',thu:'Чт',fri:'Пт',sat:'Сб',sun:'Вс'};const schedule=(value:unknown)=>value&&typeof value==='object'?Object.entries(value as Record<string,unknown>).map(([day,range])=>`${days[day]??day} ${Array.isArray(range)?range.join('–'):'выходной'}`).join(', '):'не задан';return `Изменены поля: ${fields}${hours?` · график: ${schedule(hours.from)} → ${schedule(hours.to)}`:''}`}
+  const changes=Object.entries(d).filter(([key])=>key!=='hours').map(([key,value])=>{const labels:Record<string,string>={status:'Статус',starts_at:'Время',service_id:'Услуга',resource_id:'Мастер / пост'};const label=labels[key]??key;const change=value&&typeof value==='object'?value as Record<string,unknown>:null;const status=(v:unknown)=>({booked:'Записан',arrived:'Прибыл',done:'Завершён',cancelled:'Отменён'} as Record<string,string>)[String(v)]??String(v??'—');return change?`${label}: ${key==='status'?status(change.from):String(change.from??'—')} → ${key==='status'?status(change.to):String(change.to??'—')}`:`${label}: ${String(value)}`});
+  return changes.join(' · ')||`ID ${e.entity_id?.slice(0,8)??''}`;
 }
 
 function Promos({ b }: { b: Business }) {
@@ -1406,6 +1469,7 @@ function Notify({ b }: { b: Business }) {
     onError: (e) => setMsg(errText(e)),
   })
   return (
+    <>
     <div className="card col" style={{ gap: 16 }}>
       <div className="admin-subheading"><div><h2>Уведомления в Telegram</h2><p className="muted small">Подключите чат и следите за доставкой сообщений о записях.</p></div></div>
       <p className="muted small">Получайте сообщения о новых записях и отменах. После перехода к боту нажмите «Запустить».</p>
@@ -1448,5 +1512,26 @@ function Notify({ b }: { b: Business }) {
       </button>
       <p className="muted small">Уведомления о новых записях и отменах будут приходить в подключённый чат автоматически.</p>
     </div>
+    <NotificationPreferences b={b}/>
+    </>
   )
+}
+
+function NotificationPreferences({b}:{b:Business}) {
+  const qc=useQueryClient();const q=useQuery({queryKey:['owner','notification-settings',b.slug],queryFn:()=>owner.notificationSettings(b.slug)});
+  const [form,setForm]=useState<OwnerNotificationSettings>({reminder_hours_before:24,repeat_after_days:90,reminder_message:'',repeat_message:''});
+  const [saved,setSaved]=useState(false);const [msg,setMsg]=useState<string|null>(null);
+  useEffect(()=>{if(q.data)setForm({...q.data,reminder_message:q.data.reminder_message??'',repeat_message:q.data.repeat_message??''})},[q.data]);
+  const save=useMutation({mutationFn:()=>owner.updateNotificationSettings(b.slug,{...form,reminder_message:form.reminder_message||null,repeat_message:form.repeat_message||null}),onSuccess:()=>{setSaved(true);setMsg(null);void qc.invalidateQueries({queryKey:['owner','notification-settings',b.slug]})},onError:e=>{setSaved(false);setMsg(errText(e))}});
+  return <section className="card col"><div className="admin-subheading"><div><h2>Напоминания клиентам</h2><p className="muted small">Время и текст Telegram-сообщений для этой студии.</p></div></div>
+    {q.isPending?<p className="muted small">Загрузка настроек…</p>:q.isError?<p className="err small">Не удалось загрузить настройки. <button className="link" onClick={()=>void q.refetch()}>Повторить</button></p>:<>
+      <label className="muted small" htmlFor="reminder-hours">Напомнить о записи за (часов)</label><input id="reminder-hours" className="field" type="number" min="1" max="168" value={form.reminder_hours_before} onChange={e=>{setSaved(false);setForm({...form,reminder_hours_before:Number(e.target.value)})}}/>
+      <label className="muted small" htmlFor="reminder-text">Текст напоминания о записи</label><textarea id="reminder-text" className="field" rows={3} maxLength={500} placeholder="Оставьте пустым для стандартного текста" value={form.reminder_message??''} onChange={e=>{setSaved(false);setForm({...form,reminder_message:e.target.value})}}/>
+      <label className="muted small" htmlFor="repeat-days">Напомнить о повторном визите через (дней)</label><input id="repeat-days" className="field" type="number" min="7" max="365" value={form.repeat_after_days} onChange={e=>{setSaved(false);setForm({...form,repeat_after_days:Number(e.target.value)})}}/>
+      <label className="muted small" htmlFor="repeat-text">Текст напоминания о повторном визите</label><textarea id="repeat-text" className="field" rows={3} maxLength={500} placeholder="Оставьте пустым для стандартного текста" value={form.repeat_message??''} onChange={e=>{setSaved(false);setForm({...form,repeat_message:e.target.value})}}/>
+      <p className="muted small">В тексте доступны подстановки: {'{studio}'}, {'{service}'}, {'{date}'}, {'{time}'}, {'{address}'}. Повторное напоминание отправится только клиентам, которые отдельно на него согласились.</p>
+      {msg&&<p className="err small" role="alert">{msg}</p>}{saved&&<p className="muted small" role="status">Настройки сохранены.</p>}
+      <button className="btn" disabled={save.isPending||form.reminder_hours_before<1||form.reminder_hours_before>168||form.repeat_after_days<7||form.repeat_after_days>365} onClick={()=>save.mutate()}>{save.isPending?'Сохраняем…':'Сохранить настройки'}</button>
+    </>}
+  </section>
 }

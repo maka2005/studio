@@ -87,13 +87,14 @@ Deno.serve(async (req) => {
     }
     if (p.action === 'customer_telegram_link') {
       const token = typeof p.token === 'string' ? p.token : '';
+      const repeatConsent = p.repeatConsent === true;
       if (!/^[a-f0-9]{32,128}$/i.test(token)) return json({ error: 'not_found' }, 404);
       const [ipAllowed, tokenAllowed] = await Promise.all([
         rate('customer_telegram', ip, 20, 3600),
         rate('customer_telegram', `token:${await sha(token)}`, 5, 86400),
       ]);
       if (!ipAllowed || !tokenAllowed) return json({ error: 'rate_limited' }, 429);
-      const { data, error } = await admin.rpc('customer_telegram_code', { p_token: token, p_consent_version: 'telegram_booking_v1' });
+      const { data, error } = await admin.rpc('customer_telegram_code', { p_token: token, p_consent_version: 'telegram_booking_v1', p_repeat_consent: repeatConsent });
       if (error?.message.includes('booking_unavailable')) return json({ error: 'booking_unavailable' }, 400);
       if (error?.message.includes('feature_disabled')) return json({ error: 'feature_disabled' }, 403);
       if (error?.message.includes('bad_request')) return json({ error: 'bad_request' }, 400);

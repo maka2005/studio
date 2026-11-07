@@ -68,8 +68,8 @@ export async function submitReview(token: string, rating: number, comment: strin
   }
   if (data?.error) throw new Error(String(data.error));
 }
-export async function createCustomerTelegramLink(token: string): Promise<string | null> {
-  const { data, error } = await supabase.functions.invoke('public-api', { body: { action: 'customer_telegram_link', token } });
+export async function createCustomerTelegramLink(token: string, repeatConsent = false): Promise<string | null> {
+  const { data, error } = await supabase.functions.invoke('public-api', { body: { action: 'customer_telegram_link', token, repeatConsent } });
   if (error) {
     const body = await (error as { context?: Response }).context?.clone().json().catch(() => null);
     if (body?.error) throw new Error(String(body.error));
@@ -94,12 +94,15 @@ export type OwnerBooking = { id: string; service_id: string; service_name: strin
   customer_phone: string; car: string; price_cents: number; paid_cents: number; resource_name: string };
 export type OwnerStats = { visits: number; done: number; booked: number; received_cents: number; expected_cents: number };
 export type OwnerRepeatStats = { completed_visits: number; unique_clients: number; returning_clients: number; returning_visits: number; average_check_cents: number };
+export type OwnerNotificationSettings = { reminder_hours_before: number; repeat_after_days: number; reminder_message: string | null; repeat_message: string | null };
+export type OwnerAuditEvent = { id: number; created_at: string; entity: string; entity_id: string | null; action: string; details: Record<string, unknown>; actor_email: string | null };
 export type OwnerNotificationStatus = { pending: number; failed: number; last_sent_at: string | null };
 export const owner = {
   me: (slug: string) => rpc<boolean>('owner_me', { p_slug: slug }),
   bookings: (slug: string, from: string, to: string) => rpc<OwnerBooking[]>('owner_bookings', { p_slug: slug, p_from: from, p_to: to }),
   stats: async (slug: string, from: string, to: string) => (await rpc<OwnerStats[]>('owner_stats', { p_slug: slug, p_from: from, p_to: to }))[0]!,
   repeatStats: async (slug: string, from: string, to: string) => (await rpc<OwnerRepeatStats[]>('owner_repeat_stats', { p_slug: slug, p_from: from, p_to: to }))[0]!,
+  auditHistory: (slug: string, limit: number, offset: number) => rpc<OwnerAuditEvent[]>('owner_audit_history', { p_slug: slug, p_limit: limit, p_offset: offset }),
   setStatus: (id: string, status: 'arrived' | 'done') => rpc<void>('owner_set_status', { p_booking: id, p_status: status }),
   cancel: (id: string) => rpc<void>('owner_cancel', { p_booking: id }),
   erase: (id: string) => rpc<void>('owner_erase_customer', { p_booking: id }),
@@ -111,6 +114,10 @@ export const owner = {
   upsertService: (slug: string, s: { id: string | null; name: string; category: string; cents: number; minutes: number; active: boolean }) =>
     rpc<string>('owner_upsert_service', { p_slug: slug, p_id: s.id, p_name: s.name, p_category: s.category, p_price_cents: s.cents, p_duration: s.minutes, p_active: s.active }),
   deleteService: (slug: string, id: string) => rpc<void>('owner_delete_service', { p_slug: slug, p_id: id }),
+  upsertResource: (slug: string, id: string | null, name: string) => rpc<string>('owner_upsert_resource', { p_slug: slug, p_id: id, p_name: name }),
+  deleteResource: (slug: string, id: string) => rpc<void>('owner_delete_resource', { p_slug: slug, p_id: id }),
+  notificationSettings: async (slug: string) => (await rpc<OwnerNotificationSettings[]>('owner_notification_settings', { p_slug: slug }))[0]!,
+  updateNotificationSettings: (slug: string, s: OwnerNotificationSettings) => rpc<void>('owner_update_notification_settings', { p_slug: slug, p_reminder_hours: s.reminder_hours_before, p_repeat_days: s.repeat_after_days, p_reminder_message: s.reminder_message, p_repeat_message: s.repeat_message }),
   updateConfig: (slug: string, patch: Record<string, unknown>) => rpc<void>('owner_update_config', { p_slug: slug, p_patch: patch }),
   updateLegal: (slug: string, legal: Record<string, unknown>) => rpc<void>('owner_update_legal', { p_slug: slug, p_legal: legal }),
   telegramCode: (slug: string) => rpc<string>('owner_telegram_code', { p_slug: slug }),
@@ -136,5 +143,5 @@ const MSG: [string, string][] = [['slot_taken', 'Это время занято.
   ['forbidden', 'Нет прав для этого действия.'], ['rate_limited', 'Слишком много запросов. Попробуйте позже.'], ['bad_amount', 'Проверьте сумму.'],
   ['bad_name', 'Проверьте имя клиента.'], ['bad_phone', 'Проверьте номер телефона.'], ['bad_car', 'Укажите автомобиль.'],
   ['bad_config', 'Проверьте введённые настройки.'], ['bad_url', 'Ссылка должна начинаться с https://'],
-  ['consent_required', 'Нужно согласие на обработку данных.'], ['service_in_use', 'Услуга уже используется в записи или заявке. Снимите отметку «Показывается клиентам», чтобы скрыть её.']];
+  ['consent_required', 'Нужно согласие на обработку данных.'], ['service_in_use', 'Услуга уже используется в записи или заявке. Снимите отметку «Показывается клиентам», чтобы скрыть её.'], ['resource_in_use', 'У этого рабочего ресурса уже есть записи или блокировки. Его нельзя удалить, пока они с ним связаны.'], ['duplicate_resource', 'Ресурс с таким названием уже есть.'], ['bad_notification_settings', 'Проверьте время напоминания, период повторного визита и длину текста.']];
 export const errText = (e: unknown) => { const m = String((e as Error)?.message ?? e); return MSG.find(([k]) => m.includes(k))?.[1] ?? 'Не удалось выполнить действие. Повторите.'; };

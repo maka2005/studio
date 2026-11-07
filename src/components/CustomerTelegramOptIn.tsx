@@ -6,6 +6,7 @@ const BOT = (import.meta.env.VITE_TELEGRAM_BOT as string | undefined)?.trim().re
 
 export function CustomerTelegramOptIn({ slug, token }: { slug: string; token: string }) {
   const [consent, setConsent] = useState(false);
+  const [repeatConsent, setRepeatConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [url, setUrl] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
@@ -37,7 +38,7 @@ export function CustomerTelegramOptIn({ slug, token }: { slug: string; token: st
     if (!consent || busy || !botReady || !BOT) return;
     setBusy(true); setMessage(null);
     try {
-      const code = await createCustomerTelegramLink(token);
+      const code = await createCustomerTelegramLink(token, repeatConsent);
       if (!code) { setConnected(true); setMessage(null); }
       else { setUrl(`https://t.me/${BOT}?start=${code}`); setWaiting(true); }
     } catch (error) {
@@ -52,12 +53,14 @@ export function CustomerTelegramOptIn({ slug, token }: { slug: string; token: st
   return <div className="card col customer-telegram-opt-in">
     {connected ? <>
       <b role="status">✅ Telegram подключён</b>
-      <p className="muted small">Готово! Бот пришлёт подтверждение записи, напомнит о визите за сутки и сообщит, если запись отменится. Отключить сообщения можно командой /stop в боте.</p>
+      <p className="muted small">Готово! Бот пришлёт подтверждение записи, напомнит о визите в выбранное студией время и сообщит, если запись отменится. Если вы согласились, он также напомнит о повторном визите. Отключить сообщения можно командой /stop в боте.</p>
     </> : <>
     <b>Получать напоминания в Telegram?</b>
-    <p className="muted small">Без регистрации на сайте. Бот подтвердит запись и напомнит о визите за сутки.</p>
+    <p className="muted small">Без регистрации на сайте. Бот подтвердит запись и напомнит о визите в выбранное студией время.</p>
     <label className="check"><input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
       <span className="small">Согласен(на) получать сообщения по этой записи. Telegram получит идентификатор чата и данные записи. Отказаться можно командой /stop. <Link to={`/s/${slug}/legal/privacy`} target="_blank" rel="noreferrer">Подробнее</Link>.</span></label>
+    <label className="check"><input type="checkbox" checked={repeatConsent} onChange={(e) => setRepeatConsent(e.target.checked)} />
+      <span className="small">Также согласен(на) получить одно напоминание о повторном визите после завершения этой записи. Это необязательно.</span></label>
     {!url ? <button className="btn ghost" disabled={!consent || busy || !botReady} onClick={() => void connect()}>
       {busy ? 'Готовим ссылку…' : 'Подключить Telegram'}
     </button> : <>

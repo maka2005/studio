@@ -34,7 +34,9 @@ Deno.serve(async (req) => {
     try {
       const { data: t, error: tenantError } = await admin.from('tenants').select('slug,timezone,config').eq('id', j.tenant_id).maybeSingle();
       if (tenantError) throw tenantError;
-      const { data: links, error: linksError } = await admin.from('telegram_links').select('chat_id').eq('tenant_id', j.tenant_id);
+      const { data: links, error: linksError } = j.kind === 'booking_followup'
+        ? { data: [], error: null }
+        : await admin.from('telegram_links').select('chat_id').eq('tenant_id', j.tenant_id);
       if (linksError) throw linksError;
       if (!t) throw new Error('tenant_missing');
       if (j.kind === 'waitlist_interest') {
@@ -67,19 +69,28 @@ Deno.serve(async (req) => {
         await finishJob(admin, j.id, true, null);
         continue;
       }
+      if (j.kind === 'booking_followup' && bk.status !== 'done') {
+        await finishJob(admin, j.id, true, null);
+        continue;
+      }
       const cfg = t.config as { name?: string; short_name?: string; currency?: string; address?: string; client_telegram_enabled?: boolean };
       const { data: clientLink, error: clientLinkError } = cfg.client_telegram_enabled && j.kind !== 'booking_created'
-        ? await admin.from('booking_telegram_links').select('chat_id').eq('tenant_id', j.tenant_id).eq('booking_id', j.booking_id).maybeSingle()
+        ? await admin.from('booking_telegram_links').select('chat_id,repeat_consent').eq('tenant_id', j.tenant_id).eq('booking_id', j.booking_id)
+          .maybeSingle()
         : { data: null, error: null };
       if (clientLinkError) throw clientLinkError;
       if (!links?.length && !clientLink) {
-        await finishJob(admin, j.id, false, 'no_telegram_chat_linked');
-        retry++;
+        await finishJob(admin, j.id, j.kind === 'booking_followup', j.kind === 'booking_followup' ? null : 'no_telegram_chat_linked');
+        if (j.kind !== 'booking_followup') retry++;
         continue;
       }
       const { data: svc, error: serviceError } = await admin.from('services').select('name').eq('tenant_id', j.tenant_id).eq('id', bk.service_id).maybeSingle();
       if (serviceError) throw serviceError;
-      const text = buildMessage({ kind: j.kind, studio: cfg.name ?? t.slug, service: svc?.name ?? '', startsAt: bk.starts_at, timezone: t.timezone,
+      if (j.kind === 'booking_followup' && !clientLink?.repeat_consent) {
+        await finishJob(admin, j.id, true, null);
+        continue;
+      }
+      const text = j.kind === 'booking_followup' ? '' : buildMessage({ kind: j.kind, studio: cfg.name ?? t.slug, service: svc?.name ?? '', startsAt: bk.starts_at, timezone: t.timezone,
         customer: bk.customer_name, phone: bk.customer_phone, car: bk.car, priceCents: bk.price_cents, currency: cfg.currency ?? '' });
       let failure: string | null = null;
       let delivered = 0;
@@ -95,9 +106,16 @@ Deno.serve(async (req) => {
       }
       let clientDelivered = false;
       if (clientLink) {
+        const { data: notifySettings, error: settingsError } = await admin.from('tenant_notification_settings').select('reminder_message,repeat_message').eq('tenant_id',j.tenant_id).maybeSingle();
+        if (settingsError) throw settingsError;
+        const payload = j.payload ?? {};
+        const repeatText = typeof payload.message === 'string' ? payload.message : notifySettings?.repeat_message;
+        const customMessage = j.kind === 'booking_followup'
+          ? repeatText ?? null
+          : j.kind === 'booking_reminder' ? notifySettings?.reminder_message ?? null : null;
         const customerText = buildCustomerMessage({ kind: j.kind as Exclude<Kind, 'waitlist_interest'>,
           studio: cfg.short_name ?? cfg.name ?? t.slug, service: svc?.name ?? '', startsAt: bk.starts_at,
-          timezone: t.timezone, address: cfg.address ?? '' });
+          timezone: t.timezone, address: cfg.address ?? '', customMessage });
         const r = await send(token, clientLink.chat_id, customerText, '');
         if (r.ok) clientDelivered = true;
         else if (isDeadChat(r.code, r.desc)) {
@@ -110,7 +128,7 @@ Deno.serve(async (req) => {
         if (deleteError) throw deleteError;
       }
       delivered += Number(clientDelivered);
-      if (failure === null && delivered === 0) failure = 'no_reachable_telegram_chat';
+      if (failure === null && delivered === 0 && j.kind !== 'booking_followup') failure = 'no_reachable_telegram_chat';
       await finishJob(admin, j.id, failure === null, failure);
       if (failure === null) sent++; else retry++;
     } catch (e) {
