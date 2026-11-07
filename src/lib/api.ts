@@ -107,6 +107,11 @@ export const owner = {
   auditHistory: (slug: string, limit: number, offset: number) => rpc<OwnerAuditEvent[]>('owner_audit_history', { p_slug: slug, p_limit: limit, p_offset: offset }),
   setStatus: (id: string, status: 'arrived' | 'done') => rpc<void>('owner_set_status', { p_booking: id, p_status: status }),
   staffSetStatus: (id: string, status: 'arrived' | 'done') => rpc<void>('staff_set_status', { p_booking: id, p_status: status }),
+  team: async (slug: string, action: 'list'|'create'|'set_role'|'remove', args: Record<string,unknown> = {}) => {
+    const { data, error } = await supabase.functions.invoke('owner-team', { body: { slug, action, ...args } });
+    if (error) { const body=await (error as {context?:Response}).context?.clone().json().catch(()=>null); throw new Error(body?.error ?? 'team_request_failed'); }
+    if (data?.error) throw new Error(String(data.error)); return data as {members:{user_id:string;email:string;role:'manager'|'staff';resource_id:string|null;resource_name:string|null}[];ok?:boolean;created?:boolean;temporary_password?:string|null};
+  },
   cancel: (id: string) => rpc<void>('owner_cancel', { p_booking: id }),
   erase: (id: string) => rpc<void>('owner_erase_customer', { p_booking: id }),
   reschedule: (id: string, start: string) => rpc<boolean>('owner_reschedule', { p_booking: id, p_start: start }),

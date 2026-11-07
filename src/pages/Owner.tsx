@@ -15,7 +15,7 @@ import { SERVICE_CATEGORIES, serviceCategories } from '../lib/serviceCatalog'
 import './owner-login.css'
 import './owner-media.css'
 
-const TABS = ['Записи', 'Отчёты', 'Команда и посты', 'История', 'Ожидание', 'Промокоды', 'Отзывы', 'Услуги', 'Студия', 'Фото', 'Уведомления', 'Документы'] as const
+const TABS = ['Записи', 'Отчёты', 'Сотрудники', 'Команда и посты', 'История', 'Ожидание', 'Промокоды', 'Отзывы', 'Услуги', 'Студия', 'Фото', 'Уведомления', 'Документы'] as const
 const STATUS: Record<string, string> = {
   booked: 'Записан',
   arrived: 'Принята',
@@ -42,7 +42,14 @@ export function Owner() {
   } // приватный кэш очищается при выходе
   if (sess.isPending) return <LoadingScreen label="Открываем кабинет…" />
   if (!sess.data) return <Login />
+  if (sess.data.user.user_metadata?.must_change_password === true) return <SetInitialPassword />
   return <Cabinet b={b} onLogout={logout} />
+}
+
+function SetInitialPassword() {
+  const [password,setPassword]=useState(''); const [confirm,setConfirm]=useState(''); const [msg,setMsg]=useState(''); const [busy,setBusy]=useState(false)
+  const submit=async(e:React.FormEvent)=>{e.preventDefault();setMsg('');if(password.length<10){setMsg('Придумайте пароль не короче 10 символов.');return}if(password!==confirm){setMsg('Пароли не совпадают.');return}setBusy(true);const {error}=await supabase.auth.updateUser({password,data:{must_change_password:false}});setBusy(false);if(error)setMsg('Не удалось изменить пароль. Проверьте соединение и повторите.');else window.location.reload()}
+  return <div className="page admin-login-page"><form className="login-wrap admin-login" onSubmit={(e)=>void submit(e)}><div className="login-ico"><LockIcon/></div><h1>Задайте свой пароль</h1><p className="muted">Это нужно сделать при первом входе. Временный пароль больше не понадобится.</p><label className="muted small">Новый пароль</label><input className="field" type="password" minLength={10} autoComplete="new-password" value={password} onChange={e=>setPassword(e.target.value)} required/><label className="muted small">Повторите пароль</label><input className="field" type="password" autoComplete="new-password" value={confirm} onChange={e=>setConfirm(e.target.value)} required/>{msg&&<p className="err" role="alert">{msg}</p>}<button className="btn" disabled={busy}>{busy?'Сохраняем…':'Сохранить пароль'}</button></form></div>
 }
 
 const LockIcon = () => (
@@ -155,7 +162,7 @@ function Cabinet({ b, onLogout }: { b: Business; onLogout: () => void }) {
   if (access.isPending) return <LoadingScreen label="Загружаем права доступа…" />
   if (access.isError || !access.data) return <p className="pad err">Не удалось определить роль. Обновите страницу или обратитесь к владельцу.</p>
   const role = access.data
-  const visibleTabs = (role === 'staff' ? ['Записи'] : role === 'manager' ? TABS.filter((t) => !['Студия','Фото','Уведомления','Документы'].includes(t)) : TABS) as readonly (typeof TABS)[number][]
+  const visibleTabs = (role === 'staff' ? ['Записи'] : role === 'manager' ? TABS.filter((t) => !['Сотрудники','Студия','Фото','Уведомления','Документы'].includes(t)) : TABS) as readonly (typeof TABS)[number][]
   if (!visibleTabs.includes(tab)) setTab('Записи')
   return (
     <section className="pad admin-shell">
@@ -182,6 +189,7 @@ function Cabinet({ b, onLogout }: { b: Business; onLogout: () => void }) {
         ))}
       </div>
       {tab === 'Записи' && <Bookings b={b} role={role} />}
+      {tab === 'Сотрудники' && role === 'owner' && <TeamAccess b={b} />}
       {tab === 'Отчёты' && <Reports b={b} />}
       {tab === 'Команда и посты' && <TeamResources b={b} />}
       {tab === 'История' && <AuditHistory b={b} />}
@@ -195,6 +203,32 @@ function Cabinet({ b, onLogout }: { b: Business; onLogout: () => void }) {
       {tab === 'Документы' && <Docs b={b} />}
     </section>
   )
+}
+
+function TeamAccess({ b }: { b: Business }) {
+  const qc=useQueryClient(); const people=useQuery({queryKey:['owner','team',b.slug],queryFn:()=>owner.team(b.slug,'list')});
+  const resources=useQuery({queryKey:['owner','resources',b.slug],queryFn:()=>owner.resources(b.slug)});
+  const [email,setEmail]=useState(''); const [role,setRole]=useState<'manager'|'staff'>('staff'); const [resource,setResource]=useState(''); const [notice,setNotice]=useState('');
+  const [credentials,setCredentials]=useState<{email:string;password:string}|null>(null);
+  const refresh=()=>{void qc.invalidateQueries({queryKey:['owner','team',b.slug]})};
+  const create=useMutation({mutationFn:()=>owner.team(b.slug,'create',{email:email.trim(),role,resource_id:role==='staff'?resource:null}),onSuccess:(data)=>{setNotice(data.created?'Аккаунт создан. Передайте сотруднику временный пароль лично.':'Почта уже зарегистрирована: доступ выдан, сотрудник входит со своим паролем.');if(data.temporary_password)setCredentials({email:email.trim(),password:data.temporary_password});setEmail('');refresh()},onError:(e)=>setNotice(errText(e))});
+  const save=useMutation({mutationFn:(x:{user_id:string;role:'manager'|'staff';resource_id:string|null})=>owner.team(b.slug,'set_role',x),onSuccess:()=>{setNotice('Доступ обновлён.');refresh()},onError:e=>setNotice(errText(e))});
+  const remove=useMutation({mutationFn:(id:string)=>owner.team(b.slug,'remove',{user_id:id}),onSuccess:()=>{setNotice('Доступ сотрудника отозван.');refresh()},onError:e=>setNotice(errText(e))});
+  return <div className="col"><div className="admin-subheading"><div><h2>Доступ сотрудников</h2><p className="muted small">Сотрудник входит по почте и паролю. Система не отправляет письма и коды.</p></div></div>
+    <div className="card col"><b>Добавить сотрудника</b><label className="muted small">Почта сотрудника</label><input className="field" type="email" autoComplete="off" value={email} onChange={e=>setEmail(e.target.value)} placeholder="name@example.com"/>
+      <label className="muted small">Роль</label><select className="field" value={role} onChange={e=>setRole(e.target.value as 'manager'|'staff')}><option value="staff">Сотрудник — только свой пост и записи</option><option value="manager">Менеджер — записи и рабочие разделы</option></select>
+      {role==='staff'&&<><label className="muted small">Рабочий пост</label><select className="field" value={resource} onChange={e=>setResource(e.target.value)}><option value="">Выберите пост</option>{resources.data?.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></>}
+      {notice&&<p className="muted small" role="status">{notice}</p>}
+      {credentials&&<div className="card col"><b>Временный пароль — сохраните сейчас</b><span>Логин: {credentials.email}</span><code>{credentials.password}</code><p className="muted small">Показывается только один раз. Передайте пароль лично. При первом входе сотрудник задаст новый.</p><button className="btn ghost mini" onClick={async()=>{try{await navigator.clipboard.writeText(`Логин: ${credentials.email}\nВременный пароль: ${credentials.password}`);setCredentials(null);setNotice('Данные скопированы. Передайте их сотруднику лично.')}catch{setNotice('Скопируйте пароль вручную и передайте сотруднику лично.')}}}>Скопировать и скрыть</button></div>}
+      <button className="btn mini" disabled={create.isPending||!email.trim()||(role==='staff'&&!resource)} onClick={()=>{setNotice('');setCredentials(null);create.mutate()}}>{create.isPending?'Создаём аккаунт…':'Создать доступ'}</button>
+    </div>
+    <div className="admin-list-heading"><div><h2>Сотрудники</h2></div><button className="btn ghost mini" onClick={refresh}>Обновить</button></div>
+    {people.isPending?<p className="muted">Загружаем…</p>:people.isError?<p className="err">Не удалось загрузить сотрудников. <button className="link" onClick={()=>void people.refetch()}>Повторить</button></p>:(people.data?.members??[]).length===0?<p className="muted">Пока нет добавленных сотрудников.</p>:(people.data?.members??[]).map(m=><TeamMemberRow key={m.user_id} member={m} resources={resources.data??[]} onSave={x=>save.mutate(x)} onRemove={()=>{if(window.confirm(`Отозвать доступ для ${m.email}?`))remove.mutate(m.user_id)}} busy={save.isPending||remove.isPending}/>)}
+  </div>
+}
+function TeamMemberRow({member,resources,onSave,onRemove,busy}:{member:{user_id:string;email:string;role:'manager'|'staff';resource_id:string|null;resource_name:string|null};resources:{id:string;name:string}[];onSave:(x:{user_id:string;role:'manager'|'staff';resource_id:string|null})=>void;onRemove:()=>void;busy:boolean}){
+  const [role,setRole]=useState(member.role);const [resource,setResource]=useState(member.resource_id??'');
+  return <div className="card col"><b>{member.email}</b><div className="row wrap"><select className="field" value={role} onChange={e=>setRole(e.target.value as 'manager'|'staff')}><option value="staff">Сотрудник</option><option value="manager">Менеджер</option></select>{role==='staff'&&<select className="field" value={resource} onChange={e=>setResource(e.target.value)}><option value="">Выберите пост</option>{resources.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select>}<button className="btn ghost mini" disabled={busy||(role==='staff'&&!resource)} onClick={()=>onSave({user_id:member.user_id,role,resource_id:role==='staff'?resource:null})}>Сохранить</button><button className="btn danger mini" disabled={busy} onClick={onRemove}>Отозвать доступ</button></div></div>
 }
 
 function Reports({ b }: { b: Business }) {
