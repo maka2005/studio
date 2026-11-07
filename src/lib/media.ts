@@ -15,12 +15,13 @@ export async function prepareImage(file: File, maxSide: number, type: 'image/jpe
   return blob;
 }
 export async function uploadImage(tenantId: string, blob: Blob, ext: 'jpg' | 'png'): Promise<string> {
-  const path = `${tenantId}/${crypto.randomUUID()}.${ext}`;   // уникальное имя: старые копии в кэше не мешают
-  const { error } = await supabase.storage.from(BUCKET).upload(path, blob, { contentType: blob.type, cacheControl: '31536000', upsert: false });
-  if (error) throw error;
-  return supabase.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
+  const form=new FormData();form.set('action','upload');form.set('tenant_id',tenantId);form.set('file',new File([blob],`upload.${ext}`,{type:blob.type}));
+  const {data,error}=await supabase.functions.invoke('media-management',{body:form});
+  if(error)throw error;if(typeof data?.url!=='string')throw new Error('Не удалось загрузить изображение.');return data.url;
 }
 export async function removeByUrl(url: string) {   // ссылки не из хранилища (файлы из tenants/) пропускаются
   const part = url.split(`/object/public/${BUCKET}/`)[1]; if (!part) return;
-  await supabase.storage.from(BUCKET).remove([decodeURIComponent(part)]);
+  const path=decodeURIComponent(part);const tenantId=path.split('/')[0];if(!tenantId)return;
+  const form=new FormData();form.set('action','remove');form.set('tenant_id',tenantId);form.set('path',path);
+  const {error}=await supabase.functions.invoke('media-management',{body:form});if(error)throw error;
 }

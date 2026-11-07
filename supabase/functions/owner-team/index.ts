@@ -2,7 +2,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 
 const site=(Deno.env.get('SITE_URL')??'').trim();
 const allowed=new Set<string>(); try{if(site)allowed.add(new URL(site).origin)}catch{}
-allowed.add('http://localhost:5173'); allowed.add('http://127.0.0.1:5173');
+try{if(['localhost','127.0.0.1'].includes(new URL(Deno.env.get('SUPABASE_URL')??'').hostname)){allowed.add('http://localhost:5173');allowed.add('http://127.0.0.1:5173')}}catch{}
 const headers=(req:Request)=>{const origin=req.headers.get('origin')??'';return {'Access-Control-Allow-Origin':allowed.has(origin)?origin:'null','Vary':'Origin','Access-Control-Allow-Headers':'authorization, x-client-info, apikey, content-type','Access-Control-Allow-Methods':'POST, OPTIONS','Content-Type':'application/json'}};
 const json=(req:Request,value:unknown,status=200)=>new Response(JSON.stringify(value),{status,headers:headers(req)});
 const emailOk=(v:string)=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);

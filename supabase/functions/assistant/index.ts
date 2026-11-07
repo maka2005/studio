@@ -2,7 +2,10 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 import OpenAI from 'npm:openai@4';
 import { runRouter, type LlmCall, type Scope } from './router.ts';
 
-const H = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Content-Type': 'application/json' };
+const siteOrigin = (() => { try { return new URL(Deno.env.get('SITE_URL') ?? '').origin } catch { return '' } })();
+const localSupabase = (() => { try { return ['localhost','127.0.0.1'].includes(new URL(Deno.env.get('SUPABASE_URL') ?? '').hostname) } catch { return false } })();
+const allowedOrigins = new Set([siteOrigin,...(localSupabase?['http://localhost:5173','http://127.0.0.1:5173']:[])].filter(Boolean));
+const H = { ...(siteOrigin?{'Access-Control-Allow-Origin':siteOrigin}:{}), 'Vary':'Origin', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods':'POST, OPTIONS', 'Content-Type': 'application/json' };
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: H });
 const env = (k: string) => Deno.env.get(k) ?? '';
 const addDay = (iso: string, n: number) => new Date(new Date(`${iso}T12:00:00Z`).getTime() + n * 864e5).toISOString().slice(0, 10);
@@ -10,6 +13,7 @@ const sha = async (s: string) => [...new Uint8Array(await crypto.subtle.digest('
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: H });
+  const origin=req.headers.get('origin'); if(origin&&!allowedOrigins.has(origin)) return json({error:'forbidden'},403);
   try {
     const body = await req.json();
     const slug = String(body.slug ?? ''); const message = String(body.message ?? '').trim(); const scope: Scope = body.scope === 'owner' ? 'owner' : 'client';

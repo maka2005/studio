@@ -1,7 +1,11 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
+const siteOrigin = (() => { try { return new URL(Deno.env.get('SITE_URL') ?? '').origin } catch { return '' } })();
+const localSupabase = (() => { try { return ['localhost','127.0.0.1'].includes(new URL(Deno.env.get('SUPABASE_URL') ?? '').hostname) } catch { return false } })();
+const allowedOrigins = new Set([siteOrigin,...(localSupabase?['http://localhost:5173','http://127.0.0.1:5173']:[])].filter(Boolean));
 const cors = {
-  'Access-Control-Allow-Origin': '*',
+  ...(siteOrigin?{'Access-Control-Allow-Origin':siteOrigin}:{}),
+  'Vary':'Origin',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
@@ -13,6 +17,7 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   if (req.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+  const origin=req.headers.get('origin'); if(origin&&!allowedOrigins.has(origin)) return json({error:'forbidden'},403);
 
   const payload = await req.json().catch(() => null);
   if (!payload || typeof payload !== 'object') return json({ error: 'bad_request' }, 400);

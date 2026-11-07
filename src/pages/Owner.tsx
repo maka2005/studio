@@ -337,7 +337,7 @@ function auditDetail(e:OwnerAuditEvent,currency:string) {
   }
   if(e.entity==='payment')return `${money(Number(d.amount_cents??0)/100,currency)}${e.action==='refund'?' возвращено':' получено'}`;
   if(e.entity==='team')return `${String(d.email??'Сотрудник')}${d.role?` · роль: ${d.role==='staff'?'сотрудник':'менеджер'}`:''}${d.resource?` · пост: ${String(d.resource)}`:''}`;
-  if(e.entity==='studio'||e.entity==='notifications') {const names:Record<string,string>={phone:'телефон',address:'адрес',description:'описание',cards:'текст главной',hours:'часы работы',gallery:'галерея',client_telegram_enabled:'Telegram для клиентов',reminder_hours_before:'время напоминания',repeat_after_days:'период повторного визита',reminder_message:'текст напоминания',repeat_message:'текст повторного сообщения'};const fields=Array.isArray(d.fields)?d.fields.map(x=>names[String(x)]??String(x)).join(', '):'настройки';const hours=d.hours as {from?:unknown;to?:unknown}|undefined;const days:Record<string,string>={mon:'Пн',tue:'Вт',wed:'Ср',thu:'Чт',fri:'Пт',sat:'Сб',sun:'Вс'};const schedule=(value:unknown)=>value&&typeof value==='object'?Object.entries(value as Record<string,unknown>).map(([day,range])=>`${days[day]??day} ${Array.isArray(range)?range.join('–'):'выходной'}`).join(', '):'не задан';return `Изменены поля: ${fields}${hours?` · график: ${schedule(hours.from)} → ${schedule(hours.to)}`:''}`}
+  if(e.entity==='studio'||e.entity==='notifications') {const names:Record<string,string>={phone:'телефон',address:'адрес',description:'описание',cards:'текст главной',hours:'часы работы',gallery:'галерея',client_telegram_enabled:'Telegram для клиентов',reminder_hours_before:'время напоминания',repeat_after_days:'период повторного визита',reminder_message:'текст напоминания',repeat_message:'текст повторного сообщения',legal:'юридические реквизиты'};const fields=Array.isArray(d.fields)?d.fields.map(x=>names[String(x)]??String(x)).join(', '):'настройки';const hours=d.hours as {from?:unknown;to?:unknown}|undefined;const days:Record<string,string>={mon:'Пн',tue:'Вт',wed:'Ср',thu:'Чт',fri:'Пт',sat:'Сб',sun:'Вс'};const schedule=(value:unknown)=>value&&typeof value==='object'?Object.entries(value as Record<string,unknown>).map(([day,range])=>`${days[day]??day} ${Array.isArray(range)?range.join('–'):'выходной'}`).join(', '):'не задан';return `Изменены поля: ${fields}${hours?` · график: ${schedule(hours.from)} → ${schedule(hours.to)}`:''}`}
   const changes=Object.entries(d).filter(([key])=>key!=='hours').map(([key,value])=>{const labels:Record<string,string>={status:'Статус',starts_at:'Время',service_id:'Услуга',resource_id:'Мастер / пост'};const label=labels[key]??key;const change=value&&typeof value==='object'?value as Record<string,unknown>:null;const status=(v:unknown)=>({booked:'Записан',arrived:'Прибыл',done:'Завершён',cancelled:'Отменён'} as Record<string,string>)[String(v)]??String(v??'—');return change?`${label}: ${key==='status'?status(change.from):String(change.from??'—')} → ${key==='status'?status(change.to):String(change.to??'—')}`:`${label}: ${String(value)}`});
   return changes.join(' · ')||`ID ${e.entity_id?.slice(0,8)??''}`;
 }
@@ -1388,6 +1388,7 @@ const LegalForm = z.object({
   address: z.string().trim().min(5).max(200),
   email: z.string().trim().email().max(200),
   retention: z.string().trim().min(3).max(200),
+  retention_days:z.number().int().min(1).max(36500).nullable(),
 })
 function Docs({ b }: { b: Business }) {
   const qc = useQueryClient()
@@ -1398,6 +1399,7 @@ function Docs({ b }: { b: Business }) {
     address: l.address ?? b.address,
     email: l.email ?? '',
     retention: l.retention ?? 'до достижения целей обработки',
+    retention_days:l.retention_days??null,
   })
   const [msg, setMsg] = useState<string | null>(null)
   const [ok, setOk] = useState(false)
@@ -1423,8 +1425,9 @@ function Docs({ b }: { b: Business }) {
     }
     m.mutate()
   }
-  const set = (k: keyof typeof f) => (e: ChangeEvent<HTMLInputElement>) =>
+  const set = (k: 'name'|'bin'|'address'|'email'|'retention') => (e: ChangeEvent<HTMLInputElement>) =>
     setF({ ...f, [k]: e.target.value })
+  const setRetentionDays=(e:ChangeEvent<HTMLInputElement>)=>{const raw=e.target.value;const days=raw===''?null:Number(raw);setF({...f,retention_days:days,retention:days?`Данные записей хранятся ${days} дней после завершения визита, затем обезличиваются.`:'до достижения целей обработки'})}
   return (
     <>
       <div className="admin-subheading"><div><h2>Документы</h2><p className="muted small">Реквизиты подставляются в юридические страницы сайта.</p></div></div>
@@ -1465,6 +1468,9 @@ function Docs({ b }: { b: Business }) {
         Срок обработки данных
       </label>
       <input id="lr" className="field" value={f.retention} onChange={set('retention')} />
+      <label className="muted small" htmlFor="retention-days">Автообезличивание записей, дней</label>
+      <input id="retention-days" className="field" type="number" min="1" max="36500" inputMode="numeric" placeholder="Не настроено" value={f.retention_days??''} onChange={setRetentionDays} />
+      <p className="muted small">Выберите срок, который соответствует вашей политике хранения. После него имя, телефон и автомобиль в завершённых или отменённых записях будут обезличены ежедневно. Пустое поле выключает автообезличивание.</p>
       <button className="btn" disabled={m.isPending} onClick={save}>
         {m.isPending ? 'Сохраняем…' : 'Сохранить'}
       </button>

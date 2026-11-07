@@ -1,6 +1,9 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
-const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS' };
+const siteOrigin = (() => { try { return new URL(Deno.env.get('SITE_URL') ?? '').origin } catch { return '' } })();
+const localSupabase = (() => { try { return ['localhost','127.0.0.1'].includes(new URL(Deno.env.get('SUPABASE_URL') ?? '').hostname) } catch { return false } })();
+const allowedOrigins = new Set([siteOrigin,...(localSupabase?['http://localhost:5173','http://127.0.0.1:5173']:[])].filter(Boolean));
+const cors = { ...(siteOrigin?{'Access-Control-Allow-Origin':siteOrigin}:{}), 'Vary':'Origin', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS' };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
 const sha = async (s: string) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)))].map((x) => x.toString(16).padStart(2, '0')).join('');
 const ipOf = (r: Request) => r.headers.get('cf-connecting-ip') ?? r.headers.get('x-real-ip') ?? 'unknown';
@@ -8,6 +11,7 @@ const ipOf = (r: Request) => r.headers.get('cf-connecting-ip') ?? r.headers.get(
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   if (req.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+  const origin=req.headers.get('origin'); if(origin&&!allowedOrigins.has(origin)) return json({error:'forbidden'},403);
   const p = await req.json().catch(() => null) as Record<string, unknown> | null;
   if (!p || typeof p.action !== 'string') return json({ error: 'bad_request' }, 400);
   const admin = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');

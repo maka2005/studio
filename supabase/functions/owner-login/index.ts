@@ -3,8 +3,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 const site = (Deno.env.get('SITE_URL') ?? '').trim();
 const allowedOrigins = new Set<string>();
 try { if (site) allowedOrigins.add(new URL(site).origin); } catch { /* configured by deployment */ }
-allowedOrigins.add('http://localhost:5173');
-allowedOrigins.add('http://127.0.0.1:5173');
+try { if (['localhost','127.0.0.1'].includes(new URL(Deno.env.get('SUPABASE_URL') ?? '').hostname)) { allowedOrigins.add('http://localhost:5173'); allowedOrigins.add('http://127.0.0.1:5173'); } } catch { /* production allows only SITE_URL */ }
 const corsFor = (req: Request) => {
   const origin = req.headers.get('origin') ?? '';
   return allowedOrigins.has(origin) ? { 'Access-Control-Allow-Origin': origin, 'Vary': 'Origin' } : {};

@@ -1,2 +1,5 @@
 [functions.owner-team]
 verify_jwt = false
+
+[functions.media-management]
+verify_jwt = false
