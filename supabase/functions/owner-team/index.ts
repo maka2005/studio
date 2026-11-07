@@ -16,7 +16,7 @@ Deno.serve(async(req)=>{
  const action=typeof p?.action==='string'?p.action:'';
  const url=Deno.env.get('SUPABASE_URL')??'', anon=Deno.env.get('SUPABASE_ANON_KEY')??'', service=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')??'';
  if(!url||!anon||!service)return json(req,{error:'temporarily_unavailable'},503);
- const slug=typeof p?.slug==='string'?p.slug:''; const action=typeof p?.action==='string'?p.action:'';
+ const slug=typeof p?.slug==='string'?p.slug:'';
  const admin=createClient(url,service,{auth:{persistSession:false,autoRefreshToken:false}});
  if(action==='recover'){
   const email=typeof p?.email==='string'?p.email.trim().toLowerCase():''; const key=typeof p?.recovery_key==='string'?p.recovery_key.trim():''; const password=typeof p?.password==='string'?p.password:'';
