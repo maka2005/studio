@@ -15,7 +15,7 @@ import { SERVICE_CATEGORIES, serviceCategories } from '../lib/serviceCatalog'
 import './owner-login.css'
 import './owner-media.css'
 
-const TABS = ['Записи', 'Отчёты', 'Сотрудники', 'Команда и посты', 'История', 'Ожидание', 'Промокоды', 'Отзывы', 'Услуги', 'Студия', 'Фото', 'Уведомления', 'Документы'] as const
+const TABS = ['Записи', 'Отчёты', 'Сотрудники', 'Мой доступ', 'Команда и посты', 'История', 'Ожидание', 'Промокоды', 'Отзывы', 'Услуги', 'Студия', 'Фото', 'Уведомления', 'Документы'] as const
 const STATUS: Record<string, string> = {
   booked: 'Записан',
   arrived: 'Принята',
@@ -66,6 +66,9 @@ function Login() {
   const [password, setPassword] = useState('')
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [recovering,setRecovering]=useState(false)
+  const [recoveryEmail,setRecoveryEmail]=useState('');const [recoveryKey,setRecoveryKey]=useState('');const [newPassword,setNewPassword]=useState('');const [recoveryMessage,setRecoveryMessage]=useState('');const [newRecoveryKey,setNewRecoveryKey]=useState('')
+  const recover=async()=>{setRecoveryMessage('');setNewRecoveryKey('');try{const result=await owner.teamAction('','recover',{email:recoveryEmail.trim(),recovery_key:recoveryKey,password:newPassword});setRecoveryMessage('Пароль изменён. Войдите с новым паролем. Сохраните новый ключ восстановления:');setNewRecoveryKey(result.recovery_key??'Ключ не удалось обновить. После входа создайте новый во вкладке «Мой доступ».')}catch{setRecoveryMessage('Не удалось восстановить доступ. Проверьте почту и резервный ключ. Если ключ не сохранили, обратитесь к администратору проекта.')}}
   const submit = async () => {
     setBusy(true)
     setErr(null)
@@ -87,7 +90,7 @@ function Login() {
   }
   return (
     <div className="page admin-login-page">
-      <form className="login-wrap admin-login" onSubmit={(e) => { e.preventDefault(); void submit() }}>
+      <form className="login-wrap admin-login" onSubmit={(e) => { e.preventDefault(); if(recovering)void recover(); else void submit() }}>
         <div className="login-ico">
           <LockIcon />
         </div>
@@ -130,6 +133,8 @@ function Login() {
         >
           {busy ? 'Входим…' : 'Войти'}
         </button>
+        <button type="button" className="link" onClick={()=>{setRecovering(!recovering);setRecoveryMessage('')}}>{recovering?'Назад ко входу':'Забыли пароль?'}</button>
+        {recovering&&<div className="col"><p className="muted small">Введите почту и резервный ключ, который вы сохранили в кабинете. Письмо с кодом не отправляется.</p><input className="field" type="email" required placeholder="Почта аккаунта" value={recoveryEmail} onChange={e=>setRecoveryEmail(e.target.value)}/><input className="field" required placeholder="Резервный ключ" value={recoveryKey} onChange={e=>setRecoveryKey(e.target.value)}/><input className="field" type="password" minLength={10} required placeholder="Новый пароль (от 10 символов)" value={newPassword} onChange={e=>setNewPassword(e.target.value)}/><button type="button" className="btn" disabled={!recoveryEmail||!recoveryKey||newPassword.length<10} onClick={()=>void recover()}>Восстановить доступ</button>{recoveryMessage&&<p className="muted small" role="status">{recoveryMessage}</p>}{newRecoveryKey&&<div className="card col"><b>Новый резервный ключ</b><code>{newRecoveryKey}</code><button type="button" className="btn ghost mini" onClick={async()=>{try{await navigator.clipboard.writeText(newRecoveryKey);setNewRecoveryKey('');setRecoveryMessage('Новый ключ скопирован. Сохраните его в надёжном месте.')}catch{setRecoveryMessage('Сохраните ключ вручную в надёжном месте.')}}}>Скопировать и скрыть</button></div>}</div>}
       </form>
     </div>
   )
@@ -162,7 +167,7 @@ function Cabinet({ b, onLogout }: { b: Business; onLogout: () => void }) {
   if (access.isPending) return <LoadingScreen label="Загружаем права доступа…" />
   if (access.isError || !access.data) return <p className="pad err">Не удалось определить роль. Обновите страницу или обратитесь к владельцу.</p>
   const role = access.data
-  const visibleTabs = (role === 'staff' ? ['Записи'] : role === 'manager' ? TABS.filter((t) => !['Сотрудники','Студия','Фото','Уведомления','Документы'].includes(t)) : TABS) as readonly (typeof TABS)[number][]
+  const visibleTabs = (role === 'staff' ? ['Записи','Мой доступ'] : role === 'manager' ? TABS.filter((t) => !['Студия','Фото','Уведомления','Документы'].includes(t)) : TABS) as readonly (typeof TABS)[number][]
   if (!visibleTabs.includes(tab)) setTab('Записи')
   return (
     <section className="pad admin-shell">
@@ -190,6 +195,8 @@ function Cabinet({ b, onLogout }: { b: Business; onLogout: () => void }) {
       </div>
       {tab === 'Записи' && <Bookings b={b} role={role} />}
       {tab === 'Сотрудники' && role === 'owner' && <TeamAccess b={b} />}
+      {tab === 'Сотрудники' && role === 'manager' && <TeamAccess b={b} canManageManagers={false} />}
+      {tab === 'Мой доступ' && <MyAccess b={b} />}
       {tab === 'Отчёты' && <Reports b={b} />}
       {tab === 'Команда и посты' && <TeamResources b={b} />}
       {tab === 'История' && <AuditHistory b={b} />}
@@ -205,7 +212,7 @@ function Cabinet({ b, onLogout }: { b: Business; onLogout: () => void }) {
   )
 }
 
-function TeamAccess({ b }: { b: Business }) {
+function TeamAccess({ b, canManageManagers = true }: { b: Business; canManageManagers?: boolean }) {
   const qc=useQueryClient(); const people=useQuery({queryKey:['owner','team',b.slug],queryFn:()=>owner.team(b.slug,'list')});
   const resources=useQuery({queryKey:['owner','resources',b.slug],queryFn:()=>owner.resources(b.slug)});
   const [email,setEmail]=useState(''); const [role,setRole]=useState<'manager'|'staff'>('staff'); const [resource,setResource]=useState(''); const [notice,setNotice]=useState('');
@@ -214,21 +221,28 @@ function TeamAccess({ b }: { b: Business }) {
   const create=useMutation({mutationFn:()=>owner.team(b.slug,'create',{email:email.trim(),role,resource_id:role==='staff'?resource:null}),onSuccess:(data)=>{setNotice(data.created?'Аккаунт создан. Передайте сотруднику временный пароль лично.':'Почта уже зарегистрирована: доступ выдан, сотрудник входит со своим паролем.');if(data.temporary_password)setCredentials({email:email.trim(),password:data.temporary_password});setEmail('');refresh()},onError:(e)=>setNotice(errText(e))});
   const save=useMutation({mutationFn:(x:{user_id:string;role:'manager'|'staff';resource_id:string|null})=>owner.team(b.slug,'set_role',x),onSuccess:()=>{setNotice('Доступ обновлён.');refresh()},onError:e=>setNotice(errText(e))});
   const remove=useMutation({mutationFn:(id:string)=>owner.team(b.slug,'remove',{user_id:id}),onSuccess:()=>{setNotice('Доступ сотрудника отозван.');refresh()},onError:e=>setNotice(errText(e))});
+  const reset=useMutation({mutationFn:(id:string)=>owner.teamAction(b.slug,'reset_password',{user_id:id}),onSuccess:(data, id)=>{const member=people.data?.members.find(x=>x.user_id===id);if(data.temporary_password&&member)setCredentials({email:member.email,password:data.temporary_password});setNotice('Создан новый временный пароль. Старый пароль больше не действует.')},onError:e=>setNotice(errText(e))});
   return <div className="col"><div className="admin-subheading"><div><h2>Доступ сотрудников</h2><p className="muted small">Сотрудник входит по почте и паролю. Система не отправляет письма и коды.</p></div></div>
     <div className="card col"><b>Добавить сотрудника</b><label className="muted small">Почта сотрудника</label><input className="field" type="email" autoComplete="off" value={email} onChange={e=>setEmail(e.target.value)} placeholder="name@example.com"/>
-      <label className="muted small">Роль</label><select className="field" value={role} onChange={e=>setRole(e.target.value as 'manager'|'staff')}><option value="staff">Сотрудник — только свой пост и записи</option><option value="manager">Менеджер — записи и рабочие разделы</option></select>
+      <label className="muted small">Роль</label><select className="field" value={role} onChange={e=>setRole(e.target.value as 'manager'|'staff')}><option value="staff">Сотрудник — только свой пост и записи</option>{canManageManagers&&<option value="manager">Менеджер — записи и рабочие разделы</option>}</select>
       {role==='staff'&&<><label className="muted small">Рабочий пост</label><select className="field" value={resource} onChange={e=>setResource(e.target.value)}><option value="">Выберите пост</option>{resources.data?.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></>}
       {notice&&<p className="muted small" role="status">{notice}</p>}
       {credentials&&<div className="card col"><b>Временный пароль — сохраните сейчас</b><span>Логин: {credentials.email}</span><code>{credentials.password}</code><p className="muted small">Показывается только один раз. Передайте пароль лично. При первом входе сотрудник задаст новый.</p><button className="btn ghost mini" onClick={async()=>{try{await navigator.clipboard.writeText(`Логин: ${credentials.email}\nВременный пароль: ${credentials.password}`);setCredentials(null);setNotice('Данные скопированы. Передайте их сотруднику лично.')}catch{setNotice('Скопируйте пароль вручную и передайте сотруднику лично.')}}}>Скопировать и скрыть</button></div>}
       <button className="btn mini" disabled={create.isPending||!email.trim()||(role==='staff'&&!resource)} onClick={()=>{setNotice('');setCredentials(null);create.mutate()}}>{create.isPending?'Создаём аккаунт…':'Создать доступ'}</button>
     </div>
     <div className="admin-list-heading"><div><h2>Сотрудники</h2></div><button className="btn ghost mini" onClick={refresh}>Обновить</button></div>
-    {people.isPending?<p className="muted">Загружаем…</p>:people.isError?<p className="err">Не удалось загрузить сотрудников. <button className="link" onClick={()=>void people.refetch()}>Повторить</button></p>:(people.data?.members??[]).length===0?<p className="muted">Пока нет добавленных сотрудников.</p>:(people.data?.members??[]).map(m=><TeamMemberRow key={m.user_id} member={m} resources={resources.data??[]} onSave={x=>save.mutate(x)} onRemove={()=>{if(window.confirm(`Отозвать доступ для ${m.email}?`))remove.mutate(m.user_id)}} busy={save.isPending||remove.isPending}/>)}
+    {people.isPending?<p className="muted">Загружаем…</p>:people.isError?<p className="err">Не удалось загрузить сотрудников. <button className="link" onClick={()=>void people.refetch()}>Повторить</button></p>:(people.data?.members??[]).length===0?<p className="muted">Пока нет добавленных сотрудников.</p>:(people.data?.members??[]).map(m=><TeamMemberRow key={m.user_id} member={m} resources={resources.data??[]} canManageManagers={canManageManagers} onSave={x=>save.mutate(x)} onRemove={()=>{if(window.confirm(`Отозвать доступ для ${m.email}?`))remove.mutate(m.user_id)}} onReset={()=>reset.mutate(m.user_id)} busy={save.isPending||remove.isPending||reset.isPending}/>)}
   </div>
 }
-function TeamMemberRow({member,resources,onSave,onRemove,busy}:{member:{user_id:string;email:string;role:'manager'|'staff';resource_id:string|null;resource_name:string|null};resources:{id:string;name:string}[];onSave:(x:{user_id:string;role:'manager'|'staff';resource_id:string|null})=>void;onRemove:()=>void;busy:boolean}){
+function TeamMemberRow({member,resources,onSave,onRemove,onReset,canManageManagers,busy}:{member:{user_id:string;email:string;role:'manager'|'staff';resource_id:string|null;resource_name:string|null};resources:{id:string;name:string}[];onSave:(x:{user_id:string;role:'manager'|'staff';resource_id:string|null})=>void;onRemove:()=>void;onReset:()=>void;canManageManagers:boolean;busy:boolean}){
   const [role,setRole]=useState(member.role);const [resource,setResource]=useState(member.resource_id??'');
-  return <div className="card col"><b>{member.email}</b><div className="row wrap"><select className="field" value={role} onChange={e=>setRole(e.target.value as 'manager'|'staff')}><option value="staff">Сотрудник</option><option value="manager">Менеджер</option></select>{role==='staff'&&<select className="field" value={resource} onChange={e=>setResource(e.target.value)}><option value="">Выберите пост</option>{resources.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select>}<button className="btn ghost mini" disabled={busy||(role==='staff'&&!resource)} onClick={()=>onSave({user_id:member.user_id,role,resource_id:role==='staff'?resource:null})}>Сохранить</button><button className="btn danger mini" disabled={busy} onClick={onRemove}>Отозвать доступ</button></div></div>
+  return <div className="card col"><b>{member.email}</b><div className="row wrap"><select className="field" value={role} onChange={e=>setRole(e.target.value as 'manager'|'staff')}><option value="staff">Сотрудник</option>{canManageManagers&&<option value="manager">Менеджер</option>}</select>{role==='staff'&&<select className="field" value={resource} onChange={e=>setResource(e.target.value)}><option value="">Выберите пост</option>{resources.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select>}<button className="btn ghost mini" disabled={busy||(role==='staff'&&!resource)} onClick={()=>onSave({user_id:member.user_id,role,resource_id:role==='staff'?resource:null})}>Сохранить</button><button className="btn ghost mini" disabled={busy} onClick={onReset}>Выдать новый пароль</button><button className="btn danger mini" disabled={busy} onClick={onRemove}>Отозвать доступ</button></div></div>
+}
+
+function MyAccess({b}:{b:Business}){
+ const [key,setKey]=useState('');const [message,setMessage]=useState('');const [busy,setBusy]=useState(false)
+ const create=async()=>{setBusy(true);setMessage('');try{const result=await owner.teamAction(b.slug,'enroll_recovery');setKey(result.recovery_key??'');setMessage('Ключ создан. Сохраните его в надёжном месте — при следующем создании старый ключ перестанет работать.')}catch{setMessage('Не удалось создать ключ восстановления. Повторите позже.')}finally{setBusy(false)}}
+ return <div className="col"><div className="admin-subheading"><div><h2>Мой доступ</h2><p className="muted small">Создайте резервный ключ, чтобы восстановить пароль без писем и кодов.</p></div></div><div className="card col"><b>Восстановление аккаунта</b><p className="muted small">Ключ показывается только один раз. Если потеряете пароль и ключ, владелец или менеджер сможет выдать временный пароль. Владельцу без другого администратора поможет администратор проекта.</p>{message&&<p className="muted small" role="status">{message}</p>}{key&&<div className="card col"><code>{key}</code><button className="btn ghost mini" onClick={async()=>{try{await navigator.clipboard.writeText(key);setKey('');setMessage('Ключ скопирован. Сохраните его в надёжном месте.')}catch{setMessage('Скопируйте ключ вручную и сохраните в надёжном месте.')}}}>Скопировать и скрыть</button></div>}<button className="btn mini" disabled={busy} onClick={()=>void create()}>{busy?'Создаём…':'Создать или заменить ключ'}</button></div></div>
 }
 
 function Reports({ b }: { b: Business }) {
@@ -306,13 +320,13 @@ function AuditHistory({b}:{b:Business}) {
   const q=useQuery({queryKey:['owner','audit',b.slug,page],queryFn:()=>owner.auditHistory(b.slug,limit+1,page*limit)});
   const items=q.data?.slice(0,limit)??[];const hasNext=(q.data?.length??0)>limit;
   return <div className="col"><div className="admin-subheading"><div><h2>История изменений</h2><p className="muted small">Записи, услуги, команда, оплаты и настройки студии.</p></div></div>
-    {q.isPending?<p className="muted">Загрузка истории…</p>:q.isError?<p className="err">Не удалось загрузить историю. <button className="link" onClick={()=>void q.refetch()}>Повторить</button></p>:items.length===0?<p className="muted">Изменений пока нет.</p>:<div className="admin-audit-list">{items.map(e=><article className="card admin-audit-event" key={e.id}><div className="row between wrap"><b>{auditEntity(e.entity)} · {auditAction(e.action)}</b><time className="muted small">{fmtT(b,e.created_at,'d MMM yyyy, HH:mm')}</time></div><p className="muted small">{auditDetail(e,b.currency)}{e.actor_email?` · ${e.actor_email}`:''}</p></article>)}</div>}
+    {q.isPending?<p className="muted">Загрузка истории…</p>:q.isError?<p className="err">Не удалось загрузить историю. <button className="link" onClick={()=>void q.refetch()}>Повторить</button></p>:items.length===0?<p className="muted">Изменений пока нет.</p>:<div className="admin-audit-list">{items.map(e=><article className="card admin-audit-event" key={e.id}><div className="row between wrap"><b>{auditEntity(e.entity)} · {auditAction(e.action,e.entity)}</b><time className="muted small">{fmtT(b,e.created_at,'d MMM yyyy, HH:mm')}</time></div><p className="muted small">{auditDetail(e,b.currency)}{e.actor_email?` · ${e.actor_email}`:''}</p></article>)}</div>}
     {(page>0||hasNext)&&<nav className="admin-service-pagination" aria-label="История изменений"><button className="admin-page-button" disabled={page===0} onClick={()=>setPage(page-1)}>Назад</button><span className="muted small">Страница <b>{page+1}</b></span><button className="admin-page-button" disabled={!hasNext} onClick={()=>setPage(page+1)}>Далее</button></nav>}
   </div>
 }
 
-function auditEntity(entity:string) { return ({booking:'Запись',service:'Услуга',resource:'Мастер / пост',payment:'Оплата',studio:'Студия',notifications:'Уведомления'} as Record<string,string>)[entity]??entity }
-function auditAction(action:string) { return ({created:'создано',updated:'изменено',deleted:'удалено',payment:'оплата добавлена',refund:'возврат добавлен',settings_changed:'настройки обновлены'} as Record<string,string>)[action]??action }
+function auditEntity(entity:string) { return ({booking:'Запись',service:'Услуга',resource:'Мастер / пост',payment:'Оплата',studio:'Студия',notifications:'Уведомления',team:'Доступ сотрудника'} as Record<string,string>)[entity]??entity }
+function auditAction(action:string,entity='') { if(entity==='team'&&action==='created')return 'доступ выдан';if(entity==='team'&&action==='updated')return 'права изменены';if(entity==='team'&&action==='deleted')return 'доступ отозван';return ({created:'создано',updated:'изменено',deleted:'удалено',payment:'оплата добавлена',refund:'возврат добавлен',settings_changed:'настройки обновлены',password_reset:'выдан новый временный пароль',account_recovered:'восстановлен доступ'} as Record<string,string>)[action]??action }
 function auditDetail(e:OwnerAuditEvent,currency:string) {
   const d=e.details??{};
   if(e.entity==='service'||e.entity==='resource') {
@@ -322,6 +336,7 @@ function auditDetail(e:OwnerAuditEvent,currency:string) {
     return pieces.join(' · ')||`ID ${e.entity_id?.slice(0,8)??''}`;
   }
   if(e.entity==='payment')return `${money(Number(d.amount_cents??0)/100,currency)}${e.action==='refund'?' возвращено':' получено'}`;
+  if(e.entity==='team')return `${String(d.email??'Сотрудник')}${d.role?` · роль: ${d.role==='staff'?'сотрудник':'менеджер'}`:''}${d.resource?` · пост: ${String(d.resource)}`:''}`;
   if(e.entity==='studio'||e.entity==='notifications') {const names:Record<string,string>={phone:'телефон',address:'адрес',description:'описание',cards:'текст главной',hours:'часы работы',gallery:'галерея',client_telegram_enabled:'Telegram для клиентов',reminder_hours_before:'время напоминания',repeat_after_days:'период повторного визита',reminder_message:'текст напоминания',repeat_message:'текст повторного сообщения'};const fields=Array.isArray(d.fields)?d.fields.map(x=>names[String(x)]??String(x)).join(', '):'настройки';const hours=d.hours as {from?:unknown;to?:unknown}|undefined;const days:Record<string,string>={mon:'Пн',tue:'Вт',wed:'Ср',thu:'Чт',fri:'Пт',sat:'Сб',sun:'Вс'};const schedule=(value:unknown)=>value&&typeof value==='object'?Object.entries(value as Record<string,unknown>).map(([day,range])=>`${days[day]??day} ${Array.isArray(range)?range.join('–'):'выходной'}`).join(', '):'не задан';return `Изменены поля: ${fields}${hours?` · график: ${schedule(hours.from)} → ${schedule(hours.to)}`:''}`}
   const changes=Object.entries(d).filter(([key])=>key!=='hours').map(([key,value])=>{const labels:Record<string,string>={status:'Статус',starts_at:'Время',service_id:'Услуга',resource_id:'Мастер / пост'};const label=labels[key]??key;const change=value&&typeof value==='object'?value as Record<string,unknown>:null;const status=(v:unknown)=>({booked:'Записан',arrived:'Прибыл',done:'Завершён',cancelled:'Отменён'} as Record<string,string>)[String(v)]??String(v??'—');return change?`${label}: ${key==='status'?status(change.from):String(change.from??'—')} → ${key==='status'?status(change.to):String(change.to??'—')}`:`${label}: ${String(value)}`});
   return changes.join(' · ')||`ID ${e.entity_id?.slice(0,8)??''}`;

@@ -1,0 +1,2 @@
+[functions.owner-team]
+verify_jwt = false

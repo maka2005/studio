@@ -112,6 +112,11 @@ export const owner = {
     if (error) { const body=await (error as {context?:Response}).context?.clone().json().catch(()=>null); throw new Error(body?.error ?? 'team_request_failed'); }
     if (data?.error) throw new Error(String(data.error)); return data as {members:{user_id:string;email:string;role:'manager'|'staff';resource_id:string|null;resource_name:string|null}[];ok?:boolean;created?:boolean;temporary_password?:string|null};
   },
+  teamAction: async (slug:string,action:'reset_password'|'enroll_recovery'|'recover',args:Record<string,unknown>={})=>{
+    const {data,error}=await supabase.functions.invoke('owner-team',{body:{slug,action,...args}});
+    if(error){const body=await(error as {context?:Response}).context?.clone().json().catch(()=>null);throw new Error(body?.error??'recovery_failed')}
+    if(data?.error)throw new Error(String(data.error));return data as {ok:boolean;temporary_password?:string;recovery_key?:string|null}
+  },
   cancel: (id: string) => rpc<void>('owner_cancel', { p_booking: id }),
   erase: (id: string) => rpc<void>('owner_erase_customer', { p_booking: id }),
   reschedule: (id: string, start: string) => rpc<boolean>('owner_reschedule', { p_booking: id, p_start: start }),
