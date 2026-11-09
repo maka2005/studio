@@ -204,7 +204,7 @@ function Cabinet({ b, onLogout }: { b: Business; onLogout: () => void }) {
             key={g.name}
             role="tab"
             aria-selected={activeGroup?.name === g.name}
-            onClick={() => setTab(g.tabs[0])}
+            onClick={() => { const firstTab = g.tabs[0]; if (firstTab) setTab(firstTab) }}
           >
             {g.name}
           </button>
