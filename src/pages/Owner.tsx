@@ -198,32 +198,42 @@ function Cabinet({ b, onLogout }: { b: Business; onLogout: () => void }) {
           Выйти
         </button>
       </div>
-      <div className="admin-groups" role="tablist" aria-label="Разделы кабинета">
-        {groupList.map((g) => (
-          <button
-            key={g.name}
-            role="tab"
-            aria-selected={activeGroup?.name === g.name}
-            onClick={() => { const firstTab = g.tabs[0]; if (firstTab) setTab(firstTab) }}
-          >
-            {g.name}
-          </button>
-        ))}
-      </div>
-      {activeGroup && activeGroup.tabs.length > 1 && (
-        <div className="tabs2 admin-subtabs" role="tablist" aria-label={activeGroup.name}>
-          {activeGroup.tabs.map((t) => (
-            <button
-              key={t}
-              role="tab"
-              aria-selected={tab === t}
-              onClick={() => setTab(t)}
-            >
-              {TAB_LABELS[t] ?? t}
-            </button>
-          ))}
-        </div>
-      )}
+      <div className="admin-layout">
+        <nav className="admin-side" aria-label="Разделы кабинета">
+          {groupList.map((g) => {
+            const isActive = activeGroup?.name === g.name;
+            const firstTab = g.tabs[0];
+            return (
+              <div key={g.name} className={`admin-group${isActive ? ' is-active' : ''}${g.tabs.length === 1 ? ' is-single' : ''}`}>
+                <button
+                  type="button"
+                  className="admin-group-title"
+                  aria-current={isActive ? 'true' : undefined}
+                  onClick={() => { if (firstTab) setTab(firstTab) }}
+                >
+                  <span>{g.name}</span>
+                  <span className="admin-group-chevron" aria-hidden="true">›</span>
+                </button>
+                {g.tabs.length > 1 && (
+                  <div className="admin-group-tabs">
+                    {g.tabs.map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        className={`admin-group-tab${tab === t ? ' is-current' : ''}`}
+                        aria-current={tab === t ? 'page' : undefined}
+                        onClick={() => setTab(t)}
+                      >
+                        {TAB_LABELS[t] ?? t}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </nav>
+        <div className="admin-main">
       {tab === 'Записи' && <Bookings b={b} role={role} />}
       {tab === 'Сотрудники' && role === 'owner' && <TeamAccess b={b} />}
       {tab === 'Сотрудники' && role === 'manager' && <TeamAccess b={b} canManageManagers={false} />}
@@ -239,6 +249,8 @@ function Cabinet({ b, onLogout }: { b: Business; onLogout: () => void }) {
       {tab === 'Фото' && <Media b={b} />}
       {tab === 'Уведомления' && <Notify b={b} />}
       {tab === 'Документы' && <Docs b={b} />}
+        </div>
+      </div>
     </section>
   )
 }
