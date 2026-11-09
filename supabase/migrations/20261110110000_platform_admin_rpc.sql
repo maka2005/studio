@@ -153,7 +153,7 @@ begin
   perform public.platform_assert(p_actor);
   if p_key not in ('trial_days','grace_days') then raise exception 'bad_setting'; end if;
   begin n := (p_value #>> '{}')::int; exception when others then raise exception 'bad_value'; end;
-  if n < case when p_key='trial_days' then 1 else 0 end or n > case when p_key='trial_days' then 90 else 30 end then raise exception 'bad_value'; end if;
+  if (p_key='trial_days' and (n < 1 or n > 90)) or (p_key='grace_days' and (n < 0 or n > 30)) then raise exception 'bad_value'; end if;
   insert into public.platform_settings(key,value,updated_at) values(p_key,to_jsonb(n),now())
     on conflict(key) do update set value=excluded.value,updated_at=now();
   perform public.platform_log(p_actor,'settings.update',null,jsonb_build_object('key',p_key,'value',n));
