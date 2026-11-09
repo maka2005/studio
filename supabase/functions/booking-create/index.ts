@@ -54,15 +54,19 @@ Deno.serve(async (req) => {
   }
   if (!allowed) return json({ error: 'rate_limited' }, 429);
 
+  const { data: bookingOpen, error: openError } = await admin.rpc('tenant_booking_open', { p_slug: slug });
+  if (openError) { console.error('subscription check failed:', openError.message); return json({ error: 'booking_unavailable' }, 503); }
+  if (bookingOpen !== true) return json({ error: 'booking_closed' }, 403);
+
   const { data, error } = await admin.rpc('create_booking_with_promo', {
     p_slug: slug, p_service: service, p_start: start, p_name: name, p_phone: phone,
     p_car: car, p_key: key, p_token: token, p_consent: consent, p_promo: promo, p_source: source,
   });
   if (error) {
     const message = error.message ?? '';
-    const known = ['tenant_not_found', 'service_not_found', 'past_start', 'slot_taken', 'invalid_slot', 'bad_name', 'bad_phone', 'bad_car', 'consent_required', 'promo_invalid'];
+    const known = ['tenant_not_found', 'service_not_found', 'past_start', 'slot_taken', 'invalid_slot', 'bad_name', 'bad_phone', 'bad_car', 'consent_required', 'promo_invalid', 'booking_closed'];
     const code = known.find((item) => message.includes(item));
-    if (code) return json({ error: code }, code === 'slot_taken' || code === 'invalid_slot' ? 409 : 400);
+    if (code) return json({ error: code }, code === 'slot_taken' || code === 'invalid_slot' ? 409 : code === 'booking_closed' ? 403 : 400);
     console.error('booking create failed:', message);
     return json({ error: 'booking_unavailable' }, 503);
   }

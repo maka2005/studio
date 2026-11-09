@@ -39,6 +39,14 @@ Deno.serve(async (req) => {
         : await admin.from('telegram_links').select('chat_id').eq('tenant_id', j.tenant_id);
       if (linksError) throw linksError;
       if (!t) throw new Error('tenant_missing');
+      const { data: notifyOpen, error: notifyOpenError } = await admin.rpc('tenant_notifications_open', { p_tenant: j.tenant_id });
+      if (notifyOpenError) throw notifyOpenError;
+      if (notifyOpen !== true) {
+        // подписка приостановлена: задание закрываем без отправки (данные не удаляются)
+        await admin.from('notification_jobs').update({ status: 'failed', lease_until: null, last_error: 'subscription_suspended' }).eq('id', j.id);
+        retry++;
+        continue;
+      }
       if (j.kind === 'waitlist_interest') {
         if (!links?.length) {
           await finishJob(admin, j.id, false, 'no_telegram_chat_linked');

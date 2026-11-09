@@ -7,7 +7,7 @@ const OWNER_RPCS = new Set([
   'owner_block','owner_add_payment','owner_upsert_service','owner_delete_service','owner_upsert_resource','owner_delete_resource',
   'owner_notification_settings','owner_update_notification_settings','owner_update_config','owner_update_legal','owner_telegram_code',
   'owner_telegram_links','owner_notification_status','owner_telegram_unlink','owner_waitlist','owner_waitlist_status',
-  'owner_promo_codes','owner_upsert_promo','owner_delete_promo','owner_reviews','owner_publish_review','owner_source_stats',
+  'owner_subscription','owner_promo_codes','owner_upsert_promo','owner_delete_promo','owner_reviews','owner_publish_review','owner_source_stats',
 ]);
 
 const getConfig = () => ({
@@ -153,6 +153,20 @@ export default async function handler(req, res) {
       if (action === 'services') filters.push('order=price_cents.asc');
       const result = await supabaseFetch(cfg.url, cfg.anon, session.access, `/rest/v1/${table}?${filters.join('&')}`);
       return send(res, result.status, await result.json().catch(() => []));
+    }
+    if (action === 'export') {
+      const body = await parseBody(req);
+      const slug = String(body.slug || '');
+      if (!/^[a-z0-9-]{2,40}$/.test(slug)) return send(res, 400, { error: 'bad_request' });
+      const result = await fetch(`${cfg.url}/functions/v1/tenant-export`, {
+        method: 'POST', headers: { apikey: cfg.anon, Authorization: `Bearer ${session.access}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ slug }),
+      });
+      if (!result.ok) return send(res, result.status, await result.json().catch(() => ({ error: 'request_failed' })));
+      const buf = Buffer.from(await result.arrayBuffer());
+      res.statusCode = 200; res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('Content-Type', 'application/zip');
+      res.setHeader('Content-Disposition', result.headers.get('content-disposition') || `attachment; filename="${slug}-export.zip"`);
+      return res.end(buf);
     }
     if (action === 'media') {
       const { Readable } = await import('node:stream');

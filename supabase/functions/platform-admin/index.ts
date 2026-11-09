@@ -1,0 +1,195 @@
+import { createClient } from 'npm:@supabase/supabase-js@2';
+
+// Единственная точка входа админки платформы. Правила:
+//  - JWT проверяется на сервере (auth.getUser), затем наличие user_id в platform_admins;
+//  - SUPABASE_SERVICE_ROLE_KEY используется только здесь, в браузер не попадает;
+//  - если PLATFORM_REQUIRE_MFA=true, токен обязан иметь aal2 (TOTP подтверждён);
+//  - критичные операции требуют idempotency_key, повтор возвращает прежний результат.
+
+const site = (Deno.env.get('SITE_URL') ?? '').trim();
+const allowed = new Set<string>();
+try { if (site) allowed.add(new URL(site).origin); } catch { /* configured by deployment */ }
+try { if (['localhost', '127.0.0.1'].includes(new URL(Deno.env.get('SUPABASE_URL') ?? '').hostname)) { allowed.add('http://localhost:5173'); allowed.add('http://127.0.0.1:5173'); } } catch { /* prod: SITE_URL only */ }
+const corsFor = (req: Request) => {
+  const origin = req.headers.get('origin') ?? '';
+  return allowed.has(origin) ? { 'Access-Control-Allow-Origin': origin, 'Vary': 'Origin' } : { 'Vary': 'Origin' };
+};
+const json = (req: Request, body: unknown, status = 200) => new Response(JSON.stringify(body), {
+  status,
+  headers: { ...corsFor(req), 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Content-Type': 'application/json' },
+});
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const KEY = /^[A-Za-z0-9._:-]{8,128}$/;
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const str = (v: unknown, max = 200) => typeof v === 'string' ? v.trim().slice(0, max) : '';
+const obj = (v: unknown) => (v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {});
+
+const aalOf = (token: string): string => {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    return String(payload.aal ?? 'aal1');
+  } catch { return 'aal1'; }
+};
+
+const ERROR_STATUS: Record<string, number> = {
+  forbidden: 403, not_found: 404, slug_taken: 409, subscription_exists: 409, idempotency_conflict: 409,
+  bad_status: 409, no_paid_payment: 409, unlimited_subscription: 409,
+};
+const KNOWN = [
+  'forbidden', 'not_found', 'slug_taken', 'bad_slug', 'bad_name', 'bad_timezone', 'owner_missing', 'plan_not_found', 'bad_duration',
+  'bad_dates', 'bad_status', 'bad_action', 'bad_setting', 'bad_value', 'reason_required', 'subscription_exists', 'idempotency_conflict',
+  'no_paid_payment', 'unlimited_subscription',
+];
+
+async function findUserByEmail(admin: ReturnType<typeof createClient>, email: string) {
+  for (let page = 1; page <= 20; page++) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 1000 });
+    if (error) throw error;
+    const hit = data.users.find((u) => u.email?.toLowerCase() === email);
+    if (hit) return hit;
+    if (data.users.length < 1000) break;
+  }
+  return null;
+}
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: { ...corsFor(req), 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' } });
+  if (req.method !== 'POST') return json(req, { error: 'method_not_allowed' }, 405);
+  const origin = req.headers.get('origin');
+  if (origin && !allowed.has(origin)) return json(req, { error: 'forbidden' }, 403);
+
+  const url = Deno.env.get('SUPABASE_URL') ?? '', anon = Deno.env.get('SUPABASE_ANON_KEY') ?? '', service = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+  if (!url || !anon || !service) return json(req, { error: 'temporarily_unavailable' }, 503);
+  const body = obj(await req.json().catch(() => null));
+  const action = str(body.action, 40);
+  if (!action) return json(req, { error: 'bad_request' }, 400);
+
+  // --- 1. аутентификация
+  const token = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '');
+  if (!token) return json(req, { error: 'unauthorized' }, 401);
+  const caller = createClient(url, anon, { auth: { persistSession: false, autoRefreshToken: false } });
+  const { data: { user }, error: authError } = await caller.auth.getUser(token);
+  if (authError || !user) return json(req, { error: 'unauthorized' }, 401);
+  const admin = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } });
+
+  // --- 2. первоначальная настройка: первый суперадмин (только пока таблица пуста и email совпал)
+  if (action === 'bootstrap') {
+    const expected = (Deno.env.get('PLATFORM_SUPERADMIN_EMAIL') ?? '').trim().toLowerCase();
+    if (!expected || user.email?.toLowerCase() !== expected) return json(req, { error: 'forbidden' }, 403);
+    const { count, error } = await admin.from('platform_admins').select('user_id', { count: 'exact', head: true });
+    if (error) return json(req, { error: 'operation_failed' }, 500);
+    if ((count ?? 0) > 0) return json(req, { error: 'forbidden' }, 403);
+    const { error: insertError } = await admin.from('platform_admins').insert({ user_id: user.id });
+    if (insertError) return json(req, { error: 'operation_failed' }, 500);
+    await admin.rpc('platform_log', { p_actor: user.id, p_action: 'platform.bootstrap', p_tenant: null, p_payload: {} });
+    return json(req, { ok: true });
+  }
+
+  // --- 3. роль проверяется на сервере по таблице platform_admins
+  const { data: isAdmin, error: roleError } = await admin.rpc('is_platform_admin', { p_user: user.id });
+  if (roleError) return json(req, { error: 'temporarily_unavailable' }, 503);
+  if (isAdmin !== true) return json(req, { error: 'forbidden' }, 403);
+  const mfaNeeded = Deno.env.get('PLATFORM_REQUIRE_MFA') === 'true' && aalOf(token) !== 'aal2';
+  if (action === 'whoami') return json(req, { ok: true, email: user.email, aal: aalOf(token), mfa_required: mfaNeeded });
+  if (mfaNeeded) return json(req, { error: 'mfa_required' }, 403);
+
+  // --- 4. лимиты запросов
+  const actor = user.id;
+  const rate = await admin.rpc('consume_platform_rate', { p_scope: 'platform_admin', p_key: `actor:${actor}`, p_limit: 240, p_window: 60 });
+  if (rate.error) return json(req, { error: 'temporarily_unavailable' }, 503);
+  if (rate.data !== true) return json(req, { error: 'rate_limited' }, 429);
+
+  const idem = str(body.idempotency_key, 128);
+  const needKey = () => KEY.test(idem);
+  const uuidOf = (v: unknown) => { const s = str(v, 40); return UUID.test(s) ? s : null; };
+
+  try {
+    let rpc: { name: string; args: Record<string, unknown> } | null = null;
+    switch (action) {
+      case 'dashboard': rpc = { name: 'platform_dashboard', args: { p_actor: actor } }; break;
+      case 'tenants': rpc = { name: 'platform_list_tenants', args: { p_actor: actor, p_search: str(body.search, 80) || null, p_phase: str(body.phase, 20) || null, p_plan: str(body.plan, 20) || null, p_limit: Number(body.limit) || 50, p_offset: Number(body.offset) || 0 } }; break;
+      case 'tenant': { const id = uuidOf(body.tenant_id); if (!id) return json(req, { error: 'bad_request' }, 400); rpc = { name: 'platform_tenant_card', args: { p_actor: actor, p_tenant: id } }; break; }
+      case 'subscriptions': rpc = { name: 'platform_list_subscriptions', args: { p_actor: actor, p_phase: str(body.phase, 20) || null, p_limit: Number(body.limit) || 100 } }; break;
+      case 'plans': rpc = { name: 'platform_list_plans', args: { p_actor: actor } }; break;
+      case 'plan_save': rpc = { name: 'platform_upsert_plan', args: { p_actor: actor, p: obj(body.plan) } }; break;
+      case 'payments': rpc = { name: 'platform_list_payments', args: { p_actor: actor, p_status: str(body.status, 20) || null, p_limit: Number(body.limit) || 100 } }; break;
+      case 'audit': rpc = { name: 'platform_audit_list', args: { p_actor: actor, p_tenant: uuidOf(body.tenant_id), p_from: str(body.from, 40) || null, p_to: str(body.to, 40) || null, p_limit: Number(body.limit) || 200 } }; break;
+      case 'settings': rpc = { name: 'platform_get_settings', args: { p_actor: actor } }; break;
+      case 'settings_set': rpc = { name: 'platform_set_setting', args: { p_actor: actor, p_key: str(body.key, 40), p_value: body.value ?? null } }; break;
+      case 'sync': rpc = { name: 'platform_sync_subscriptions', args: {} }; break;
+      case 'subscription_create': {
+        const id = uuidOf(body.tenant_id); if (!id || !needKey()) return json(req, { error: 'bad_request' }, 400);
+        rpc = { name: 'platform_create_subscription', args: { p_actor: actor, p_key: idem, p_tenant: id, p: obj(body.subscription) } }; break;
+      }
+      case 'subscription_action': {
+        const id = uuidOf(body.subscription_id); if (!id || !needKey()) return json(req, { error: 'bad_request' }, 400);
+        rpc = { name: 'platform_subscription_action', args: { p_actor: actor, p_key: idem, p_sub: id, p_action: str(body.type, 20), p: obj(body.data) } }; break;
+      }
+      case 'payment_create': {
+        const id = uuidOf(body.tenant_id); const pay = obj(body.payment);
+        if (!id || !needKey() || !(Number(pay.amount_kzt) > 0)) return json(req, { error: 'bad_request' }, 400);
+        rpc = { name: 'platform_create_payment', args: { p_actor: actor, p_key: idem, p_tenant: id, p: pay } }; break;
+      }
+      case 'payment_confirm': { const id = uuidOf(body.payment_id); if (!id) return json(req, { error: 'bad_request' }, 400); rpc = { name: 'platform_confirm_payment', args: { p_actor: actor, p_payment: id } }; break; }
+      case 'payment_refund': { const id = uuidOf(body.payment_id); if (!id) return json(req, { error: 'bad_request' }, 400); rpc = { name: 'platform_refund_payment', args: { p_actor: actor, p_payment: id, p_reason: str(body.reason, 300) } }; break; }
+      case 'payment_fail': { const id = uuidOf(body.payment_id); if (!id) return json(req, { error: 'bad_request' }, 400); rpc = { name: 'platform_fail_payment', args: { p_actor: actor, p_payment: id, p_reason: str(body.reason, 300) || null } }; break; }
+
+      case 'create_tenant': {
+        const t = obj(body.tenant);
+        const email = str(t.owner_email, 254).toLowerCase();
+        const slug = str(t.slug, 40).toLowerCase();
+        if (!needKey() || !EMAIL.test(email) || !/^[a-z0-9-]{2,40}$/.test(slug) || str(t.name, 80).length < 2) return json(req, { error: 'bad_request' }, 400);
+        const limit = await admin.rpc('consume_platform_rate', { p_scope: 'platform_admin', p_key: `create:${actor}`, p_limit: 30, p_window: 3600 });
+        if (limit.error) return json(req, { error: 'temporarily_unavailable' }, 503);
+        if (limit.data !== true) return json(req, { error: 'rate_limited' }, 429);
+
+        // владелец: привязываем существующего пользователя или создаём нового (Auth Admin API)
+        let owner = await findUserByEmail(admin, email);
+        let createdUser = false;
+        if (!owner) {
+          const created = await admin.auth.admin.createUser({ email, email_confirm: true, user_metadata: { full_name: str(t.owner_name, 120) } });
+          if (created.error || !created.data.user) return json(req, { error: 'owner_create_failed' }, 502);
+          owner = created.data.user; createdUser = true;
+        }
+        const { data, error } = await admin.rpc('platform_create_tenant', { p_actor: actor, p_key: idem, p: { ...t, slug, owner_email: email, owner_user_id: owner.id } });
+        if (error) {
+          // транзакция в БД откатилась целиком; созданный пользователь переиспользуется при повторе
+          const code = KNOWN.find((k) => error.message?.includes(k));
+          if (code) return json(req, { error: code }, ERROR_STATUS[code] ?? 400);
+          console.error('create_tenant failed:', error.message);
+          return json(req, { error: 'operation_failed' }, 500);
+        }
+        // приглашение: письмо для установки пароля (только для вновь созданного пользователя)
+        let invited = false;
+        if (createdUser && site) {
+          const { error: inviteError } = await caller.auth.resetPasswordForEmail(email, { redirectTo: `${site.replace(/\/$/, '')}/s/${slug}/owner` });
+          invited = !inviteError;
+          if (inviteError) console.error('invite failed:', inviteError.message);
+        }
+        return json(req, { ...(data as object), owner_user_id: owner.id, owner_created: createdUser, invite_sent: invited });
+      }
+
+      case 'resend_invite': {
+        const email = str(body.email, 254).toLowerCase(); const slug = str(body.slug, 40).toLowerCase();
+        if (!EMAIL.test(email) || !/^[a-z0-9-]{2,40}$/.test(slug) || !site) return json(req, { error: 'bad_request' }, 400);
+        const { error } = await caller.auth.resetPasswordForEmail(email, { redirectTo: `${site.replace(/\/$/, '')}/s/${slug}/owner` });
+        await admin.rpc('platform_log', { p_actor: actor, p_action: 'owner.resend_invite', p_tenant: null, p_payload: { email, slug } });
+        return error ? json(req, { error: 'operation_failed' }, 502) : json(req, { ok: true });
+      }
+      default: return json(req, { error: 'unknown_action' }, 400);
+    }
+
+    const { data, error } = await admin.rpc(rpc.name, rpc.args);
+    if (error) {
+      const code = KNOWN.find((k) => error.message?.includes(k));
+      if (code) return json(req, { error: code }, ERROR_STATUS[code] ?? 400);
+      console.error(`${action} failed:`, error.message);
+      return json(req, { error: 'operation_failed' }, 500);
+    }
+    return json(req, { ok: true, data });
+  } catch (e) {
+    console.error('platform-admin error:', (e as Error).message);
+    return json(req, { error: 'temporarily_unavailable' }, 503);
+  }
+});

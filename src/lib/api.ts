@@ -22,6 +22,13 @@ export async function fetchSlots(slug: string, service: string, day: string): Pr
   if (data?.error) throw new Error(String(data.error));
   return (data?.slots ?? []) as Slot[];
 }
+// Открыта ли онлайн-запись (подписка организации). При сбое проверки считаем запись открытой:
+// окончательное решение всё равно принимает сервер (booking-create / get_slots).
+export async function fetchBookingOpen(slug: string): Promise<boolean> {
+  const { data, error } = await supabase.functions.invoke('public-api', { body: { action: 'booking_status', slug } });
+  if (error || data?.error) return true;
+  return data?.open !== false;
+}
 export async function createBooking(a: { slug: string; service: string; start: string; name: string; phone: string; car: string; key: string; token: string; consent: string; promo?: string; source?: string }) {
   const { data, error } = await supabase.functions.invoke('booking-create', { body: a });
   if (error) {
@@ -117,8 +124,10 @@ export type OwnerRepeatStats = { completed_visits: number; unique_clients: numbe
 export type OwnerNotificationSettings = { reminder_hours_before: number; repeat_after_days: number; reminder_message: string | null; repeat_message: string | null };
 export type OwnerAuditEvent = { id: number; created_at: string; entity: string; entity_id: string | null; action: string; details: Record<string, unknown>; actor_email: string | null };
 export type OwnerNotificationStatus = { pending: number; failed: number; last_sent_at: string | null };
+export type OwnerSubscription = { state: 'open' | 'grace' | 'closed'; phase: string; plan_code?: string; plan_name?: string; price_kzt?: number; starts_at?: string | null; ends_at?: string | null; grace_ends_at?: string | null; days_left?: number | null };
 export const owner = {
   me: (slug: string) => rpc<boolean>('owner_me', { p_slug: slug }),
+  subscription: (slug: string) => rpc<OwnerSubscription>('owner_subscription', { p_slug: slug }),
   access: (slug: string) => rpc<'owner'|'manager'|'staff'|null>('owner_access', { p_slug: slug }),
   bookings: (slug: string, from: string, to: string) => rpc<OwnerBooking[]>('owner_bookings', { p_slug: slug, p_from: from, p_to: to }),
   staffBookings: (slug: string, from: string, to: string) => rpc<OwnerBooking[]>('staff_bookings', { p_slug: slug, p_from: from, p_to: to }),

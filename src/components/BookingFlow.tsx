@@ -6,7 +6,7 @@ import { addMinutes } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import { formatInTimeZone } from 'date-fns-tz';
 import type { Business } from '../lib/tenant';
-import { createBooking, fetchServices, fetchSlots, joinWaitlist } from '../lib/api';
+import { createBooking, fetchBookingOpen, fetchServices, fetchSlots, joinWaitlist } from '../lib/api';
 import { duration, money, randomToken } from '../lib/format';
 import { ArrowLeft, ArrowRight } from '../lib/icons';
 import { Sheet } from './Sheet';
@@ -25,7 +25,7 @@ const TITLES = ['Выберите услугу', 'Выберите время', 
 const ERR: Record<string, string> = { slot_taken: 'Это время только что заняли. Выберите другое.', invalid_slot: 'Это время недоступно для записи.',
   past_start: 'Это время уже прошло.', consent_required: 'Нужно согласие на обработку данных.', bad_name: 'Проверьте имя.',
   bad_phone: 'Проверьте номер телефона.', bad_car: 'Проверьте автомобиль.', rate_limited: 'Слишком много попыток записи. Попробуйте позже.',
-  promo_invalid: 'Промокод не действует или закончился лимит.', booking_unavailable: 'Сервис записи временно недоступен. Попробуйте позже.' };
+  promo_invalid: 'Промокод не действует или закончился лимит.', booking_closed: 'Онлайн-запись временно недоступна.', booking_unavailable: 'Сервис записи временно недоступен. Попробуйте позже.' };
 
 function attributionSource(): string {
   const raw = new URLSearchParams(location.search).get('utm_source')?.toLowerCase();
@@ -38,6 +38,7 @@ function attributionSource(): string {
 
 export function BookingFlow({ b, initialService, onClose }: { b: Business; initialService?: string; onClose: () => void }) {
   const svcQ = useQuery({ queryKey: ['services', b.slug], queryFn: () => fetchServices(b.slug) });
+  const openQ = useQuery({ queryKey: ['booking-open', b.slug], queryFn: () => fetchBookingOpen(b.slug), staleTime: 60_000 });
   const [step, setStep] = useState(1);
   const [serviceId, setServiceId] = useState<string | null>(null);
   const [serviceSearch, setServiceSearch] = useState('');
@@ -95,6 +96,12 @@ export function BookingFlow({ b, initialService, onClose }: { b: Business; initi
       <p className="muted small">Все детали и возможность отмены доступны в разделе «Моя запись» на этом устройстве.</p>
       {b.client_telegram_enabled && <CustomerTelegramOptIn slug={b.slug} token={token.current} />}
       <Link className="btn" to={`/s/${b.slug}/booking`} onClick={onClose}>Моя запись <ArrowRight /></Link>
+    </Sheet>);
+
+  if (openQ.data === false) return (
+    <Sheet title="Запись временно недоступна" onClose={onClose}>
+      <div className="card col"><p>Онлайн-запись в этой студии сейчас закрыта. Свяжитесь со студией по телефону{b.phone ? `: ${b.phone}` : ''}.</p></div>
+      <button className="btn ghost" onClick={onClose}>Закрыть</button>
     </Sheet>);
 
   return (

@@ -4,7 +4,7 @@ import { useOutletContext } from 'react-router-dom'
 import { z } from 'zod'
 import { ru } from 'date-fns/locale'
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
-import { ownerRequest, type OwnerUser } from '../lib/ownerSession'
+import { downloadOwnerExport, ownerRequest, type OwnerUser } from '../lib/ownerSession'
 import { supabase } from '../lib/supabase'
 import { errText, fetchServices, fetchSlots, owner, type OwnerBooking, type OwnerNotificationSettings, type OwnerAuditEvent } from '../lib/api'
 import { duration, money, telHref } from '../lib/format'
@@ -203,6 +203,8 @@ function Cabinet({ b, onLogout }: { b: Business; onLogout: () => void }) {
           Выйти
         </button>
       </div>
+      <SubscriptionBanner slug={b.slug} />
+      {role === 'owner' && <ExportButton slug={b.slug} />}
       <div className="admin-layout">
         <nav className="admin-side" aria-label="Разделы кабинета">
           {groupList.map((g) => {
@@ -258,6 +260,50 @@ function Cabinet({ b, onLogout }: { b: Business; onLogout: () => void }) {
       </div>
     </section>
   )
+}
+
+function ExportButton({ slug }: { slug: string }) {
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const run = async () => {
+    setBusy(true); setErr('')
+    try { await downloadOwnerExport(slug) }
+    catch (e) { setErr((e as Error).message === 'rate_limited' ? 'Слишком много выгрузок, попробуйте позже.' : 'Не удалось сформировать выгрузку. Попробуйте ещё раз.') }
+    finally { setBusy(false) }
+  }
+  return (
+    <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+      <button className="btn ghost mini" onClick={run} disabled={busy}>{busy ? 'Готовим файл…' : 'Выгрузить данные (ZIP)'}</button>
+      {err && <span className="err small" role="alert">{err}</span>}
+    </div>
+  )
+}
+
+// Статус подписки для владельца. Если запрос не удался (например, не разрешён прокси), баннер просто не показывается.
+function SubscriptionBanner({ slug }: { slug: string }) {
+  const sub = useQuery({ queryKey: ['owner', 'subscription', slug], queryFn: () => owner.subscription(slug), retry: false })
+  const s = sub.data
+  if (!s) return null
+  const date = (v?: string | null) => (v ? new Date(v).toLocaleDateString('ru-RU') : '')
+  if (s.phase === 'scheduled')
+    return <p className="muted small">Подписка начнёт действовать {date(s.starts_at)}. До этой даты онлайн-запись и уведомления отключены.</p>
+  if (s.state === 'closed')
+    return (
+      <div className="card col" role="alert" style={{ borderColor: '#ff5a5a' }}>
+        <b>Подписка приостановлена</b>
+        <p className="muted">Онлайн-запись для клиентов и уведомления отключены. Ваши данные сохранены, кабинет и выгрузка данных доступны. Для возобновления свяжитесь с поддержкой Servio и оплатите тариф{s.plan_name ? ` ${s.plan_name}` : ''}{s.price_kzt ? ` (${s.price_kzt.toLocaleString('ru-RU')} ₸/мес)` : ''}.</p>
+      </div>
+    )
+  if (s.state === 'grace')
+    return (
+      <div className="card col" role="status" style={{ borderColor: '#e0a030' }}>
+        <b>Срок подписки закончился {date(s.ends_at)}</b>
+        <p className="muted">Всё продолжает работать до {date(s.grace_ends_at)}. После этой даты онлайн-запись и уведомления будут отключены. Оплатите продление, чтобы этого избежать.</p>
+      </div>
+    )
+  if (s.days_left != null && s.days_left <= 7 && s.phase !== 'none')
+    return <p className="muted small">Подписка действует до {date(s.ends_at)} (осталось дней: {s.days_left}).</p>
+  return null
 }
 
 function TeamAccess({ b, canManageManagers = true }: { b: Business; canManageManagers?: boolean }) {

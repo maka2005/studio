@@ -3,3 +3,9 @@ verify_jwt = false
 
 [functions.media-management]
 verify_jwt = false
+
+[functions.platform-admin]
+verify_jwt = false
+
+[functions.tenant-export]
+verify_jwt = false

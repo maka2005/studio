@@ -45,6 +45,7 @@ const Owner = lazy(() => import('./pages/Owner').then((m) => ({ default: m.Owner
 const Profile = lazy(() => import('./pages/Profile').then((m) => ({ default: m.Profile })));
 const Install = lazy(() => import('./pages/Install').then((m) => ({ default: m.Install })));
 const Legal = lazy(() => import('./pages/Legal').then((m) => ({ default: m.Legal })));
+const PlatformAdmin = lazy(() => import('./pages/PlatformAdmin').then((m) => ({ default: m.PlatformAdmin })));
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -66,6 +67,7 @@ createRoot(document.getElementById('root')!).render(
         <Suspense fallback={<LoadingScreen />}>
           <Routes>
             <Route path="/" element={<Navigate to={`/s/${import.meta.env.VITE_DEFAULT_SLUG ?? 'graphite'}/`} replace />} />
+            <Route path="/platform/admin" element={<PlatformAdmin />} />
             <Route path="/s/:slug" element={<Shell />}>
               <Route index element={<Home />} />
               <Route path="services" element={<ServicesPage />} />

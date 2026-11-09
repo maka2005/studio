@@ -22,12 +22,21 @@ Deno.serve(async (req) => {
     return data === true;
   };
   try {
+    if (p.action === 'booking_status') {
+      const slug = typeof p.slug === 'string' ? p.slug : '';
+      if (!/^[a-z0-9-]{2,40}$/.test(slug)) return json({ error: 'bad_request' }, 400);
+      if (!await rate('slots', ip, 120, 3600)) return json({ error: 'rate_limited' }, 429);
+      const { data, error } = await admin.rpc('tenant_booking_open', { p_slug: slug });
+      if (error) throw error;
+      return json({ open: data === true });
+    }
     if (p.action === 'slots') {
       const slug = typeof p.slug === 'string' ? p.slug : '';
       const service = typeof p.service === 'string' ? p.service : '';
       const day = typeof p.day === 'string' ? p.day : '';
       if (!/^[a-z0-9-]{2,40}$/.test(slug) || !/^[0-9a-f-]{36}$/i.test(service) || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return json({ error: 'bad_request' }, 400);
       if (!await rate('slots', ip, 120, 3600)) return json({ error: 'rate_limited' }, 429);
+      { const open = await admin.rpc('tenant_booking_open', { p_slug: slug }); if (open.error) throw open.error; if (open.data !== true) return json({ error: 'booking_closed' }, 403); }
       const { data, error } = await admin.rpc('get_slots', { p_slug: slug, p_service: service, p_day: day });
       if (error) throw error;
       return json({ slots: data ?? [] });
@@ -61,6 +70,7 @@ Deno.serve(async (req) => {
       const consent = typeof p.consent === 'string' ? p.consent.trim() : '';
       if (!/^[a-z0-9-]{2,40}$/.test(slug) || !/^[0-9a-f-]{36}$/i.test(service) || !/^\d{4}-\d{2}-\d{2}$/.test(day) || name.length < 1 || name.length > 80 || digits.length < 10 || digits.length > 15 || car.length < 2 || car.length > 60 || !consent || consent.length > 40 || new Date(`${day}T12:00:00Z`).toISOString().slice(0,10)!==day) return json({ error: 'bad_request' }, 400);
       if (!await rate('waitlist', ip, 10, 86400)) return json({ error: 'rate_limited' }, 429);
+      { const open = await admin.rpc('tenant_booking_open', { p_slug: slug }); if (open.error) throw open.error; if (open.data !== true) return json({ error: 'booking_closed' }, 403); }
       const { data: tenant, error: tenantError } = await admin.from('tenants').select('timezone').eq('slug', slug).maybeSingle();
       if (tenantError) throw tenantError;
       if (!tenant) return json({ error: 'not_found' }, 404);
