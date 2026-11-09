@@ -4,7 +4,6 @@ import { useOutletContext } from 'react-router-dom'
 import { z } from 'zod'
 import { ru } from 'date-fns/locale'
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
-import { ownerRequest, type OwnerUser } from '../lib/ownerSession'
 import { supabase } from '../lib/supabase'
 import { errText, fetchServices, fetchSlots, owner, type OwnerBooking, type OwnerNotificationSettings, type OwnerAuditEvent } from '../lib/api'
 import { duration, money, telHref } from '../lib/format'
@@ -17,6 +16,19 @@ import './owner-login.css'
 import './owner-media.css'
 
 const TABS = ['Записи', 'Отчёты', 'Сотрудники', 'Мой доступ', 'Команда и посты', 'История', 'Ожидание', 'Промокоды', 'Отзывы', 'Услуги', 'Студия', 'Фото', 'Уведомления', 'Документы'] as const
+
+// Группы разделов кабинета. Идентификаторы вкладок не меняются, меняются только подписи и группировка.
+const TAB_GROUPS: { name: string; tabs: (typeof TABS)[number][] }[] = [
+  { name: 'Сегодня', tabs: ['Записи', 'Ожидание'] },
+  { name: 'Клиенты', tabs: ['История', 'Отзывы', 'Промокоды', 'Уведомления'] },
+  { name: 'Услуги и студия', tabs: ['Услуги', 'Студия', 'Фото', 'Документы'] },
+  { name: 'Команда', tabs: ['Сотрудники', 'Команда и посты', 'Мой доступ'] },
+  { name: 'Отчёты', tabs: ['Отчёты'] },
+];
+const TAB_LABELS: Partial<Record<(typeof TABS)[number], string>> = {
+  'Мой доступ': 'Мой аккаунт',
+  'Команда и посты': 'Посты и мастера',
+};
 const STATUS: Record<string, string> = {
   booked: 'Записан',
   arrived: 'Принята',
@@ -29,28 +41,27 @@ export function Owner() {
   const qc = useQueryClient()
   const sess = useQuery({
     queryKey: ['owner', 'session'],
-    queryFn: async () => (await ownerRequest<{user:OwnerUser|null}>('session',undefined,'GET')).user,
+    queryFn: async () => (await supabase.auth.getSession()).data.session,
   })
   useEffect(() => {
-    const refresh = () => {
+    const { data } = supabase.auth.onAuthStateChange(() => {
       void qc.invalidateQueries({ queryKey: ['owner'] })
-    }
-    window.addEventListener('owner-session-changed', refresh)
-    return () => window.removeEventListener('owner-session-changed', refresh)
+    })
+    return () => data.subscription.unsubscribe()
   }, [qc])
   const logout = async () => {
-    await ownerRequest('logout')
+    await supabase.auth.signOut()
     qc.removeQueries({ queryKey: ['owner'] })
   } // приватный кэш очищается при выходе
   if (sess.isPending) return <LoadingScreen label="Открываем кабинет…" />
   if (!sess.data) return <Login />
-  if (sess.data.user_metadata?.must_change_password === true) return <SetInitialPassword />
+  if (sess.data.user.user_metadata?.must_change_password === true) return <SetInitialPassword />
   return <Cabinet b={b} onLogout={logout} />
 }
 
 function SetInitialPassword() {
   const [password,setPassword]=useState(''); const [confirm,setConfirm]=useState(''); const [msg,setMsg]=useState(''); const [busy,setBusy]=useState(false)
-  const submit=async(e:React.FormEvent)=>{e.preventDefault();setMsg('');if(password.length<10){setMsg('Придумайте пароль не короче 10 символов.');return}if(password!==confirm){setMsg('Пароли не совпадают.');return}setBusy(true);try{await ownerRequest('password',{password});window.location.reload()}catch{setMsg('Не удалось изменить пароль. Проверьте соединение и повторите.')}finally{setBusy(false)}}
+  const submit=async(e:React.FormEvent)=>{e.preventDefault();setMsg('');if(password.length<10){setMsg('Придумайте пароль не короче 10 символов.');return}if(password!==confirm){setMsg('Пароли не совпадают.');return}setBusy(true);const {error}=await supabase.auth.updateUser({password,data:{must_change_password:false}});setBusy(false);if(error)setMsg('Не удалось изменить пароль. Проверьте соединение и повторите.');else window.location.reload()}
   return <div className="page admin-login-page"><form className="login-wrap admin-login" onSubmit={(e)=>void submit(e)}><div className="login-ico"><LockIcon/></div><h1>Задайте свой пароль</h1><p className="muted">Это нужно сделать при первом входе. Временный пароль больше не понадобится.</p><label className="muted small">Новый пароль</label><input className="field" type="password" minLength={10} autoComplete="new-password" value={password} onChange={e=>setPassword(e.target.value)} required/><label className="muted small">Повторите пароль</label><input className="field" type="password" autoComplete="new-password" value={confirm} onChange={e=>setConfirm(e.target.value)} required/>{msg&&<p className="err" role="alert">{msg}</p>}<button className="btn" disabled={busy}>{busy?'Сохраняем…':'Сохранить пароль'}</button></form></div>
 }
 
@@ -75,20 +86,17 @@ function Login() {
     setBusy(true)
     setErr(null)
     try {
-      const body = await ownerRequest<{error?:string}>('login',{email:email.trim(),password})
+      const { data, error } = await supabase.functions.invoke('owner-login', { body: { email: email.trim(), password } })
+      const body = error ? await (error as { context?: Response }).context?.clone().json().catch(() => null) : data
       if (body?.error === 'rate_limited') setErr('Слишком много попыток входа. Подождите 15 минут и попробуйте снова.')
       else if (body?.error === 'bad_credentials') setErr('Неверная почта или пароль.')
-      else if (!body || body.error) setErr('Не удалось войти. Проверьте соединение и повторите позже.')
+      else if (error || !body?.session) setErr('Не удалось войти. Проверьте соединение и повторите позже.')
       else {
-        const oldSession = (await supabase.auth.getSession()).data.session
-        if (oldSession?.user.email?.toLowerCase() === email.trim().toLowerCase()) await supabase.auth.signOut({ scope: 'local' })
-        window.dispatchEvent(new Event('owner-session-changed'))
+        const { error: sessionError } = await supabase.auth.setSession(body.session)
+        if (sessionError) setErr('Не удалось открыть сессию. Повторите вход.')
       }
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : ''
-      if (reason === 'bad_credentials') setErr('Неверная почта или пароль.')
-      else if (reason === 'rate_limited') setErr('Слишком много попыток входа. Подождите 15 минут и попробуйте снова.')
-      else setErr('Не удалось связаться с сервером. Проверьте интернет и повторите.')
+    } catch {
+      setErr('Не удалось связаться с сервером. Проверьте интернет и повторите.')
     } finally {
       setBusy(false)
     }
@@ -174,6 +182,10 @@ function Cabinet({ b, onLogout }: { b: Business; onLogout: () => void }) {
   const role = access.data
   const visibleTabs = (role === 'staff' ? ['Записи','Мой доступ'] : role === 'manager' ? TABS.filter((t) => !['Студия','Фото','Уведомления','Документы'].includes(t)) : TABS) as readonly (typeof TABS)[number][]
   if (!visibleTabs.includes(tab)) setTab('Записи')
+  const groupList = TAB_GROUPS
+    .map((g) => ({ name: g.name, tabs: g.tabs.filter((t) => visibleTabs.includes(t)) as (typeof TABS)[number][] }))
+    .filter((g) => g.tabs.length > 0);
+  const activeGroup = groupList.find((g) => g.tabs.includes(tab));
   return (
     <section className="pad admin-shell">
       <div className="admin-heading">
@@ -186,18 +198,32 @@ function Cabinet({ b, onLogout }: { b: Business; onLogout: () => void }) {
           Выйти
         </button>
       </div>
-      <div className="tabs2 admin-tabs" role="tablist" aria-label="Разделы кабинета">
-        {visibleTabs.map((t) => (
+      <div className="admin-groups" role="tablist" aria-label="Разделы кабинета">
+        {groupList.map((g) => (
           <button
-            key={t}
+            key={g.name}
             role="tab"
-            aria-selected={tab === t}
-            onClick={() => setTab(t)}
+            aria-selected={activeGroup?.name === g.name}
+            onClick={() => setTab(g.tabs[0])}
           >
-            {t}
+            {g.name}
           </button>
         ))}
       </div>
+      {activeGroup && activeGroup.tabs.length > 1 && (
+        <div className="tabs2 admin-subtabs" role="tablist" aria-label={activeGroup.name}>
+          {activeGroup.tabs.map((t) => (
+            <button
+              key={t}
+              role="tab"
+              aria-selected={tab === t}
+              onClick={() => setTab(t)}
+            >
+              {TAB_LABELS[t] ?? t}
+            </button>
+          ))}
+        </div>
+      )}
       {tab === 'Записи' && <Bookings b={b} role={role} />}
       {tab === 'Сотрудники' && role === 'owner' && <TeamAccess b={b} />}
       {tab === 'Сотрудники' && role === 'manager' && <TeamAccess b={b} canManageManagers={false} />}
@@ -1183,9 +1209,13 @@ function Media({ b }: { b: Business }) {
   const tid = useQuery({
     queryKey: ['owner', 'tid', b.slug],
     queryFn: async () => {
-      const rows = await ownerRequest<{id:string}[]>('tenant',{slug:b.slug})
-      if (!rows[0]) throw new Error('tenant_not_found')
-      return rows[0].id
+      const { data, error } = await supabase
+        .from('tenants')
+        .select('id')
+        .eq('slug', b.slug)
+        .single()
+      if (error) throw error
+      return data.id as string
     },
   })
   const [logo, setLogo] = useState(b.images.logo)
