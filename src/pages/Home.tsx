@@ -15,7 +15,7 @@ export function Home() {
   const ranges = [...new Set(Object.values(b.hours).filter(Boolean).map((h) => `${h![0]}–${h![1]}`))];
   // «Маршрут» открывает 2ГИС: по ссылке владельца, а без неё по поиску адреса.
   const routeHref = b.route_url && /^https:\/\//.test(b.route_url) ? b.route_url : `https://2gis.ru/search/${encodeURIComponent(b.address)}`;
-  const minPrice = Math.min(...services.map((x) => x.price));
+  const minPrice = services.length ? Math.min(...services.map((x) => x.price)) : null;
   return (<div className="page">
     <div className="hero" style={{ backgroundImage: img(b.images.hero) }}>
       <button className="glass-btn" onClick={() => openBooking()}><b>Записаться</b><Arrow /></button></div>
@@ -24,7 +24,7 @@ export function Home() {
     <div className="tiles3">
       <div className="card tile"><div className="row"><Wrench /><b className="big">{services.length}</b></div><span className="muted small">{plural(services.length, ['услуга', 'услуги', 'услуг']).split(' ')[1]} на выбор</span></div>
       <div className="card tile"><div className="row"><Photo /><b className="big">{b.resources.length}</b></div><span className="muted small">{plural(b.resources.length, ['пост', 'поста', 'постов']).split(' ')[1]} для работы</span></div>
-      <div className="card tile"><div className="row"><Tag /><b className="big">от {money(minPrice, b.currency)}</b></div><span className="muted small">начальная цена</span></div></div>
+      <div className="card tile"><div className="row"><Tag /><b className="big">{minPrice === null ? '—' : `от ${money(minPrice, b.currency)}`}</b></div><span className="muted small">{minPrice === null ? 'услуги скоро появятся' : 'начальная цена'}</span></div></div>
     <div className="cols">
       <Reveal className="col-side"><h2>Запишитесь онлайн</h2>
         <div className="card promo"><Car className="car" /><h3>{b.cards.booking.title}</h3><p className="muted">{b.cards.booking.text}</p>

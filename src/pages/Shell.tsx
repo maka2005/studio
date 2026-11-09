@@ -5,11 +5,13 @@ import { assetUrl, loadBusiness, type Ctx } from '../lib/tenant';
 import { Calendar, Grid, Home, User } from '../lib/icons';
 import { BookingFlow } from '../components/BookingFlow';
 import { LoadingScreen } from '../components/LoadingScreen';
+import { fetchBookingOpen } from '../lib/api';
 export function Shell() {
   const { slug = '' } = useParams();
   const location = useLocation();
   const isOwner = location.pathname.includes('/owner');
   const q = useQuery({ queryKey: ['business', slug], queryFn: () => loadBusiness(slug) });
+  const bookingOpen = useQuery({ queryKey: ['booking-open', slug], queryFn: () => fetchBookingOpen(slug), staleTime: 15_000, refetchOnWindowFocus: true, enabled: !!slug });
   const [booking, setBooking] = useState<{ service?: string } | null>(null);
   const b = q.data;
   useEffect(() => {
@@ -25,6 +27,10 @@ export function Shell() {
   return (<>
     <header className="top"><Link to={base} className="brand"><img src={assetUrl(slug, b.images.logo)} alt="" width={40} height={40} />{b.short_name}</Link>
       {b.client_profile && <Link to={`${base}/profile`} className="icon-btn" aria-label="Профиль"><User /></Link>}</header>
+    {!isOwner && bookingOpen.data === false && <div className="page"><section className="card col" role="status">
+      <b>Онлайн-запись временно приостановлена</b>
+      <p className="muted">Информация об услугах и контакты студии доступны. Для записи свяжитесь со студией: <a href={`tel:${b.phone.replace(/[^+\d]/g, '')}`}>{b.phone}</a>.</p>
+    </section></div>}
     <main className={isOwner ? 'admin-main' : undefined}><Outlet context={ctx} /></main>
     {!isOwner && <div className="page legal-links"><Link to={`${base}/legal/privacy`}>Политика конфиденциальности</Link><Link to={`${base}/legal/terms`}>Условия использования</Link><Link to={`${base}/legal/consent`}>Согласие на обработку данных</Link><Link to={`${base}/legal/storage`}>Локальное хранилище</Link></div>}
     {!isOwner && <nav className="tabs" aria-label="Разделы">
