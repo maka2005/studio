@@ -1,9 +1,11 @@
 import { supabase } from './supabase';
+import { ownerRequest } from './ownerSession';
 export type Svc = { id: string; name: string; category: string; price_cents: number; duration_minutes: number; active: boolean };
 export type Slot = { slot: string; free: boolean };
 export type MyBooking = { id: string; tenant_slug: string; service_name: string; service_id: string; starts_at: string; ends_at: string;
   price_cents: number; status: string; customer_name: string; car: string; can_cancel: boolean; reviewed: boolean };
 export async function fetchServices(slug: string, includeInactive = false): Promise<Svc[]> {
+  if (includeInactive) return ownerRequest<Svc[]>('services', { slug, includeInactive: true });
   let query = supabase.from('services').select('id,name,category,price_cents,duration_minutes,active,tenants!inner(slug)').eq('tenants.slug', slug);
   if (!includeInactive) query = query.eq('active', true);
   const { data, error } = await query.order('price_cents');
@@ -90,6 +92,7 @@ export async function getCustomerTelegramStatus(token: string): Promise<boolean>
 }
 
 const rpc = async <T,>(fn: string, args: Record<string, unknown>): Promise<T> => {
+  if (fn !== 'published_reviews') return ownerRequest<T>('rpc', { fn, args });
   let result = await supabase.rpc(fn, args);
   const invalidJwt=(error:unknown)=>{const e=error as {code?:string;status?:number;message?:string}|null;return e?.status===401||e?.code==='PGRST301'||/jwt|unauthorized/i.test(e?.message??'')};
   if (invalidJwt(result.error)) {
@@ -104,16 +107,8 @@ const rpc = async <T,>(fn: string, args: Record<string, unknown>): Promise<T> =>
   return result.data as T;
 };
 const invokeOwnerTeam = async (body:Record<string,unknown>) => {
-  let result=await supabase.functions.invoke('owner-team',{body});
-  const status=(result.error as {context?:Response}|null)?.context?.status;
-  if(status===401){
-    const refreshed=await supabase.auth.refreshSession();
-    if(refreshed.data.session)result=await supabase.functions.invoke('owner-team',{body});
-    else{await supabase.auth.signOut();throw new Error('session_expired')}
-    const retryStatus=(result.error as {context?:Response}|null)?.context?.status;
-    if(retryStatus===401){await supabase.auth.signOut();throw new Error('session_expired')}
-  }
-  return result;
+  try { return { data: await ownerRequest('team', body), error: null }; }
+  catch (error) { return { data: null, error: { context: new Response(JSON.stringify({error: error instanceof Error ? error.message : 'request_failed'}), {status: Number((error as {status?:number})?.status)||500}) } }; }
 };
 export type OwnerBooking = { id: string; service_id: string; service_name: string; starts_at: string; ends_at: string; status: string; customer_name: string;
   customer_phone: string; car: string; price_cents: number; paid_cents: number; resource_name: string };
@@ -138,6 +133,7 @@ export const owner = {
     if (data?.error) throw new Error(String(data.error)); return data as {members:{user_id:string;email:string;role:'manager'|'staff';resource_id:string|null;resource_name:string|null}[];ok?:boolean;created?:boolean;temporary_password?:string|null};
   },
   teamAction: async (slug:string,action:'reset_password'|'enroll_recovery'|'recover',args:Record<string,unknown>={})=>{
+    if(action==='recover') return ownerRequest<{ok:boolean;temporary_password?:string;recovery_key?:string|null}>('recover',{slug,action,...args});
     const {data,error}=await invokeOwnerTeam({slug,action,...args});
     if(error){const context=(error as {context?:Response}).context;const body=await context?.clone().json().catch(()=>null);throw new Error(context?.status===429?'rate_limited':body?.error??'recovery_failed')}
     if(data?.error)throw new Error(String(data.error));return data as {ok:boolean;temporary_password?:string;recovery_key?:string|null}
@@ -163,8 +159,7 @@ export const owner = {
   notificationStatus: async (slug: string) => (await rpc<OwnerNotificationStatus[]>('owner_notification_status', { p_slug: slug }))[0]!,
   telegramUnlink: (id: string) => rpc<void>('owner_telegram_unlink', { p_id: id }),
   resources: async (slug: string) => {
-    const { data, error } = await supabase.from('resources').select('id,name,tenants!inner(slug)').eq('tenants.slug', slug); if (error) throw error;
-    return (data ?? []) as unknown as { id: string; name: string }[];
+    return ownerRequest<{ id: string; name: string }[]>('resources', { slug });
   },
   waitlist: (slug: string) => rpc<{ id: string; service_name: string; preferred_day: string; customer_name: string; customer_phone: string; car: string; status: string; created_at: string }[]>('owner_waitlist', { p_slug: slug }),
   waitlistStatus: (id: string, status: 'waiting' | 'contacted' | 'closed') => rpc<void>('owner_waitlist_status', { p_id: id, p_status: status }),

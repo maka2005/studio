@@ -34,6 +34,9 @@ This runbook contains response steps only. Never paste active tokens, passwords,
 - Configure alerts in the hosting/database monitoring service for 429/403 spikes, failed Edge Functions/webhooks, and LLM budget usage. Edge Function logs and the `llm_budget` table are the initial investigation sources.
 - Confirm the studio's chosen retention period in its privacy policy and **Документы**. Automated anonymization runs only when `retention_days` is configured; the owner must choose a period that matches its policy and applicable obligations.
 
-## Current architecture limitation
+## Current architecture notes
 
-The browser Supabase client persists its session in browser storage. This project uses CSP and dependency hygiene to reduce XSS risk, but it does not yet use an HTTP-only session cookie/BFF. Moving sessions to HTTP-only cookies requires routing authenticated database operations through a server-side application layer.
+- Owner and staff sessions use same-origin `HttpOnly`, `Secure` (production), `SameSite=Strict` cookies through `/api/owner`; owner access and refresh tokens are not returned to browser JavaScript. The endpoint proxies only allowlisted RPCs and authenticated owner functions.
+- Customer profile sessions still use the Supabase browser client and browser storage. This is separate from owner/staff access and retains the usual XSS exposure for those customer sessions.
+- After deploying the cookie flow, verify owner login, refresh after expiry, logout, staff role limits, reports, service edits, and image upload/removal on the production domain. If a browser still carries a legacy owner Supabase session, signing in through the new flow removes that matching browser session.
+- CSP remains in Report-Only. It records violations but does not block scripts; review reports and resolve app-origin violations before considering an enforcing policy.

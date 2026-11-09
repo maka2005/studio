@@ -4,6 +4,7 @@ import { useOutletContext } from 'react-router-dom'
 import { z } from 'zod'
 import { ru } from 'date-fns/locale'
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
+import { ownerRequest, type OwnerUser } from '../lib/ownerSession'
 import { supabase } from '../lib/supabase'
 import { errText, fetchServices, fetchSlots, owner, type OwnerBooking, type OwnerNotificationSettings, type OwnerAuditEvent } from '../lib/api'
 import { duration, money, telHref } from '../lib/format'
@@ -28,27 +29,28 @@ export function Owner() {
   const qc = useQueryClient()
   const sess = useQuery({
     queryKey: ['owner', 'session'],
-    queryFn: async () => (await supabase.auth.getSession()).data.session,
+    queryFn: async () => (await ownerRequest<{user:OwnerUser|null}>('session',undefined,'GET')).user,
   })
   useEffect(() => {
-    const { data } = supabase.auth.onAuthStateChange(() => {
+    const refresh = () => {
       void qc.invalidateQueries({ queryKey: ['owner'] })
-    })
-    return () => data.subscription.unsubscribe()
+    }
+    window.addEventListener('owner-session-changed', refresh)
+    return () => window.removeEventListener('owner-session-changed', refresh)
   }, [qc])
   const logout = async () => {
-    await supabase.auth.signOut()
+    await ownerRequest('logout')
     qc.removeQueries({ queryKey: ['owner'] })
   } // приватный кэш очищается при выходе
   if (sess.isPending) return <LoadingScreen label="Открываем кабинет…" />
   if (!sess.data) return <Login />
-  if (sess.data.user.user_metadata?.must_change_password === true) return <SetInitialPassword />
+  if (sess.data.user_metadata?.must_change_password === true) return <SetInitialPassword />
   return <Cabinet b={b} onLogout={logout} />
 }
 
 function SetInitialPassword() {
   const [password,setPassword]=useState(''); const [confirm,setConfirm]=useState(''); const [msg,setMsg]=useState(''); const [busy,setBusy]=useState(false)
-  const submit=async(e:React.FormEvent)=>{e.preventDefault();setMsg('');if(password.length<10){setMsg('Придумайте пароль не короче 10 символов.');return}if(password!==confirm){setMsg('Пароли не совпадают.');return}setBusy(true);const {error}=await supabase.auth.updateUser({password,data:{must_change_password:false}});setBusy(false);if(error)setMsg('Не удалось изменить пароль. Проверьте соединение и повторите.');else window.location.reload()}
+  const submit=async(e:React.FormEvent)=>{e.preventDefault();setMsg('');if(password.length<10){setMsg('Придумайте пароль не короче 10 символов.');return}if(password!==confirm){setMsg('Пароли не совпадают.');return}setBusy(true);try{await ownerRequest('password',{password});window.location.reload()}catch{setMsg('Не удалось изменить пароль. Проверьте соединение и повторите.')}finally{setBusy(false)}}
   return <div className="page admin-login-page"><form className="login-wrap admin-login" onSubmit={(e)=>void submit(e)}><div className="login-ico"><LockIcon/></div><h1>Задайте свой пароль</h1><p className="muted">Это нужно сделать при первом входе. Временный пароль больше не понадобится.</p><label className="muted small">Новый пароль</label><input className="field" type="password" minLength={10} autoComplete="new-password" value={password} onChange={e=>setPassword(e.target.value)} required/><label className="muted small">Повторите пароль</label><input className="field" type="password" autoComplete="new-password" value={confirm} onChange={e=>setConfirm(e.target.value)} required/>{msg&&<p className="err" role="alert">{msg}</p>}<button className="btn" disabled={busy}>{busy?'Сохраняем…':'Сохранить пароль'}</button></form></div>
 }
 
@@ -73,17 +75,20 @@ function Login() {
     setBusy(true)
     setErr(null)
     try {
-      const { data, error } = await supabase.functions.invoke('owner-login', { body: { email: email.trim(), password } })
-      const body = error ? await (error as { context?: Response }).context?.clone().json().catch(() => null) : data
+      const body = await ownerRequest<{error?:string}>('login',{email:email.trim(),password})
       if (body?.error === 'rate_limited') setErr('Слишком много попыток входа. Подождите 15 минут и попробуйте снова.')
       else if (body?.error === 'bad_credentials') setErr('Неверная почта или пароль.')
-      else if (error || !body?.session) setErr('Не удалось войти. Проверьте соединение и повторите позже.')
+      else if (!body || body.error) setErr('Не удалось войти. Проверьте соединение и повторите позже.')
       else {
-        const { error: sessionError } = await supabase.auth.setSession(body.session)
-        if (sessionError) setErr('Не удалось открыть сессию. Повторите вход.')
+        const oldSession = (await supabase.auth.getSession()).data.session
+        if (oldSession?.user.email?.toLowerCase() === email.trim().toLowerCase()) await supabase.auth.signOut({ scope: 'local' })
+        window.dispatchEvent(new Event('owner-session-changed'))
       }
-    } catch {
-      setErr('Не удалось связаться с сервером. Проверьте интернет и повторите.')
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : ''
+      if (reason === 'bad_credentials') setErr('Неверная почта или пароль.')
+      else if (reason === 'rate_limited') setErr('Слишком много попыток входа. Подождите 15 минут и попробуйте снова.')
+      else setErr('Не удалось связаться с сервером. Проверьте интернет и повторите.')
     } finally {
       setBusy(false)
     }
@@ -1178,13 +1183,9 @@ function Media({ b }: { b: Business }) {
   const tid = useQuery({
     queryKey: ['owner', 'tid', b.slug],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('tenants')
-        .select('id')
-        .eq('slug', b.slug)
-        .single()
-      if (error) throw error
-      return data.id as string
+      const rows = await ownerRequest<{id:string}[]>('tenant',{slug:b.slug})
+      if (!rows[0]) throw new Error('tenant_not_found')
+      return rows[0].id
     },
   })
   const [logo, setLogo] = useState(b.images.logo)

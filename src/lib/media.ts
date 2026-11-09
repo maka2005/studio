@@ -1,4 +1,3 @@
-import { supabase } from './supabase';
 const BUCKET = 'tenant-media';
 // Сжимаем в браузере: ограничиваем сторону и перекодируем (заодно убирается лишняя метаинформация).
 export async function prepareImage(file: File, maxSide: number, type: 'image/jpeg' | 'image/png'): Promise<Blob> {
@@ -11,17 +10,20 @@ export async function prepareImage(file: File, maxSide: number, type: 'image/jpe
   ctx.drawImage(bmp, 0, 0, c.width, c.height); bmp.close();
   const blob = await new Promise<Blob | null>((r) => c.toBlob(r, type, 0.85));
   if (!blob) throw new Error('Не удалось обработать изображение.');
-  if (blob.size > 5 * 1024 * 1024) throw new Error('После сжатия файл всё ещё больше 5 МБ.');
+  if (blob.size > 4 * 1024 * 1024) throw new Error('После сжатия файл всё ещё больше 4 МБ.');
   return blob;
 }
 export async function uploadImage(tenantId: string, blob: Blob, ext: 'jpg' | 'png'): Promise<string> {
   const form=new FormData();form.set('action','upload');form.set('tenant_id',tenantId);form.set('file',new File([blob],`upload.${ext}`,{type:blob.type}));
-  const {data,error}=await supabase.functions.invoke('media-management',{body:form});
-  if(error)throw error;if(typeof data?.url!=='string')throw new Error('Не удалось загрузить изображение.');return data.url;
+  const response=await fetch('/api/owner?action=media',{method:'POST',credentials:'same-origin',body:form});
+  const data=await response.json().catch(()=>null);
+  if(!response.ok||data?.error)throw new Error(String(data?.error??'upload_failed'));
+  if(typeof data?.url!=='string')throw new Error('Не удалось загрузить изображение.');return data.url;
 }
 export async function removeByUrl(url: string) {   // ссылки не из хранилища (файлы из tenants/) пропускаются
   const part = url.split(`/object/public/${BUCKET}/`)[1]; if (!part) return;
   const path=decodeURIComponent(part);const tenantId=path.split('/')[0];if(!tenantId)return;
   const form=new FormData();form.set('action','remove');form.set('tenant_id',tenantId);form.set('path',path);
-  const {error}=await supabase.functions.invoke('media-management',{body:form});if(error)throw error;
+  const response=await fetch('/api/owner?action=media',{method:'POST',credentials:'same-origin',body:form});
+  const data=await response.json().catch(()=>null);if(!response.ok||data?.error)throw new Error(String(data?.error??'remove_failed'));
 }
