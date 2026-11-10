@@ -107,7 +107,7 @@ Deno.serve(async (req) => {
 
   const readActions = new Set(['whoami','dashboard','tenants','tenant','subscriptions','plans','payments','audit','notifications','settings','admins']);
   const financeActions = new Set(['payments','payment_create','payment_confirm','payment_refund','payment_fail','subscriptions','dashboard','audit','notifications','tenants','tenant','plans']);
-  const supportActions = new Set(['tenants','tenant','resend_invite']);
+  const supportActions = new Set(['tenants','tenant','resend_invite','impersonation_start','impersonation_check','impersonation_end','impersonation_log']);
   const allowedByRole = role === 'owner' ? null : role === 'read_only' ? readActions : role === 'finance' ? financeActions : supportActions;
   if (!['owner','support','finance','read_only'].includes(role) || (allowedByRole && !allowedByRole.has(action)))
     return json(req, { error: 'forbidden' }, 403);
@@ -123,6 +123,49 @@ Deno.serve(async (req) => {
   const uuidOf = (v: unknown) => { const s = str(v, 40); return UUID.test(s) ? s : null; };
 
   try {
+    if (action === 'impersonation_start') {
+      const tenantId = uuidOf(body.tenant_id);
+      const reason = str(body.reason, 500);
+      if (!tenantId || reason.length < 5) return json(req, { error: 'reason_required' }, 400);
+      const { data: tenant } = await admin.from('tenants').select('id,slug,config').eq('id', tenantId).maybeSingle();
+      if (!tenant) return json(req, { error: 'not_found' }, 404);
+      const { data: member } = await admin.from('tenant_members').select('user_id').eq('tenant_id', tenantId).eq('role','owner').limit(1).maybeSingle();
+      if (!member) return json(req, { error: 'owner_missing' }, 404);
+      const { data: ownerResult, error: ownerError } = await admin.auth.admin.getUserById(member.user_id);
+      if (ownerError || !ownerResult.user?.email) return json(req, { error: 'owner_missing' }, 404);
+      const now = new Date(); const expiresAt = new Date(now.getTime() + 30 * 60_000);
+      const { data: sessionRow, error: insertError } = await admin.from('platform_impersonation_sessions').insert({ actor_id: actor, tenant_id: tenantId, reason, expires_at: expiresAt.toISOString() }).select('id').single();
+      if (insertError || !sessionRow) return json(req, { error: 'operation_failed' }, 500);
+      const { data: link, error: linkError } = await admin.auth.admin.generateLink({ type: 'magiclink', email: ownerResult.user.email });
+      if (linkError || !link.properties?.hashed_token) {
+        await admin.from('platform_impersonation_sessions').update({ ended_at: new Date().toISOString() }).eq('id',sessionRow.id);
+        return json(req, { error: 'operation_failed' }, 502);
+      }
+      const { data: ownerSession, error: verifyError } = await caller.auth.verifyOtp({ token_hash: link.properties.hashed_token, type: 'magiclink' });
+      if (verifyError || !ownerSession.session) {
+        await admin.from('platform_impersonation_sessions').update({ ended_at: new Date().toISOString() }).eq('id',sessionRow.id);
+        return json(req, { error: 'operation_failed' }, 502);
+      }
+      await admin.rpc('platform_log', { p_actor: actor, p_action: 'impersonation.start', p_tenant: tenantId, p_payload: { session_id: sessionRow.id, reason, expires_at: expiresAt.toISOString(), owner_email: ownerResult.user.email } });
+      return json(req, { ok: true, data: { session_id: sessionRow.id, tenant_id: tenantId, tenant_slug: tenant.slug, tenant_name: obj(tenant.config).name, reason, expires_at: expiresAt.toISOString(), owner_session: ownerSession.session } });
+    }
+    if (action === 'impersonation_check' || action === 'impersonation_end' || action === 'impersonation_log') {
+      const sessionId = uuidOf(body.session_id);
+      if (!sessionId) return json(req, { error: 'bad_request' }, 400);
+      const { data: active } = await admin.from('platform_impersonation_sessions').select('id,tenant_id,reason,expires_at,ended_at,tenants(slug,config)').eq('id',sessionId).eq('actor_id',actor).maybeSingle();
+      if (!active || active.ended_at || new Date(active.expires_at).getTime() <= Date.now()) return json(req, { error: 'impersonation_expired' }, 401);
+      if (action === 'impersonation_end') {
+        const endedAt = new Date().toISOString();
+        await admin.from('platform_impersonation_sessions').update({ ended_at: endedAt }).eq('id',sessionId);
+        await admin.rpc('platform_log', { p_actor: actor, p_action: 'impersonation.end', p_tenant: active.tenant_id, p_payload: { session_id: sessionId } });
+        return json(req, { ok: true });
+      }
+      if (action === 'impersonation_log') {
+        await admin.rpc('platform_log', { p_actor: actor, p_action: 'impersonation.action', p_tenant: active.tenant_id, p_payload: { session_id: sessionId, action: str(body.owner_action, 80), succeeded: body.succeeded === true } });
+      }
+      const tenantValue = Array.isArray(active.tenants) ? active.tenants[0] : active.tenants;
+      return json(req, { ok: true, data: { tenant_id: active.tenant_id, tenant_slug: tenantValue?.slug, tenant_name: obj(tenantValue?.config).name, reason: active.reason, expires_at: active.expires_at } });
+    }
     if (action === 'admins') {
       if (role !== 'owner') return json(req, { error: 'forbidden' }, 403);
       const { data: rows, error } = await admin.from('platform_admins').select('user_id,role,is_active,created_at').order('created_at', { ascending: true });

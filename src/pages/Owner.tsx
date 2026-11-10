@@ -43,7 +43,7 @@ export function Owner() {
   const qc = useQueryClient()
   const sess = useQuery({
     queryKey: ['owner', 'session'],
-    queryFn: async () => (await ownerRequest<{user:OwnerUser|null}>('session',undefined,'GET')).user,
+    queryFn: async () => ownerRequest<{user:OwnerUser|null;impersonation?:{reason:string;expires_at:string;tenant_slug:string}}>('session',undefined,'GET'),
   })
   useEffect(() => {
     const refresh = () => {
@@ -57,9 +57,9 @@ export function Owner() {
     qc.removeQueries({ queryKey: ['owner'] })
   } // приватный кэш очищается при выходе
   if (sess.isPending) return <LoadingScreen label="Открываем кабинет…" />
-  if (!sess.data) return <Login />
-  if (sess.data.user_metadata?.must_change_password === true) return <SetInitialPassword />
-  return <Cabinet b={b} onLogout={logout} />
+  if (!sess.data?.user) return <Login />
+  if (sess.data.user.user_metadata?.must_change_password === true) return <SetInitialPassword />
+  return <Cabinet b={b} onLogout={logout} impersonation={sess.data.impersonation} />
 }
 
 function SetInitialPassword() {
@@ -159,7 +159,7 @@ function Login() {
   )
 }
 
-function Cabinet({ b, onLogout }: { b: Business; onLogout: () => void }) {
+function Cabinet({ b, onLogout, impersonation }: { b: Business; onLogout: () => void; impersonation?:{reason:string;expires_at:string;tenant_slug:string} }) {
   const qc=useQueryClient()
   const [tab, setTab] = useState<(typeof TABS)[number]>('Записи')
   const priceNotices=useQuery({queryKey:['owner','price-changes',b.slug],queryFn:()=>owner.pendingPriceChanges(b.slug),refetchInterval:60_000,enabled:true})
@@ -194,8 +194,14 @@ function Cabinet({ b, onLogout }: { b: Business; onLogout: () => void }) {
     .map((g) => ({ name: g.name, tabs: g.tabs.filter((t) => visibleTabs.includes(t)) as (typeof TABS)[number][] }))
     .filter((g) => g.tabs.length > 0);
   const activeGroup = groupList.find((g) => g.tabs.includes(tab));
+  const stopImpersonation = async () => {
+    await ownerRequest('impersonate_stop');
+    qc.removeQueries({ queryKey: ['owner'] });
+    window.location.assign('/platform/admin');
+  };
   return (
     <section className="pad admin-shell">
+      {impersonation && <aside role="status" style={{position:'sticky',top:8,zIndex:20,background:'#7c2d12',border:'2px solid #fdba74',color:'#fff7ed',padding:'14px 18px',borderRadius:12,marginBottom:16,display:'flex',justifyContent:'space-between',alignItems:'center',gap:16,flexWrap:'wrap'}}><span><b>Вы в чужом кабинете — режим поддержки.</b> Причина: {impersonation.reason} · Доступ до {new Date(impersonation.expires_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}</span><button className="btn" onClick={()=>void stopImpersonation()}>Завершить сеанс</button></aside>}
       <div className="admin-heading">
         <div>
           <p className="admin-eyebrow">ПАНЕЛЬ УПРАВЛЕНИЯ</p>

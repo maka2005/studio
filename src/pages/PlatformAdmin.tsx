@@ -163,7 +163,7 @@ function Console({ onLogout, role, accountEmail }: { onLogout: () => void; onMfa
     <main className="page pf-wide">
       <header className="pf-app-header"><div className="pf-brand"><span className="pf-brand-mark">S</span><div><b>Servio</b><span>Platform console</span></div></div><div className="pf-header-actions"><span className="pf-header-user">{PLATFORM_ROLE_LABEL[role] ?? 'Нет доступа'}{accountEmail && <><br/><small>{accountEmail}</small></>}</span><button className="pf-logout" onClick={onLogout}>Выйти</button></div></header>
       <div className="pf-console-layout"><nav className="pf-tabs" aria-label="Разделы платформы">{visibleTabs.map((t) => <button key={t} className={tab === t && !openTenant ? 'is-current' : ''} onClick={() => { setOpenTenant(null); setTab(t); if(t==='Уведомления'){const ids=platformNotices.data?.filter(x=>!x.is_read).map(x=>String(x.id))??[];if(ids.length)void call('notifications_read',{ids}).then(()=>platformNotices.reload())} }}>{t}{t==='Уведомления'&&platformNotices.data?.some(x=>!x.is_read)&&<i className="admin-unread-dot" aria-label="Есть непрочитанные уведомления"/>}</button>)}</nav>
-      <section className="pf-console-content">{openTenant ? <TenantCard id={openTenant} onBack={() => setOpenTenant(null)} />
+      <section className="pf-console-content">{openTenant ? <TenantCard id={openTenant} role={role} onBack={() => setOpenTenant(null)} />
         : tab === 'Дашборд' ? <Dashboard onOpen={setOpenTenant} onNavigate={setTab} />
         : tab === 'Организации' ? <Tenants onOpen={setOpenTenant} />
         : tab === 'Новая организация' ? <CreateTenant onCreated={(id) => setOpenTenant(id)} />
@@ -261,9 +261,9 @@ function Tenants({ onOpen }: { onOpen: (id: string) => void }) {
   </>);
 }
 
-function TenantCard({ id, onBack }: { id: string; onBack: () => void }) {
+function TenantCard({ id, role, onBack }: { id: string; role: string; onBack: () => void }) {
   const { data: d, err, loading, reload } = useLoad<Row>('tenant', { tenant_id: id });
-  const [msg, setMsg] = useState('');
+  const [msg, setMsg] = useState(''); const [reason,setReason]=useState(''); const [impBusy,setImpBusy]=useState(false);
   if (!d) return <><button className="back" onClick={onBack}>← Назад</button><State err={err} loading={loading} /></>;
   const t = d.tenant as Row; const subs: Row[] = d.subscriptions; const cur = subs.find((s) => ['trial', 'active', 'grace', 'suspended'].includes(s.status)) ?? subs[0];
   const exportData = async () => {
@@ -273,12 +273,24 @@ function TenantCard({ id, onBack }: { id: string; onBack: () => void }) {
     const a = document.createElement('a'); a.href = URL.createObjectURL(data); a.download = `${t.slug}-export.zip`; a.click(); URL.revokeObjectURL(a.href);
   };
   const act = async (fn: () => Promise<unknown>) => { setMsg(''); try { await fn(); await reload(); } catch (e) { setMsg(errText(e)); } };
+  const startImpersonation = async (e: FormEvent) => {
+    e.preventDefault(); setMsg(''); setImpBusy(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('unauthorized');
+      const response = await fetch('/api/owner?action=impersonate_start',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json',Authorization:`Bearer ${session.access_token}`},body:JSON.stringify({tenant_id:id,reason:reason.trim()})});
+      const payload=await response.json().catch(()=>({}));
+      if(!response.ok) throw new Error(String(payload.error??'operation_failed'));
+      window.location.assign(`/s/${payload.tenant_slug}/owner`);
+    } catch(e2) { setMsg(errText(e2)); } finally { setImpBusy(false); }
+  };
   return (<>
     <button className="back" onClick={onBack}>← Назад</button>
     <section className="card"><div className="row between wrap"><div><h2>{t.config?.name ?? t.slug}</h2><p className="muted small">{t.slug} · {t.timezone} · создана {fmtDate(t.created_at)} · доступ: {d.access_state}</p></div>
       <div className="row wrap"><a className="btn ghost inline" href={`/s/${t.slug}/`} target="_blank" rel="noreferrer">Публичная страница</a><button className="btn ghost inline" onClick={exportData}>Экспорт данных</button></div></div>
       {msg && <p className="err">{msg}</p>}
       <p className="muted small">Сотрудники: {d.counters.staff} · Услуги: {d.counters.services} · Записи за 30 дней: {d.counters.bookings_30d}</p></section>
+    {['owner','support'].includes(role) && <form className="card col" onSubmit={(e)=>void startImpersonation(e)}><h3>Режим поддержки</h3><p className="muted small">Вход в кабинет владельца на 30 минут. Причина обязательна; действия будут записаны в журнал.</p><label className="pf-label">Причина доступа<textarea className="field" minLength={5} maxLength={500} rows={2} value={reason} onChange={e=>setReason(e.target.value)} placeholder="Например: воспроизведение ошибки при создании записи" required /></label><button className="pf-action-primary" disabled={impBusy||reason.trim().length<5}>{impBusy?'Открываем кабинет…':'Войти в кабинет организации'}</button></form>}
     <section className="card"><h3>Текущая подписка</h3>
       {cur ? <><p><Badge phase={cur.phase} /> {cur.plan_code} · {fmtDate(cur.starts_at)} — {cur.ends_at ? fmtDate(cur.ends_at) : 'бессрочно'}{cur.grace_ends_at ? ` (grace до ${fmtDate(cur.grace_ends_at)})` : ''}</p>
         <div className="pf-actions">

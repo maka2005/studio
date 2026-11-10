@@ -1,6 +1,9 @@
 const SECURE_COOKIE = process.env.NODE_ENV === 'production';
 const ACCESS = SECURE_COOKIE ? '__Host-studio_owner_access' : 'studio_owner_access';
 const REFRESH = SECURE_COOKIE ? '__Host-studio_owner_refresh' : 'studio_owner_refresh';
+const IMP_SESSION = SECURE_COOKIE ? '__Host-studio_owner_imp_session' : 'studio_owner_imp_session';
+const IMP_ADMIN = SECURE_COOKIE ? '__Host-studio_owner_imp_admin' : 'studio_owner_imp_admin';
+const IMP_EXP = SECURE_COOKIE ? '__Host-studio_owner_imp_exp' : 'studio_owner_imp_exp';
 const OWNER_RPCS = new Set([
   'owner_me','owner_access','owner_bookings','staff_bookings','owner_stats','owner_repeat_stats','owner_audit_history',
   'owner_set_status','staff_set_status','owner_cancel','owner_erase_customer','owner_reschedule','owner_create_booking',
@@ -26,6 +29,7 @@ const cookies = (header = '') => Object.fromEntries(header.split(';').map((part)
 }));
 const cookie = (name, value, maxAge) => `${name}=${encodeURIComponent(value)}; Path=/; HttpOnly; ${SECURE_COOKIE ? 'Secure; ' : ''}SameSite=Strict; Max-Age=${maxAge}`;
 const clearCookies = () => [cookie(ACCESS, '', 0), cookie(REFRESH, '', 0)];
+const clearImpersonationCookies = () => [cookie(IMP_SESSION, '', 0), cookie(IMP_ADMIN, '', 0), cookie(IMP_EXP, '', 0)];
 const originAllowed = (req) => {
   const origin = req.headers.origin;
   const fetchSite = req.headers['sec-fetch-site'];
@@ -44,9 +48,9 @@ const parseBody = async (req) => {
   for await (const chunk of req) chunks.push(Buffer.from(chunk));
   return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
 };
-const setSessionCookies = (res, session) => {
-  const maxAccess = Math.max(60, Number(session.expires_in) || 3600);
-  res.setHeader('Set-Cookie', [cookie(ACCESS, session.access_token, maxAccess), cookie(REFRESH, session.refresh_token, 60 * 60 * 24 * 30)]);
+const setSessionCookies = (res, session, maxAge = 60 * 60 * 24 * 30) => {
+  const maxAccess = Math.max(1, Math.min(maxAge, Number(session.expires_in) || 3600));
+  res.setHeader('Set-Cookie', [cookie(ACCESS, session.access_token, maxAccess), cookie(REFRESH, session.refresh_token, maxAge)]);
 };
 const supabaseFetch = (url, anon, token, path, init = {}) => fetch(`${url}${path}`, {
   ...init,
@@ -66,9 +70,16 @@ const getSession = async (req, res, cfg) => {
   });
   if (!r.ok) { res.setHeader('Set-Cookie', clearCookies()); return null; }
   const session = await r.json();
-  setSessionCookies(res, session);
+  const impersonationExpiry = Number(jar[IMP_EXP]);
+  const remaining = jar[IMP_SESSION] ? (Number.isFinite(impersonationExpiry) ? Math.floor((impersonationExpiry - Date.now()) / 1000) : 0) : 60 * 60 * 24 * 30;
+  if (remaining <= 0) { res.setHeader('Set-Cookie',[...clearCookies(),...clearImpersonationCookies()]); return null; }
+  setSessionCookies(res, session, remaining);
   access = session.access_token;
   return { access, user: session.user };
+};
+const platformAction = async (cfg, adminToken, action, body = {}) => {
+  const r = await fetch(`${cfg.url}/functions/v1/platform-admin`, { method: 'POST', headers: { apikey: cfg.anon, Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ action, ...body }) });
+  return { ok: r.ok, status: r.status, payload: await r.json().catch(() => ({})) };
 };
 
 export const config = { api: { bodyParser: false } };
@@ -78,11 +89,36 @@ export default async function handler(req, res) {
   if (!cfg.url || !cfg.anon) return send(res, 503, { error: 'temporarily_unavailable' });
   const action = String(req.query?.action || '');
   try {
+    const jar = cookies(req.headers.cookie);
+    if (req.method === 'POST' && action === 'impersonate_start') {
+      const body = await parseBody(req);
+      const adminToken = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+      if (!adminToken) return send(res, 401, { error: 'unauthorized' });
+      const started = await platformAction(cfg, adminToken, 'impersonation_start', { tenant_id: body.tenant_id, reason: body.reason });
+      if (!started.ok || !started.payload?.data?.owner_session) return send(res, started.status, started.payload);
+      const d = started.payload.data;
+      const maxAge=Math.max(1,Math.floor((new Date(d.expires_at).getTime()-Date.now())/1000));
+      res.setHeader('Set-Cookie', [cookie(ACCESS,d.owner_session.access_token,maxAge),cookie(REFRESH,d.owner_session.refresh_token,maxAge),cookie(IMP_SESSION,d.session_id,maxAge),cookie(IMP_ADMIN,adminToken,maxAge),cookie(IMP_EXP,String(new Date(d.expires_at).getTime()),maxAge)]);
+      return send(res, 200, { ok:true, tenant_slug:d.tenant_slug, expires_at:d.expires_at });
+    }
+    if (req.method === 'POST' && action === 'impersonate_stop') {
+      if (jar[IMP_SESSION] && jar[IMP_ADMIN]) await platformAction(cfg,jar[IMP_ADMIN],'impersonation_end',{session_id:jar[IMP_SESSION]});
+      return send(res,200,{ok:true},{'Set-Cookie':[...clearCookies(),...clearImpersonationCookies()]});
+    }
     if (req.method === 'GET' && action === 'session') {
       const session = await getSession(req, res, cfg);
-      return send(res, 200, { user: session?.user || null });
+      if (!session) return send(res, 200, { user:null });
+      if (jar[IMP_SESSION] && jar[IMP_ADMIN]) {
+        const check = await platformAction(cfg,jar[IMP_ADMIN],'impersonation_check',{session_id:jar[IMP_SESSION]});
+        if (!check.ok) return send(res,200,{user:null},{'Set-Cookie':[...clearCookies(),...clearImpersonationCookies()]});
+        return send(res,200,{user:session.user,impersonation:check.payload.data});
+      }
+      return send(res, 200, { user: session.user });
     }
-    if (req.method === 'POST' && action === 'logout') return send(res, 200, { ok: true }, { 'Set-Cookie': clearCookies() });
+    if (req.method === 'POST' && action === 'logout') {
+      if (jar[IMP_SESSION] && jar[IMP_ADMIN]) await platformAction(cfg,jar[IMP_ADMIN],'impersonation_end',{session_id:jar[IMP_SESSION]});
+      return send(res, 200, { ok: true }, { 'Set-Cookie': [...clearCookies(),...clearImpersonationCookies()] });
+    }
     if (req.method !== 'POST') return send(res, 405, { error: 'method_not_allowed' });
 
     const session = await getSession(req, res, cfg);
@@ -105,24 +141,48 @@ export default async function handler(req, res) {
     }
     if (!session?.access) return send(res, 401, { error: 'session_expired' });
 
+    let impersonation = null;
+    if (jar[IMP_SESSION] || jar[IMP_ADMIN]) {
+      if (!jar[IMP_SESSION] || !jar[IMP_ADMIN]) return send(res,401,{error:'impersonation_expired'},{'Set-Cookie':[...clearCookies(),...clearImpersonationCookies()]});
+      const check = await platformAction(cfg,jar[IMP_ADMIN],'impersonation_check',{session_id:jar[IMP_SESSION]});
+      if (!check.ok) return send(res,401,{error:'impersonation_expired'},{'Set-Cookie':[...clearCookies(),...clearImpersonationCookies()]});
+      impersonation = check.payload.data;
+    }
+
     if (action === 'rpc') {
       const body = await parseBody(req);
       if (!OWNER_RPCS.has(body.fn)) return send(res, 400, { error: 'bad_request' });
+      if (impersonation) {
+        const args=body.args||{};
+        if (args.p_slug && args.p_slug !== impersonation.tenant_slug) return send(res,403,{error:'forbidden'});
+        const scopedTables={owner_set_status:'bookings',staff_set_status:'bookings',owner_cancel:'bookings',owner_erase_customer:'bookings',owner_reschedule:'bookings',owner_add_payment:'bookings',owner_delete_service:'services',owner_delete_resource:'resources',owner_waitlist_status:'waitlist',owner_telegram_unlink:'telegram_links'};
+        const recordId=args.p_booking||args.p_id;
+        if (!args.p_slug) {
+          const table=scopedTables[body.fn];
+          if (!table||!recordId) return send(res,403,{error:'forbidden'});
+          const scope=await supabaseFetch(cfg.url,cfg.anon,session.access,`/rest/v1/${table}?select=tenant_id&id=eq.${encodeURIComponent(String(recordId))}`);
+          const rows=await scope.json().catch(()=>[]);
+          if (!scope.ok||!Array.isArray(rows)||!rows.some((row)=>row.tenant_id===impersonation.tenant_id)) return send(res,403,{error:'forbidden'});
+        }
+      }
       const result = await supabaseFetch(cfg.url, cfg.anon, session.access, `/rest/v1/rpc/${encodeURIComponent(body.fn)}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body.args || {}),
       });
       const text = await result.text();
+      if (impersonation) await platformAction(cfg,jar[IMP_ADMIN],'impersonation_log',{session_id:jar[IMP_SESSION],owner_action:body.fn,succeeded:result.ok});
       res.statusCode = result.status; res.setHeader('Cache-Control', 'no-store');
       res.setHeader('Content-Type', result.headers.get('content-type') || 'application/json'); return res.end(text);
     }
     if (action === 'team') {
       const body = await parseBody(req);
+      if (impersonation) return send(res,403,{error:'forbidden'});
       const result = await fetch(`${cfg.url}/functions/v1/owner-team`, {
         method: 'POST', headers: { apikey: cfg.anon, Authorization: `Bearer ${session.access}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
       });
       return send(res, result.status, await result.json().catch(() => ({ error: 'request_failed' })));
     }
     if (action === 'password') {
+      if (impersonation) return send(res,403,{error:'forbidden'});
       const body = await parseBody(req);
       if (typeof body.password !== 'string' || body.password.length < 10 || body.password.length > 1024) return send(res, 400, { error: 'bad_request' });
       const result = await supabaseFetch(cfg.url, cfg.anon, session.access, '/auth/v1/user', {
@@ -133,6 +193,7 @@ export default async function handler(req, res) {
     }
     if (action === 'services' || action === 'resources' || action === 'tenant') {
       const body = await parseBody(req);
+      if (impersonation && body.slug !== impersonation.tenant_slug) return send(res,403,{error:'forbidden'});
       const slug = encodeURIComponent(String(body.slug || ''));
       if (!/^[a-z0-9-]{2,40}$/.test(decodeURIComponent(slug))) return send(res, 400, { error: 'bad_request' });
       const membership = await supabaseFetch(cfg.url, cfg.anon, session.access, '/rest/v1/rpc/owner_me', {
@@ -155,6 +216,7 @@ export default async function handler(req, res) {
       return send(res, result.status, await result.json().catch(() => []));
     }
     if (action === 'export') {
+      if (impersonation) return send(res,403,{error:'forbidden'});
       const body = await parseBody(req);
       const slug = String(body.slug || '');
       if (!/^[a-z0-9-]{2,40}$/.test(slug)) return send(res, 400, { error: 'bad_request' });
@@ -169,6 +231,7 @@ export default async function handler(req, res) {
       return res.end(buf);
     }
     if (action === 'media') {
+      if (impersonation) return send(res,403,{error:'forbidden'});
       const { Readable } = await import('node:stream');
       const result = await fetch(`${cfg.url}/functions/v1/media-management`, {
         method: 'POST', headers: { apikey: cfg.anon, Authorization: `Bearer ${session.access}`, 'Content-Type': String(req.headers['content-type'] || '') },
