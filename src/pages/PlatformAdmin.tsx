@@ -148,7 +148,7 @@ function Console({ onLogout }: { onLogout: () => void; onMfa: () => void }) {
       <header className="row between"><h1>Servio · платформа</h1><button className="btn ghost inline" onClick={onLogout}>Выйти</button></header>
       <nav className="pf-tabs">{TABS.map((t) => <button key={t} className={tab === t && !openTenant ? 'is-current' : ''} onClick={() => { setOpenTenant(null); setTab(t); }}>{t}</button>)}</nav>
       {openTenant ? <TenantCard id={openTenant} onBack={() => setOpenTenant(null)} />
-        : tab === 'Дашборд' ? <Dashboard onOpen={setOpenTenant} />
+        : tab === 'Дашборд' ? <Dashboard onOpen={setOpenTenant} onNavigate={setTab} />
         : tab === 'Организации' ? <Tenants onOpen={setOpenTenant} />
         : tab === 'Новая организация' ? <CreateTenant onCreated={(id) => setOpenTenant(id)} />
         : tab === 'Подписки' ? <Subscriptions onOpen={setOpenTenant} />
@@ -175,18 +175,22 @@ const Table = ({ head, children }: { head: string[]; children: ReactNode }) => (
   <div className="pf-scroll"><table className="pf-table"><thead><tr>{head.map((h) => <th key={h}>{h}</th>)}</tr></thead><tbody>{children}</tbody></table></div>);
 
 /* ----------------------------------------------------------------------------------- дашборд */
-function Dashboard({ onOpen }: { onOpen: (id: string) => void }) {
-  const { data: d, err, loading } = useLoad<Row>('dashboard');
-  if (!d) return <State err={err} loading={loading} />;
+function Dashboard({ onOpen, onNavigate }: { onOpen: (id: string) => void; onNavigate: (tab: Tab) => void }) {
+  const { data: d, err, loading, reload } = useLoad<Row>('dashboard');
+  if (!d) return <><State err={err} loading={loading} />{err && <button className="pf-action-secondary pf-retry" onClick={() => void reload()}>Повторить загрузку</button>}</>;
   const months: Row[] = d.new_by_month ?? []; const max = Math.max(1, ...months.map((m) => Number(m.count)));
   const cards: [string, string | number][] = [['Организаций', d.organizations], ['Активные', d.active], ['Пробный период', d.trial], ['Grace', d.grace], ['Приостановлены', d.suspended], ['Выручка за месяц', kzt(d.revenue_month_kzt)]];
   return (<>
-    <div className="pf-cards">{cards.map(([k, v]) => <div className="card" key={k}><span className="muted small">{k}</span><b className="big">{v}</b></div>)}</div>
-    <section className="card"><h2>Истекают за 7 дней</h2>
+    <div className="pf-dashboard-heading">
+      <div><span className="pf-kicker">ОБЗОР ПЛАТФОРМЫ</span><h2>Добро пожаловать</h2><p className="muted">Состояние организаций, подписок и платежей в одном месте.</p></div>
+      <div className="pf-dashboard-actions"><button className="pf-action-secondary" onClick={() => void reload()} disabled={loading}>{loading ? 'Обновляем…' : '↻ Обновить'}</button><button className="pf-action-primary" onClick={() => onNavigate('Новая организация')}>＋ Новая организация</button></div>
+    </div>
+    <div className="pf-cards">{cards.map(([k, v], index) => <div className={`card pf-metric pf-metric-${index}`} key={k}><span className="muted small">{k}</span><b className="big">{v}</b></div>)}</div>
+    <section className="card pf-panel"><div className="pf-panel-heading"><div><span className="pf-kicker">ТРЕБУЮТ ВНИМАНИЯ</span><h2>Истекают за 7 дней</h2></div><button className="pf-link" onClick={() => onNavigate('Подписки')}>Все подписки <span aria-hidden="true">→</span></button></div>
       {(d.expiring ?? []).length === 0 ? <p className="muted">Нет.</p> : (
         <Table head={['Организация', 'Тариф', 'Статус', 'Окончание']}>{(d.expiring as Row[]).map((r) => (
           <tr key={r.tenant_id}><td><button className="pf-link" onClick={() => onOpen(r.tenant_id)}>{r.name ?? r.slug}</button></td><td>{r.plan}</td><td><Badge phase={r.phase} /></td><td>{fmtDate(r.ends_at)}</td></tr>))}</Table>)}</section>
-    <section className="card"><h2>Новые организации по месяцам</h2>
+    <section className="card pf-panel"><div className="pf-panel-heading"><div><span className="pf-kicker">РОСТ</span><h2>Новые организации по месяцам</h2></div><button className="pf-link" onClick={() => onNavigate('Организации')}>Список организаций <span aria-hidden="true">→</span></button></div>
       {months.length === 0 ? <p className="muted">Нет данных.</p> : months.map((m) => (
         <div className="pf-bar" key={m.month}><span>{m.month}</span><i style={{ width: `${(Number(m.count) / max) * 100}%` }} /><b>{m.count}</b></div>))}</section>
   </>);
