@@ -333,7 +333,7 @@ function Plans() {
   const [msg, setMsg] = useState('');
   const save = async (p: Row, patch: Row) => { setMsg(''); try { await call('plan_save', { plan: { id: p.id, ...patch } }); await reload(); } catch (e) { setMsg(errText(e)); } };
   return (<><State err={err} loading={loading && !data} />{msg && <p className="err">{msg}</p>}
-    <p className="muted small">Тарифы нельзя удалять — только выключать. Изменение цены действует для новых подписок; текущая цена клиента сохраняется.</p>
+    <p className="muted small">При изменении цены или периода всем владельцам организаций с активной подпиской появится предложение в кабинете. Нужно уведомить за 30 дней; новые условия начнут действовать после принятия и указанной даты. При отказе сохраняются прежние условия.</p>
     {data?.map((p) => <PlanRow key={p.id} p={p} onSave={(patch) => save(p, patch)} />)}</>);
 }
 function PlanRow({ p, onSave }: { p: Row; onSave: (patch: Row) => void }) {
