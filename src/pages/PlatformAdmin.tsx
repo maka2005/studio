@@ -44,12 +44,14 @@ type Step = 'loading' | 'login' | 'mfa' | 'enroll' | 'denied' | 'ready';
 export function PlatformAdmin() {
   const [step, setStep] = useState<Step>('loading');
   const [msg, setMsg] = useState('');
+  const [role, setRole] = useState('read_only');
 
   const check = useCallback(async () => {
     const { data } = await supabase.auth.getSession();
     if (!data.session) { setStep('login'); return; }
     try {
       const me = await call<Row>('whoami');
+      setRole(String(me.role ?? 'read_only'));
       const aal = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
       if (aal.data?.nextLevel === 'aal2' && aal.data.currentLevel !== 'aal2') { setStep('mfa'); return; }
       if (me.mfa_required) { setStep('enroll'); return; }
@@ -78,7 +80,7 @@ export function PlatformAdmin() {
   if (step === 'login') return <Login msg={msg} onDone={check} />;
   if (step === 'mfa') return <MfaVerify onDone={check} />;
   if (step === 'enroll') return <MfaEnroll onDone={check} />;
-  return <Console onLogout={async () => { await supabase.auth.signOut(); setStep('login'); }} onMfa={() => setStep('mfa')} />;
+  return <Console role={role} onLogout={async () => { await supabase.auth.signOut(); setStep('login'); }} onMfa={() => setStep('mfa')} />;
 }
 
 function Login({ msg, onDone }: { msg: string; onDone: () => void }) {
@@ -137,19 +139,27 @@ function MfaEnroll({ onDone }: { onDone: () => void }) {
 }
 
 /* ----------------------------------------------------------------------------------- каркас */
-const TABS = ['Дашборд', 'Организации', 'Новая организация', 'Подписки', 'Тарифы', 'Платежи', 'Уведомления', 'Журнал', 'Настройки'] as const;
+const TABS = ['Дашборд', 'Организации', 'Новая организация', 'Подписки', 'Тарифы', 'Платежи', 'Уведомления', 'Журнал', 'Администраторы', 'Настройки'] as const;
 type Tab = (typeof TABS)[number];
 
-function Console({ onLogout }: { onLogout: () => void; onMfa: () => void }) {
-  const [tab, setTab] = useState<Tab>('Дашборд');
+function Console({ onLogout, role }: { onLogout: () => void; onMfa: () => void; role: string }) {
+  const [tab, setTab] = useState<Tab>(role === 'support' ? 'Организации' : 'Дашборд');
   const [openTenant, setOpenTenant] = useState<string | null>(null);
   const platformNotices=useLoad<Row[]>('notifications',{limit:200})
   // A new response is surfaced even when the administrator stays on another section.
   useEffect(()=>{const timer=window.setInterval(()=>void platformNotices.reload(),30_000);return()=>window.clearInterval(timer)},[platformNotices.reload])
+  const visibleTabs = TABS.filter((t) => {
+    if (role === 'owner' || t === 'Администраторы') return role === 'owner';
+    if (t === 'Новая организация' || t === 'Настройки') return false;
+    if (role === 'finance') return !['Организации','Уведомления'].includes(t);
+    if (role === 'read_only') return !['Уведомления'].includes(t);
+    return !['Дашборд','Подписки','Тарифы','Платежи','Настройки'].includes(t);
+  });
+  useEffect(() => { if (!visibleTabs.includes(tab)) setTab(role === 'support' ? 'Организации' : 'Дашборд'); }, [role]);
   return (
     <main className="page pf-wide">
       <header className="pf-app-header"><div className="pf-brand"><span className="pf-brand-mark">S</span><div><b>Servio</b><span>Platform console</span></div></div><div className="pf-header-actions"><span className="pf-header-user">Администратор</span><button className="pf-logout" onClick={onLogout}>Выйти</button></div></header>
-      <div className="pf-console-layout"><nav className="pf-tabs" aria-label="Разделы платформы">{TABS.map((t) => <button key={t} className={tab === t && !openTenant ? 'is-current' : ''} onClick={() => { setOpenTenant(null); setTab(t); if(t==='Уведомления'){const ids=platformNotices.data?.filter(x=>!x.is_read).map(x=>String(x.id))??[];if(ids.length)void call('notifications_read',{ids}).then(()=>platformNotices.reload())} }}>{t}{t==='Уведомления'&&platformNotices.data?.some(x=>!x.is_read)&&<i className="admin-unread-dot" aria-label="Есть непрочитанные уведомления"/>}</button>)}</nav>
+      <div className="pf-console-layout"><nav className="pf-tabs" aria-label="Разделы платформы">{visibleTabs.map((t) => <button key={t} className={tab === t && !openTenant ? 'is-current' : ''} onClick={() => { setOpenTenant(null); setTab(t); if(t==='Уведомления'){const ids=platformNotices.data?.filter(x=>!x.is_read).map(x=>String(x.id))??[];if(ids.length)void call('notifications_read',{ids}).then(()=>platformNotices.reload())} }}>{t}{t==='Уведомления'&&platformNotices.data?.some(x=>!x.is_read)&&<i className="admin-unread-dot" aria-label="Есть непрочитанные уведомления"/>}</button>)}</nav>
       <section className="pf-console-content">{openTenant ? <TenantCard id={openTenant} onBack={() => setOpenTenant(null)} />
         : tab === 'Дашборд' ? <Dashboard onOpen={setOpenTenant} onNavigate={setTab} />
         : tab === 'Организации' ? <Tenants onOpen={setOpenTenant} />
@@ -159,6 +169,7 @@ function Console({ onLogout }: { onLogout: () => void; onMfa: () => void }) {
         : tab === 'Платежи' ? <Payments />
         : tab === 'Уведомления' ? <PlatformNotifications />
         : tab === 'Журнал' ? <Audit />
+        : tab === 'Администраторы' ? <Admins />
         : <Settings />}</section></div>
     </main>);
 }
@@ -389,6 +400,31 @@ function Payments() {
 }
 
 /* ----------------------------------------------------------------------------------- журнал, настройки */
+const ADMIN_ROLE: Record<string, string> = { owner: 'Владелец', support: 'Поддержка', finance: 'Финансы', read_only: 'Только чтение' };
+function Admins() {
+  const { data, err, loading, reload } = useLoad<Row[]>('admins');
+  const [email, setEmail] = useState(''); const [role, setRole] = useState('support'); const [msg, setMsg] = useState(''); const [busy, setBusy] = useState(false);
+  const act = async (action: string, body: Row) => {
+    setBusy(true); setMsg('');
+    try { const result = await call<Row>(action, body); await reload(); return result; }
+    catch (e) { setMsg(errText(e)); }
+    finally { setBusy(false); }
+  };
+  const add = async (e: FormEvent) => { e.preventDefault(); const result = await act('admin_add', { email: email.trim(), role }); if (result) { setEmail(''); setMsg(result.invite_sent ? 'Администратор добавлен, письмо для входа отправлено.' : result.created ? 'Администратор добавлен, но письмо не отправлено. Проверьте настройки почты.' : 'Существующий аккаунт добавлен как администратор.'); } };
+  return <>
+    <div className="pf-dashboard-heading"><div><span className="pf-kicker">ДОСТУП К ПЛАТФОРМЕ</span><h2>Администраторы</h2><p className="muted">Назначайте сотрудникам минимально необходимую роль. Для нового аккаунта отправим письмо для входа.</p></div></div>
+    <form className="card row wrap" onSubmit={add}><input className="field" type="email" placeholder="Email сотрудника" value={email} onChange={(e)=>setEmail(e.target.value)} required />
+      <select className="field" value={role} onChange={(e)=>setRole(e.target.value)}>{Object.entries(ADMIN_ROLE).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select>
+      <button className="pf-action-primary" disabled={busy}>Добавить администратора</button></form>
+    {msg && <p className="err">{msg}</p>}<State err={err} loading={loading && !data} />
+    {data && <Table head={['Администратор','Роль','Статус','Добавлен','Действия']}>{data.map((a)=><tr key={a.user_id}>
+      <td>{a.email}</td><td><select className="field" value={a.role} disabled={busy || !a.is_active} onChange={(e)=>void act('admin_update',{user_id:a.user_id,role:e.target.value})}>{Object.entries(ADMIN_ROLE).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></td>
+      <td><Badge phase={a.is_active?'active':'suspended'} /></td><td>{fmtDate(a.created_at)}</td>
+      <td className="pf-actions">{a.is_active && <><button className="pf-action-secondary" disabled={busy} onClick={()=>{if(window.confirm(`Сбросить MFA для ${a.email}?`))void act('admin_reset_mfa',{user_id:a.user_id})}}>Сбросить MFA</button><button className="pf-action-secondary" disabled={busy} onClick={()=>{if(window.confirm(`Отключить администратора ${a.email}?`))void act('admin_disable',{user_id:a.user_id})}}>Отключить</button></>}</td>
+    </tr>)}</Table>}
+  </>;
+}
+
 function Audit() {
   const [tenant, setTenant] = useState(''); const [from, setFrom] = useState(''); const [to, setTo] = useState('');
   const tenants = useLoad<Row[]>('tenants', { limit: 200 });

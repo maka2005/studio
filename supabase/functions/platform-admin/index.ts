@@ -80,19 +80,27 @@ Deno.serve(async (req) => {
     const { count, error } = await admin.from('platform_admins').select('user_id', { count: 'exact', head: true });
     if (error) return json(req, { error: 'operation_failed' }, 500);
     if ((count ?? 0) > 0) return json(req, { error: 'forbidden' }, 403);
-    const { error: insertError } = await admin.from('platform_admins').insert({ user_id: user.id });
+    const { error: insertError } = await admin.from('platform_admins').insert({ user_id: user.id, role: 'owner', is_active: true });
     if (insertError) return json(req, { error: 'operation_failed' }, 500);
     await admin.rpc('platform_log', { p_actor: user.id, p_action: 'platform.bootstrap', p_tenant: null, p_payload: {} });
     return json(req, { ok: true });
   }
 
   // --- 3. роль проверяется на сервере по таблице platform_admins
-  const { data: isAdmin, error: roleError } = await admin.rpc('is_platform_admin', { p_user: user.id });
+  const { data: adminRow, error: roleError } = await admin.from('platform_admins').select('role,is_active').eq('user_id', user.id).maybeSingle();
   if (roleError) return json(req, { error: 'temporarily_unavailable' }, 503);
-  if (isAdmin !== true) return json(req, { error: 'forbidden' }, 403);
+  if (!adminRow?.is_active) return json(req, { error: 'forbidden' }, 403);
+  const role = String(adminRow.role ?? 'owner');
   const mfaNeeded = Deno.env.get('PLATFORM_REQUIRE_MFA') === 'true' && aalOf(token) !== 'aal2';
-  if (action === 'whoami') return json(req, { ok: true, email: user.email, aal: aalOf(token), mfa_required: mfaNeeded });
+  if (action === 'whoami') return json(req, { ok: true, email: user.email, role, aal: aalOf(token), mfa_required: mfaNeeded });
   if (mfaNeeded) return json(req, { error: 'mfa_required' }, 403);
+
+  const readActions = new Set(['whoami','dashboard','tenants','tenant','subscriptions','plans','payments','audit','notifications','settings','admins']);
+  const financeActions = new Set(['payments','payment_create','payment_confirm','payment_refund','payment_fail','subscriptions','dashboard','audit','notifications','tenants','tenant','plans']);
+  const supportActions = new Set(['tenants','tenant','resend_invite']);
+  const allowedByRole = role === 'owner' ? null : role === 'read_only' ? readActions : role === 'finance' ? financeActions : supportActions;
+  if (!['owner','support','finance','read_only'].includes(role) || (allowedByRole && !allowedByRole.has(action)))
+    return json(req, { error: 'forbidden' }, 403);
 
   // --- 4. лимиты запросов
   const actor = user.id;
@@ -105,6 +113,52 @@ Deno.serve(async (req) => {
   const uuidOf = (v: unknown) => { const s = str(v, 40); return UUID.test(s) ? s : null; };
 
   try {
+    if (action === 'admins') {
+      const { data, error } = await admin.rpc('platform_admin_list', { p_actor: actor });
+      if (error) return json(req, { error: 'forbidden' }, 403);
+      return json(req, { ok: true, data });
+    }
+    if (action === 'admin_add' || action === 'admin_update' || action === 'admin_disable' || action === 'admin_reset_mfa') {
+      if (role !== 'owner') return json(req, { error: 'forbidden' }, 403);
+      const targetId = str(body.user_id, 40);
+      const targetRole = str(body.role, 20);
+      if (action === 'admin_add') {
+        const email = str(body.email, 254).toLowerCase();
+        if (!EMAIL.test(email) || !['support','finance','read_only','owner'].includes(targetRole)) return json(req, { error: 'bad_request' }, 400);
+        let target = await findUserByEmail(admin, email);
+        let created = false;
+        if (!target) {
+          const result = await admin.auth.admin.createUser({ email, email_confirm: true });
+          if (result.error || !result.data.user) return json(req, { error: 'operation_failed' }, 502);
+          target = result.data.user; created = true;
+        }
+        const { error } = await admin.from('platform_admins').upsert({ user_id: target.id, role: targetRole, is_active: true });
+        if (error) return json(req, { error: 'operation_failed' }, 500);
+        const inviteSent = created && !!site && !(await caller.auth.resetPasswordForEmail(email, { redirectTo: `${site.replace(/\/$/, '')}/platform/admin` })).error;
+        await admin.rpc('platform_log', { p_actor: actor, p_action: 'admin.add', p_tenant: null, p_payload: { target_user_id: target.id, role: targetRole, created, invite_sent: inviteSent } });
+        return json(req, { ok: true, created, invite_sent: inviteSent });
+      }
+      if (!UUID.test(targetId) || targetId === actor) return json(req, { error: 'bad_request' }, 400);
+      if (action === 'admin_update') {
+        if (!['owner','support','finance','read_only'].includes(targetRole)) return json(req, { error: 'bad_request' }, 400);
+        const { error } = await admin.from('platform_admins').update({ role: targetRole }).eq('user_id', targetId);
+        if (error) return json(req, { error: 'operation_failed' }, 500);
+        await admin.rpc('platform_log', { p_actor: actor, p_action: 'admin.role_update', p_tenant: null, p_payload: { target_user_id: targetId, role: targetRole } });
+      } else if (action === 'admin_disable') {
+        const { error } = await admin.from('platform_admins').update({ is_active: false }).eq('user_id', targetId);
+        if (error) return json(req, { error: 'operation_failed' }, 500);
+        await admin.rpc('platform_log', { p_actor: actor, p_action: 'admin.disable', p_tenant: null, p_payload: { target_user_id: targetId } });
+      } else {
+        const { data: factors, error: factorsError } = await admin.auth.admin.mfa.listFactors({ userId: targetId });
+        if (factorsError) return json(req, { error: 'operation_failed' }, 500);
+        for (const factor of factors.factors) {
+          const { error } = await admin.auth.admin.mfa.deleteFactor({ id: factor.id, userId: targetId });
+          if (error) return json(req, { error: 'operation_failed' }, 500);
+        }
+        await admin.rpc('platform_log', { p_actor: actor, p_action: 'admin.mfa_reset', p_tenant: null, p_payload: { target_user_id: targetId, factors_removed: factors.factors.length } });
+      }
+      return json(req, { ok: true });
+    }
     let rpc: { name: string; args: Record<string, unknown> } | null = null;
     switch (action) {
       case 'dashboard': rpc = { name: 'platform_dashboard', args: { p_actor: actor } }; break;
