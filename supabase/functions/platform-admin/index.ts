@@ -147,21 +147,33 @@ Deno.serve(async (req) => {
         return json(req, { error: 'operation_failed' }, 502);
       }
       await admin.rpc('platform_log', { p_actor: actor, p_action: 'impersonation.start', p_tenant: tenantId, p_payload: { session_id: sessionRow.id, reason, expires_at: expiresAt.toISOString(), owner_email: ownerResult.user.email } });
+      await admin.from('admin_audit_events').insert({ tenant_id:tenantId,actor_id:actor,entity:'support',entity_id:sessionRow.id,action:'support_started',details:{reason,expires_at:expiresAt.toISOString()} });
       return json(req, { ok: true, data: { session_id: sessionRow.id, tenant_id: tenantId, tenant_slug: tenant.slug, tenant_name: obj(tenant.config).name, reason, expires_at: expiresAt.toISOString(), owner_session: ownerSession.session } });
     }
     if (action === 'impersonation_check' || action === 'impersonation_end' || action === 'impersonation_log') {
       const sessionId = uuidOf(body.session_id);
       if (!sessionId) return json(req, { error: 'bad_request' }, 400);
       const { data: active } = await admin.from('platform_impersonation_sessions').select('id,tenant_id,reason,expires_at,ended_at,tenants(slug,config)').eq('id',sessionId).eq('actor_id',actor).maybeSingle();
-      if (!active || active.ended_at || new Date(active.expires_at).getTime() <= Date.now()) return json(req, { error: 'impersonation_expired' }, 401);
+      if (!active || active.ended_at) return json(req, { error: 'impersonation_expired' }, 401);
+      if (new Date(active.expires_at).getTime() <= Date.now()) {
+        const endedAt=new Date().toISOString();
+        await admin.from('platform_impersonation_sessions').update({ended_at:endedAt}).eq('id',sessionId).is('ended_at',null);
+        await admin.rpc('platform_log',{p_actor:actor,p_action:'impersonation.expired',p_tenant:active.tenant_id,p_payload:{session_id:sessionId}});
+        await admin.from('admin_audit_events').insert({tenant_id:active.tenant_id,actor_id:actor,entity:'support',entity_id:sessionId,action:'support_expired',details:{}});
+        return json(req, { error: 'impersonation_expired' }, 401);
+      }
       if (action === 'impersonation_end') {
         const endedAt = new Date().toISOString();
         await admin.from('platform_impersonation_sessions').update({ ended_at: endedAt }).eq('id',sessionId);
         await admin.rpc('platform_log', { p_actor: actor, p_action: 'impersonation.end', p_tenant: active.tenant_id, p_payload: { session_id: sessionId } });
+        await admin.from('admin_audit_events').insert({ tenant_id:active.tenant_id,actor_id:actor,entity:'support',entity_id:sessionId,action:'support_ended',details:{} });
         return json(req, { ok: true });
       }
       if (action === 'impersonation_log') {
         await admin.rpc('platform_log', { p_actor: actor, p_action: 'impersonation.action', p_tenant: active.tenant_id, p_payload: { session_id: sessionId, action: str(body.owner_action, 80), succeeded: body.succeeded === true } });
+        const ownerAction=str(body.owner_action,80);
+        const mutations=new Set(['owner_set_status','owner_cancel','owner_erase_customer','owner_reschedule','owner_create_booking','owner_block','owner_add_payment','owner_upsert_service','owner_delete_service','owner_upsert_resource','owner_delete_resource','owner_update_notification_settings','owner_update_config','owner_update_legal','owner_telegram_unlink','owner_waitlist_status','owner_upsert_promo','owner_delete_promo','owner_publish_review']);
+        if(mutations.has(ownerAction)) await admin.from('admin_audit_events').insert({tenant_id:active.tenant_id,actor_id:actor,entity:'support',entity_id:sessionId,action:'support_action',details:{owner_action:ownerAction,succeeded:body.succeeded===true}});
       }
       const tenantValue = Array.isArray(active.tenants) ? active.tenants[0] : active.tenants;
       return json(req, { ok: true, data: { tenant_id: active.tenant_id, tenant_slug: tenantValue?.slug, tenant_name: obj(tenantValue?.config).name, reason: active.reason, expires_at: active.expires_at } });

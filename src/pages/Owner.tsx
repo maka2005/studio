@@ -452,16 +452,22 @@ function AuditHistory({b}:{b:Business}) {
   const [page,setPage]=useState(0);const limit=50;
   const q=useQuery({queryKey:['owner','audit',b.slug,page],queryFn:()=>owner.auditHistory(b.slug,limit+1,page*limit)});
   const items=q.data?.slice(0,limit)??[];const hasNext=(q.data?.length??0)>limit;
-  return <div className="col"><div className="admin-subheading"><div><h2>История изменений</h2><p className="muted small">Записи, услуги, команда, оплаты и настройки студии.</p></div></div>
+  return <div className="col"><div className="admin-subheading"><div><h2>История изменений</h2><p className="muted small">Записи, услуги, команда, оплаты, настройки и действия поддержки.</p></div></div>
     {q.isPending?<p className="muted">Загрузка истории…</p>:q.isError?<p className="err">Не удалось загрузить историю. <button className="link" onClick={()=>void q.refetch()}>Повторить</button></p>:items.length===0?<p className="muted">Изменений пока нет.</p>:<div className="admin-audit-list">{items.map(e=><article className="card admin-audit-event" key={e.id}><div className="row between wrap"><b>{auditEntity(e.entity)} · {auditAction(e.action,e.entity)}</b><time className="muted small">{fmtT(b,e.created_at,'d MMM yyyy, HH:mm')}</time></div><p className="muted small">{auditDetail(e,b.currency)}{e.actor_email?` · ${e.actor_email}`:''}</p></article>)}</div>}
     {(page>0||hasNext)&&<nav className="admin-service-pagination" aria-label="История изменений"><button className="admin-page-button" disabled={page===0} onClick={()=>setPage(page-1)}>Назад</button><span className="muted small">Страница <b>{page+1}</b></span><button className="admin-page-button" disabled={!hasNext} onClick={()=>setPage(page+1)}>Далее</button></nav>}
   </div>
 }
 
-function auditEntity(entity:string) { return ({booking:'Запись',service:'Услуга',resource:'Мастер / пост',payment:'Оплата',studio:'Студия',notifications:'Уведомления',team:'Доступ сотрудника'} as Record<string,string>)[entity]??entity }
-function auditAction(action:string,entity='') { if(entity==='team'&&action==='created')return 'доступ выдан';if(entity==='team'&&action==='updated')return 'права изменены';if(entity==='team'&&action==='deleted')return 'доступ отозван';return ({created:'создано',updated:'изменено',deleted:'удалено',payment:'оплата добавлена',refund:'возврат добавлен',settings_changed:'настройки обновлены',password_reset:'выдан новый временный пароль',account_recovered:'восстановлен доступ'} as Record<string,string>)[action]??action }
+function auditEntity(entity:string) { return ({booking:'Запись',service:'Услуга',resource:'Мастер / пост',payment:'Оплата',studio:'Студия',notifications:'Уведомления',team:'Доступ сотрудника',support:'Поддержка'} as Record<string,string>)[entity]??entity }
+function auditAction(action:string,entity='') { if(entity==='team'&&action==='created')return 'доступ выдан';if(entity==='team'&&action==='updated')return 'права изменены';if(entity==='team'&&action==='deleted')return 'доступ отозван';return ({created:'создано',updated:'изменено',deleted:'удалено',payment:'оплата добавлена',refund:'возврат добавлен',settings_changed:'настройки обновлены',password_reset:'выдан новый временный пароль',account_recovered:'восстановлен доступ',support_started:'вошла в кабинет',support_action:'выполнила действие',support_ended:'завершила сеанс',support_expired:'доступ завершился по времени'} as Record<string,string>)[action]??action }
 function auditDetail(e:OwnerAuditEvent,currency:string) {
   const d=e.details??{};
+  if(e.entity==='support') {
+    if(e.action==='support_started')return `Причина: ${String(d.reason??'не указана')} · доступ до ${d.expires_at?new Date(String(d.expires_at)).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}):'—'}`;
+    if(e.action==='support_action')return `${String(d.succeeded===true?'Выполнено':'Не выполнено')} · операция ${String(d.owner_action??'в кабинете')}`;
+    if(e.action==='support_ended')return 'Сеанс доступа поддержки завершён';
+    if(e.action==='support_expired')return 'Сеанс поддержки автоматически завершён по истечении 30 минут';
+  }
   if(e.entity==='service'||e.entity==='resource') {
     const pieces:string[]=[];
     const format=(key:string,value:unknown)=>key==='price_cents'?money(Number(value)/100,currency):key==='active'?(value===true||value==='true'?'показывается клиентам':'скрыта от клиентов'):String(value??'—');
