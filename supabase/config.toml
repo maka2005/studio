@@ -9,3 +9,6 @@ verify_jwt = false
 
 [functions.tenant-export]
 verify_jwt = false
+
+[functions.billing-dunning-dispatch]
+verify_jwt = false
