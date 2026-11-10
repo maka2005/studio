@@ -172,7 +172,7 @@ Deno.serve(async (req) => {
       if (action === 'impersonation_log') {
         await admin.rpc('platform_log', { p_actor: actor, p_action: 'impersonation.action', p_tenant: active.tenant_id, p_payload: { session_id: sessionId, action: str(body.owner_action, 80), succeeded: body.succeeded === true } });
         const ownerAction=str(body.owner_action,80);
-        const mutations=new Set(['owner_set_status','owner_cancel','owner_erase_customer','owner_reschedule','owner_create_booking','owner_block','owner_add_payment','owner_upsert_service','owner_delete_service','owner_upsert_resource','owner_delete_resource','owner_update_notification_settings','owner_update_config','owner_update_legal','owner_telegram_unlink','owner_waitlist_status','owner_upsert_promo','owner_delete_promo','owner_publish_review']);
+        const mutations=new Set(['owner_set_status','staff_set_status','owner_cancel','owner_erase_customer','owner_reschedule','owner_create_booking','owner_block','owner_add_payment','owner_upsert_service','owner_delete_service','owner_upsert_resource','owner_delete_resource','owner_update_notification_settings','owner_update_config','owner_update_legal','owner_telegram_unlink','owner_waitlist_status','owner_upsert_promo','owner_delete_promo','owner_publish_review','owner_respond_price_change']);
         if(mutations.has(ownerAction)) await admin.from('admin_audit_events').insert({tenant_id:active.tenant_id,actor_id:actor,entity:'support',entity_id:sessionId,action:'support_action',details:{owner_action:ownerAction,succeeded:body.succeeded===true}});
       }
       const tenantValue = Array.isArray(active.tenants) ? active.tenants[0] : active.tenants;
@@ -205,19 +205,21 @@ Deno.serve(async (req) => {
         const { error } = await admin.from('platform_admins').upsert({ user_id: target.id, role: targetRole, is_active: true });
         if (error) return json(req, { error: 'operation_failed' }, 500);
         const inviteSent = created && !!site && !(await caller.auth.resetPasswordForEmail(email, { redirectTo: `${site.replace(/\/$/, '')}/platform/admin` })).error;
-        await admin.rpc('platform_log', { p_actor: actor, p_action: 'admin.add', p_tenant: null, p_payload: { target_user_id: target.id, role: targetRole, created, invite_sent: inviteSent } });
+        await admin.rpc('platform_log', { p_actor: actor, p_action: 'admin.add', p_tenant: null, p_payload: { target_user_id: target.id, target_email: email, role: targetRole, created, invite_sent: inviteSent } });
         return json(req, { ok: true, created, invite_sent: inviteSent });
       }
       if (!UUID.test(targetId) || targetId === actor) return json(req, { error: 'bad_request' }, 400);
+      const targetUser = await admin.auth.admin.getUserById(targetId);
+      const targetEmail = targetUser.data.user?.email ?? '';
       if (action === 'admin_update') {
         if (!['owner','support','finance','read_only'].includes(targetRole)) return json(req, { error: 'bad_request' }, 400);
         const { error } = await admin.from('platform_admins').update({ role: targetRole }).eq('user_id', targetId);
         if (error) return json(req, { error: 'operation_failed' }, 500);
-        await admin.rpc('platform_log', { p_actor: actor, p_action: 'admin.role_update', p_tenant: null, p_payload: { target_user_id: targetId, role: targetRole } });
+        await admin.rpc('platform_log', { p_actor: actor, p_action: 'admin.role_update', p_tenant: null, p_payload: { target_user_id: targetId, target_email: targetEmail, role: targetRole } });
       } else if (action === 'admin_disable') {
         const { error } = await admin.from('platform_admins').update({ is_active: false }).eq('user_id', targetId);
         if (error) return json(req, { error: 'operation_failed' }, 500);
-        await admin.rpc('platform_log', { p_actor: actor, p_action: 'admin.disable', p_tenant: null, p_payload: { target_user_id: targetId } });
+        await admin.rpc('platform_log', { p_actor: actor, p_action: 'admin.disable', p_tenant: null, p_payload: { target_user_id: targetId, target_email: targetEmail } });
       } else {
         const { data: factors, error: factorsError } = await admin.auth.admin.mfa.listFactors({ userId: targetId });
         if (factorsError) return json(req, { error: 'operation_failed' }, 500);
@@ -225,7 +227,7 @@ Deno.serve(async (req) => {
           const { error } = await admin.auth.admin.mfa.deleteFactor({ id: factor.id, userId: targetId });
           if (error) return json(req, { error: 'operation_failed' }, 500);
         }
-        await admin.rpc('platform_log', { p_actor: actor, p_action: 'admin.mfa_reset', p_tenant: null, p_payload: { target_user_id: targetId, factors_removed: factors.factors.length } });
+        await admin.rpc('platform_log', { p_actor: actor, p_action: 'admin.mfa_reset', p_tenant: null, p_payload: { target_user_id: targetId, target_email: targetEmail, factors_removed: factors.factors.length } });
       }
       return json(req, { ok: true });
     }

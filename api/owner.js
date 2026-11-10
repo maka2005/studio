@@ -169,7 +169,8 @@ export default async function handler(req, res) {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body.args || {}),
       });
       const text = await result.text();
-      if (impersonation) await platformAction(cfg,jar[IMP_ADMIN],'impersonation_log',{session_id:jar[IMP_SESSION],owner_action:body.fn,succeeded:result.ok});
+      const auditedOwnerMutations=new Set(['owner_set_status','staff_set_status','owner_cancel','owner_erase_customer','owner_reschedule','owner_create_booking','owner_block','owner_add_payment','owner_upsert_service','owner_delete_service','owner_upsert_resource','owner_delete_resource','owner_update_notification_settings','owner_update_config','owner_update_legal','owner_telegram_unlink','owner_waitlist_status','owner_upsert_promo','owner_delete_promo','owner_publish_review','owner_respond_price_change']);
+      if (impersonation && auditedOwnerMutations.has(body.fn)) await platformAction(cfg,jar[IMP_ADMIN],'impersonation_log',{session_id:jar[IMP_SESSION],owner_action:body.fn,succeeded:result.ok});
       res.statusCode = result.status; res.setHeader('Cache-Control', 'no-store');
       res.setHeader('Content-Type', result.headers.get('content-type') || 'application/json'); return res.end(text);
     }

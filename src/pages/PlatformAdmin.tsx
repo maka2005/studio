@@ -441,15 +441,45 @@ function Admins() {
 }
 
 function Audit() {
-  const [tenant, setTenant] = useState(''); const [from, setFrom] = useState(''); const [to, setTo] = useState('');
+  const [tenant, setTenant] = useState(''); const [from, setFrom] = useState(''); const [to, setTo] = useState(''); const [action, setAction] = useState('');
   const tenants = useLoad<Row[]>('tenants', { limit: 200 });
   const { data, err, loading } = useLoad<Row[]>('audit', { tenant_id: tenant || undefined, from: from ? iso(from) : undefined, to: to ? iso(to) : undefined }, [tenant, from, to]);
+  const rows=(data??[]).filter((a)=>!(a.action==='impersonation.action'&&!PLATFORM_MUTATIONS.has(String(a.payload?.action??''))));
+  const actions=[...new Set(rows.map((a)=>String(a.action)))];
+  const visibleRows=action?rows.filter((a)=>a.action===action):rows;
   return (<>
     <div className="row wrap">
       <select className="field" value={tenant} onChange={(e) => setTenant(e.target.value)}><option value="">Все организации</option>{tenants.data?.map((t) => <option key={t.id} value={t.id}>{t.name ?? t.slug}</option>)}</select>
+      <select className="field" value={action} onChange={(e)=>setAction(e.target.value)} aria-label="Тип действия"><option value="">Все действия</option>{actions.map((key)=><option key={key} value={key}>{platformActionLabel(key)}</option>)}</select>
       <input className="field" type="date" value={from} onChange={(e) => setFrom(e.target.value)} aria-label="С даты" /><input className="field" type="date" value={to} onChange={(e) => setTo(e.target.value)} aria-label="По дату" /></div>
     <State err={err} loading={loading && !data} />
-    {data && <Table head={['Когда', 'Кто', 'Действие', 'Организация', 'Данные']}>{data.map((a) => <tr key={a.id}><td>{fmtDateTime(a.created_at)}</td><td>{a.actor_email ?? '—'}</td><td>{a.action}</td><td>{a.slug ?? '—'}</td><td className="muted small">{JSON.stringify(a.payload)}</td></tr>)}</Table>}</>);
+    {data && (visibleRows.length===0?<p className="muted">Записей по выбранным условиям нет.</p>:<Table head={['Когда','Кто','Что произошло','Организация','Подробности']}>{visibleRows.map((a)=><tr key={a.id}><td>{fmtDateTime(a.created_at)}</td><td>{a.actor_email??'—'}</td><td>{platformActionLabel(String(a.action))}</td><td>{a.slug??'—'}</td><td className="muted small">{platformAuditDetail(String(a.action),a.payload??{})}</td></tr>)}</Table>)}</>);
+}
+
+const PLATFORM_MUTATIONS=new Set(['owner_set_status','staff_set_status','owner_cancel','owner_erase_customer','owner_reschedule','owner_create_booking','owner_block','owner_add_payment','owner_upsert_service','owner_delete_service','owner_upsert_resource','owner_delete_resource','owner_update_notification_settings','owner_update_config','owner_update_legal','owner_telegram_unlink','owner_waitlist_status','owner_upsert_promo','owner_delete_promo','owner_publish_review','owner_respond_price_change']);
+const PLATFORM_ACTION_LABELS:Record<string,string>={
+  'impersonation.start':'Начал работу в кабинете организации','impersonation.end':'Завершил работу в кабинете организации','impersonation.expired':'Завершилось время доступа к кабинету','impersonation.action':'Изменил данные в кабинете организации',
+  'admin.add':'Добавил администратора','admin.role_update':'Изменил роль администратора','admin.disable':'Отключил администратора','admin.mfa_reset':'Сбросил MFA администратора','admin.owner_recovery':'Восстановил доступ владельцу платформы',
+  'owner.resend_invite':'Повторно отправил приглашение владельцу','tenant.create':'Создал организацию','plan.upsert':'Изменил тариф','settings.update':'Изменил настройки платформы',
+  'subscription.create':'Подключил тариф организации','subscription.extend':'Продлил подписку','subscription.change_plan':'Изменил тариф организации','subscription.set_dates':'Изменил даты подписки','subscription.suspend':'Приостановил подписку','subscription.resume':'Возобновил подписку','subscription.cancel':'Отменил подписку',
+  'payment.create':'Добавил платёж','payment.confirm':'Подтвердил оплату','payment.refund':'Оформил возврат','payment.fail':'Отметил платёж как неуспешный',
+  'price_change.accepted':'Организация согласилась с новой ценой','price_change.declined':'Организация отклонила новую цену','platform.bootstrap':'Назначил первого администратора платформы'
+};
+function platformActionLabel(action:string){return PLATFORM_ACTION_LABELS[action]??'Выполнил действие в платформе'}
+function platformAuditDetail(action:string,payload:Row){
+  if(action==='impersonation.start')return `Причина: ${String(payload.reason??'не указана')}${payload.owner_email?` · кабинет владельца ${String(payload.owner_email)}`:''}`;
+  if(action==='impersonation.action'){const names:Record<string,string>={owner_set_status:'Изменил статус записи',owner_cancel:'Отменил запись',owner_erase_customer:'Удалил данные клиента',owner_reschedule:'Перенёс запись',owner_create_booking:'Создал запись',owner_block:'Закрыл время для записи',owner_add_payment:'Добавил оплату',owner_upsert_service:'Изменил услугу',owner_delete_service:'Удалил услугу',owner_upsert_resource:'Изменил мастера или пост',owner_delete_resource:'Удалил мастера или пост',owner_update_notification_settings:'Изменил настройки уведомлений',owner_update_config:'Изменил настройки организации',owner_update_legal:'Изменил реквизиты',owner_telegram_unlink:'Отключил Telegram',owner_waitlist_status:'Изменил статус листа ожидания',owner_upsert_promo:'Изменил промокод',owner_delete_promo:'Удалил промокод',owner_publish_review:'Изменил видимость отзыва'};return `${names[String(payload.action)]??'Изменил данные'} · ${payload.succeeded===true?'успешно':'не выполнено'}`}
+  if(action.startsWith('subscription.')){const data=payload.data??{};const parts:string[]=[];if(data.plan)parts.push(`тариф: ${String(data.plan)}`);if(data.starts_at)parts.push(`начало: ${fmtDate(String(data.starts_at))}`);if(data.ends_at)parts.push(`окончание: ${fmtDate(String(data.ends_at))}`);if(data.reason)parts.push(`причина: ${String(data.reason)}`);return parts.join(' · ')||'Изменены условия подписки'}
+  if(action==='tenant.create')return `Организация: ${String(payload.slug??'—')} · владелец: ${String(payload.owner_email??'—')} · тариф: ${String(payload.plan??'—')}`;
+  if(action==='payment.create'||action==='payment.confirm')return `${Number(payload.amount_kzt??0).toLocaleString('ru-RU')} ₸`;
+  if(action==='payment.refund'||action==='payment.fail')return String(payload.reason??'Причина не указана');
+  if(action==='settings.update')return `Параметр «${String(payload.key??'настройка')}» изменён`;
+  if(action.startsWith('price_change.'))return `${Number(payload.old_price??0).toLocaleString('ru-RU')} ₸ → ${Number(payload.new_price??0).toLocaleString('ru-RU')} ₸`;
+  if(action.startsWith('admin.')){const target=payload.target_email?`Администратор: ${String(payload.target_email)} · `:'';if(action==='admin.add'||action==='admin.role_update')return `${target}роль: ${PLATFORM_ROLE_LABEL[String(payload.role)]??String(payload.role??'—')}${payload.invite_sent===true?' · приглашение отправлено':''}`;if(action==='admin.mfa_reset')return `${target}сброшено способов MFA: ${Number(payload.factors_removed??0)}`;return `${target}доступ отключён`}
+  if(action==='plan.upsert'){const d=payload.data??{};return `${String(d.name??'Тариф')} · ${Number(d.price_kzt??0).toLocaleString('ru-RU')} ₸ за ${Number(d.period_months??1)} мес. · ${d.is_active===false?'выключен':'активен'}`}
+  if(action==='owner.resend_invite')return `Приглашение отправлено на ${String(payload.email??'адрес владельца')}`;
+  if(action==='impersonation.end'||action==='impersonation.expired')return 'Служебный сеанс завершён';
+  return 'Изменения сохранены';
 }
 
 function PlatformNotifications() {
