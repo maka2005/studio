@@ -201,7 +201,12 @@ function Cabinet({ b, onLogout, impersonation }: { b: Business; onLogout: () => 
   };
   return (
     <section className="pad admin-shell">
-      {impersonation && <aside role="status" style={{position:'sticky',top:8,zIndex:20,background:'#7c2d12',border:'2px solid #fdba74',color:'#fff7ed',padding:'14px 18px',borderRadius:12,marginBottom:16,display:'flex',justifyContent:'space-between',alignItems:'center',gap:16,flexWrap:'wrap'}}><span><b>Вы в чужом кабинете — режим поддержки.</b> Причина: {impersonation.reason} · Доступ до {new Date(impersonation.expires_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}</span><button className="btn" onClick={()=>void stopImpersonation()}>Завершить сеанс</button></aside>}
+      {impersonation && <aside className="impersonation-banner" role="status" aria-label="Активен режим поддержки">
+        <span className="impersonation-banner-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3.5 19 6v5.1c0 4.2-2.8 7.7-7 9.4-4.2-1.7-7-5.2-7-9.4V6l7-2.5Z" stroke="currentColor" strokeWidth="1.7"/><path d="m9 12 2 2 4-4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg></span>
+        <span className="impersonation-banner-copy"><span className="impersonation-banner-title">Режим поддержки <i>·</i> вы в кабинете организации</span><span className="impersonation-banner-reason"><b>Причина</b>{impersonation.reason}</span></span>
+        <span className="impersonation-banner-expiry"><span className="impersonation-live-dot"/> До {new Date(impersonation.expires_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}</span>
+        <button className="impersonation-banner-exit" onClick={()=>void stopImpersonation()}>Завершить сеанс <span aria-hidden="true">↗</span></button>
+      </aside>}
       <div className="admin-heading">
         <div>
           <p className="admin-eyebrow">ПАНЕЛЬ УПРАВЛЕНИЯ</p>

@@ -226,3 +226,17 @@ body:has(.admin-main){padding-bottom:24px}
   .admin-group-title{padding:8px 12px;font-size:13px}
   .admin-group-tab{padding:7px 12px;font-size:12.5px}
 }
+.impersonation-banner{position:sticky;top:10px;z-index:20;display:grid;grid-template-columns:42px minmax(0,1fr) auto auto;align-items:center;gap:14px;margin:0 0 20px;padding:14px 16px;border:1px solid color-mix(in srgb,var(--accent) 35%,#27303d);border-radius:18px;background:linear-gradient(110deg,color-mix(in srgb,var(--accent) 12%,#11151c),#111318 72%);box-shadow:0 12px 34px #0008, inset 0 1px #ffffff0a;color:var(--fg);backdrop-filter:blur(16px)}
+.impersonation-banner-icon{width:40px;height:40px;display:grid;place-items:center;border:1px solid color-mix(in srgb,var(--accent) 36%,transparent);border-radius:14px;background:color-mix(in srgb,var(--accent) 13%,#10131a);color:var(--accent)}
+.impersonation-banner-icon svg{width:22px;height:22px}
+.impersonation-banner-copy{min-width:0;display:grid;gap:4px}
+.impersonation-banner-title{font-size:13px;font-weight:750;letter-spacing:-.01em}
+.impersonation-banner-title i{padding:0 4px;color:var(--accent);font-style:normal}
+.impersonation-banner-reason{display:flex;gap:7px;min-width:0;color:#aeb6c2;font-size:12px;line-height:1.45}
+.impersonation-banner-reason b{flex:none;color:#77869b;font-size:10px;text-transform:uppercase;letter-spacing:.08em}
+.impersonation-banner-expiry{display:flex;align-items:center;gap:7px;padding:7px 10px;border:1px solid #ffffff12;border-radius:999px;background:#ffffff06;color:#c9d2df;font-size:11px;font-weight:650;white-space:nowrap}
+.impersonation-live-dot{width:7px;height:7px;border-radius:50%;background:#55d6a0;box-shadow:0 0 0 3px #55d6a022}
+.impersonation-banner-exit{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:38px;padding:0 13px;border:1px solid color-mix(in srgb,var(--accent) 38%,#343944);border-radius:12px;background:color-mix(in srgb,var(--accent) 10%,#111318);color:#dceaff;font:inherit;font-size:12px;font-weight:700;white-space:nowrap;cursor:pointer;transition:background .18s,border-color .18s,transform .18s}
+.impersonation-banner-exit:hover{transform:translateY(-1px);border-color:color-mix(in srgb,var(--accent) 70%,#343944);background:color-mix(in srgb,var(--accent) 18%,#111318)}
+@media(max-width:760px){.impersonation-banner{grid-template-columns:38px minmax(0,1fr) auto;gap:10px;padding:12px;border-radius:16px}.impersonation-banner-icon{width:36px;height:36px}.impersonation-banner-expiry{grid-column:2;justify-self:start}.impersonation-banner-exit{grid-column:3;grid-row:1 / span 2;padding:0 10px;font-size:11px}.impersonation-banner-reason{display:block;overflow-wrap:anywhere}.impersonation-banner-reason b{margin-right:6px}}
+@media(max-width:420px){.impersonation-banner{grid-template-columns:34px minmax(0,1fr);align-items:start}.impersonation-banner-icon{width:32px;height:32px;border-radius:11px}.impersonation-banner-title{font-size:12px}.impersonation-banner-expiry{grid-column:2}.impersonation-banner-exit{grid-column:2;grid-row:auto;justify-self:start;min-height:34px}}
