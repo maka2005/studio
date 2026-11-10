@@ -218,7 +218,6 @@ function Cabinet({ b, onLogout, impersonation }: { b: Business; onLogout: () => 
           Выйти
         </button>
       </div>
-      {role === 'owner' && <ExportButton slug={b.slug} />}
       <div className="admin-layout">
         <nav className="admin-side" aria-label="Разделы кабинета">
           {groupList.map((g) => {
@@ -255,12 +254,11 @@ function Cabinet({ b, onLogout, impersonation }: { b: Business; onLogout: () => 
           })}
         </nav>
         <div className="admin-main">
-      {(role === 'owner' || role === 'manager') && <SubscriptionBanner slug={b.slug} canRespond={role === 'owner'} latestSuspension={billingNotices.data?.find(e=>e.event_type==='suspended')} />}
       {tab === 'Записи' && <Bookings b={b} role={role} />}
       {tab === 'Сотрудники' && role === 'owner' && <TeamAccess b={b} />}
       {tab === 'Сотрудники' && role === 'manager' && <TeamAccess b={b} canManageManagers={false} />}
       {tab === 'Мой доступ' && <MyAccess b={b} />}
-      {tab === 'Личный кабинет' && <OwnerAccount slug={b.slug} />}
+      {tab === 'Личный кабинет' && <OwnerAccount slug={b.slug} canExport={role==='owner'} canRespond={role==='owner'} latestSuspension={billingNotices.data?.find(e=>e.event_type==='suspended')} />}
       {tab === 'Центр уведомлений' && <OwnerNotificationCenter slug={b.slug} canRespond={role === 'owner'} />}
       {tab === 'Отчёты' && <Reports b={b} />}
       {tab === 'Команда и посты' && <TeamResources b={b} />}
@@ -315,14 +313,11 @@ function SubscriptionBanner({ slug, canRespond, latestSuspension }: { slug: stri
   const date = (v?: string | null) => (v ? new Date(v).toLocaleDateString('ru-RU') : '')
   if (s.phase === 'scheduled')
     return <>{proposals.isError && <p className="err small">Не удалось проверить новые условия подписки. Обновите кабинет.</p>}{priceNotice}<p className="muted small">Подписка начнёт действовать {date(s.starts_at)}. До этой даты онлайн-запись и уведомления отключены.</p></>
-  if (s.state === 'closed')
-    return (
-      <>{proposals.isError && <p className="err small">Не удалось проверить новые условия подписки. Обновите кабинет.</p>}{priceNotice}<div className="card col" role="alert" style={{ borderColor: '#ff5a5a' }}>
-        <b>Подписка приостановлена</b>
-        <p className="muted">Онлайн-запись для клиентов и уведомления отключены. Ваши данные сохранены, кабинет и выгрузка данных доступны. Для возобновления свяжитесь с поддержкой Servio и оплатите тариф{s.plan_name ? ` ${s.plan_name}` : ''}{s.price_kzt ? ` (${s.price_kzt.toLocaleString('ru-RU')} ₸/мес)` : ''}.</p>
-        {!!latestSuspension?.payload.reason&&<p><b>Причина приостановки:</b> {String(latestSuspension.payload.reason)}</p>}
-      </div></>
-    )
+  if (s.state === 'closed') {
+    const closedTitle=s.phase==='suspended'?'Подписка приостановлена':s.phase==='cancelled'?'Подписка отменена':'Срок подписки закончился';
+    const closedDetail=s.phase==='suspended'?'Онлайн-запись временно отключена. Ваши данные сохранены. Для восстановления работы свяжитесь с поддержкой Servio.':s.phase==='cancelled'?'Данные организации сохранены. Для возобновления обслуживания свяжитесь с поддержкой Servio.':'Подписка истекла. Для возобновления обслуживания свяжитесь с поддержкой Servio.';
+    return <>{proposals.isError && <p className="err small">Не удалось проверить новые условия подписки. Обновите кабинет.</p>}{priceNotice}<div className="card col owner-subscription-alert" role="alert"><div className="row between wrap"><b>{closedTitle}</b><span className={`pf-badge pf-${s.phase}`}>{closedTitle}</span></div><p className="muted">{closedDetail}</p>{s.phase==='suspended'&&!!latestSuspension?.payload.reason&&<p><b>Причина приостановки:</b> {String(latestSuspension.payload.reason)}</p>}{s.plan_name&&<p className="muted small">Тариф: {s.plan_name}</p>}</div></>
+  }
   if (s.state === 'grace')
     return (
       <>{proposals.isError && <p className="err small">Не удалось проверить новые условия подписки. Обновите кабинет.</p>}{priceNotice}<div className="card col" role="status" style={{ borderColor: '#e0a030' }}>
@@ -360,12 +355,13 @@ function TeamMemberRow({member,resources,onSave,onRemove,onReset,canManageManage
   return <div className="card col"><b>{member.email}</b><div className="row wrap"><select className="field" value={role} onChange={e=>setRole(e.target.value as 'manager'|'staff')}><option value="staff">Сотрудник</option>{canManageManagers&&<option value="manager">Менеджер</option>}</select>{role==='staff'&&<select className="field" value={resource} onChange={e=>setResource(e.target.value)}><option value="">Выберите пост</option>{resources.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select>}<button className="btn ghost mini" disabled={busy||(role==='staff'&&!resource)} onClick={()=>onSave({user_id:member.user_id,role,resource_id:role==='staff'?resource:null})}>Сохранить</button><button className="btn ghost mini" disabled={busy} onClick={onReset}>Выдать новый пароль</button><button className="btn danger mini" disabled={busy} onClick={onRemove}>Отозвать доступ</button></div></div>
 }
 
-function OwnerAccount({slug}:{slug:string}) {
+function OwnerAccount({slug,canExport,canRespond,latestSuspension}:{slug:string;canExport:boolean;canRespond:boolean;latestSuspension?:OwnerBillingNotification}) {
   const q=useQuery({queryKey:['owner','subscription',slug],queryFn:()=>owner.subscription(slug),refetchInterval:60_000});
   if(q.isPending)return <p className="muted">Загружаем подписку…</p>;
   if(q.isError)return <p className="err">Не удалось загрузить подписку. <button className="link" onClick={()=>void q.refetch()}>Повторить</button></p>;
   const s=q.data; const date=(v?:string|null)=>v?new Date(v).toLocaleDateString('ru-RU'):'—';
-  return <div className="col"><div className="admin-subheading"><div><h2>Личный кабинет</h2><p className="muted small">Текущие условия и оплата подписки.</p></div></div><section className="card col owner-account-card"><div className="row between wrap"><b>Тариф {s.plan_name??s.plan_code??'—'}</b><span className={`pf-badge pf-${s.phase}`}>{s.phase}</span></div><div className="owner-account-grid"><div><span className="muted small">Подписка действует до</span><b>{s.ends_at?date(s.ends_at):'Без срока'}</b></div><div><span className="muted small">Осталось</span><b>{s.days_left==null?'—':`${Math.max(0,s.days_left)} дней`}</b></div><div><span className="muted small">К оплате за период</span><b>{(s.price_kzt??0).toLocaleString('ru-RU')} ₸</b></div><div><span className="muted small">Период</span><b>{s.price_period_months??1} мес.</b></div></div>{s.phase==='grace'&&<p className="err small">Подписка требует продления. Льготный срок до {date(s.grace_ends_at)}.</p>}</section></div>
+  const statusLabels:Record<string,string>={trial:'Пробный период',active:'Активна',grace:'Льготный период',scheduled:'Запланирована',suspended:'Приостановлена',expired:'Истекла',cancelled:'Отменена',none:'Нет подписки'};
+  return <div className="col"><div className="admin-subheading"><div><h2>Личный кабинет</h2><p className="muted small">Текущие условия и оплата подписки.</p></div></div><SubscriptionBanner slug={slug} canRespond={canRespond} latestSuspension={latestSuspension}/><section className="card col owner-account-card"><div className="row between wrap"><b>Тариф {s.plan_name??s.plan_code??'—'}</b><span className={`pf-badge pf-${s.phase}`}>{statusLabels[s.phase]??'Статус уточняется'}</span></div><div className="owner-account-grid"><div><span className="muted small">Подписка действует до</span><b>{s.ends_at?date(s.ends_at):'Без срока'}</b></div><div><span className="muted small">Осталось</span><b>{s.days_left==null?'—':`${Math.max(0,s.days_left)} дней`}</b></div><div><span className="muted small">К оплате за период</span><b>{(s.price_kzt??0).toLocaleString('ru-RU')} ₸</b></div><div><span className="muted small">Период</span><b>{s.price_period_months??1} мес.</b></div></div></section>{canExport&&<ExportButton slug={slug}/>}</div>
 }
 
 function OwnerNotificationCenter({slug,canRespond}:{slug:string;canRespond:boolean}) {

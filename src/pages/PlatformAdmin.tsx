@@ -34,10 +34,10 @@ const fmtDateTime = (v?: string | null) => (v ? new Date(v).toLocaleString('ru-R
 const kzt = (n?: number | null) => `${(n ?? 0).toLocaleString('ru-RU')} ₸`;
 const iso = (d: string) => (d ? new Date(`${d}T00:00:00`).toISOString() : '');
 const isoEnd = (d:string) => { if(!d)return '';const end=new Date(`${d}T00:00:00`);end.setDate(end.getDate()+1);return end.toISOString(); };
-const PHASE: Record<string, string> = { trial: 'Пробный', active: 'Активна', grace: 'Grace', scheduled: 'Запланирована', suspended: 'Приостановлена', expired: 'Истекла', cancelled: 'Отменена', none: 'Нет подписки' };
+const PHASE: Record<string, string> = { trial: 'Пробный период', active: 'Активна', grace: 'Льготный период', scheduled: 'Запланирована', suspended: 'Приостановлена', expired: 'Истекла', cancelled: 'Отменена', none: 'Нет подписки' };
 const PAY: Record<string, string> = { pending: 'Ожидает', paid: 'Оплачен', failed: 'Не прошёл', refunded: 'Возврат' };
 const METHODS: Record<string, string> = { kaspi: 'Kaspi', transfer: 'Перевод', cash: 'Наличные', card: 'Карта', other: 'Другое' };
-const Badge = ({ phase }: { phase: string }) => <span className={`pf-badge pf-${phase}`}>{PHASE[phase] ?? PAY[phase] ?? phase}</span>;
+const Badge = ({ phase }: { phase: string }) => <span className={`pf-badge pf-${phase}`}>{PHASE[phase] ?? PAY[phase] ?? 'Статус не распознан'}</span>;
 
 /* ----------------------------------------------------------------------------------- вход, MFA */
 type Step = 'loading' | 'login' | 'mfa' | 'enroll' | 'denied' | 'ready';
@@ -262,8 +262,33 @@ function Tenants({ onOpen }: { onOpen: (id: string) => void }) {
   </>);
 }
 
+function subscriptionEventTitle(type:string){return ({created:'Подписка создана',suspended:'Подписка приостановлена',resumed:'Подписка возобновлена',extended:'Срок подписки продлён',dates_changed:'Изменён срок подписки',plan_changed:'Изменён тариф',cancelled:'Подписка отменена',expired:'Срок подписки закончился',grace_started:'Начался льготный период',payment_confirmed:'Платёж подтверждён',payment_failed:'Платёж не прошёл',payment_refunded:'Выполнен возврат',price_change_accepted:'Новая цена принята',price_change_declined:'Новая цена отклонена'} as Record<string,string>)[type]??'Обновление подписки'}
+function subscriptionEventDetail(e:Row){
+  const p=(e.payload&&typeof e.payload==='object'?e.payload:{}) as Row;
+  const date=(v:unknown)=>v?fmtDateTime(String(v)):'—';
+  switch(String(e.type)){
+    case 'suspended':return p.reason?`Причина: ${String(p.reason)}`:'Подписка остановлена администратором.';
+    case 'resumed':return `${p.forced?'Возобновлена администратором':'Доступ восстановлен'}${p.ends_at?` · действует до ${date(p.ends_at)}`:''}`;
+    case 'dates_changed':return `Окончание: ${date(p.was_ends_at)} → ${date(p.ends_at)}${p.starts_at?` · начало: ${date(p.starts_at)}`:''}`;
+    case 'extended':return `Срок продлён на ${Number(p.months??0)||'несколько'} мес.${p.to?` · новая дата окончания: ${date(p.to)}`:''}`;
+    case 'plan_changed':return p.to?`Новый тариф: ${String(p.to)}`:'Тариф организации обновлён.';
+    case 'created':return `${p.trial?'Пробный период':'Тариф'}${p.plan?`: ${String(p.plan)}`:''}${p.ends_at?` · до ${date(p.ends_at)}`:''}`;
+    case 'cancelled':return p.reason?`Причина: ${String(p.reason)}`:'Подписка отменена администратором.';
+    case 'payment_confirmed':return `Подтверждена оплата ${kzt(Number(p.amount_kzt??0))}.`;
+    case 'payment_refunded':return p.reason?`Причина возврата: ${String(p.reason)}`:'Платёж возвращён.';
+    case 'payment_failed':return p.reason?`Платёж не прошёл: ${String(p.reason)}`:'Платёж не удалось подтвердить. Проверьте перевод или обратитесь в поддержку.';
+    case 'price_change_accepted':return 'Владелец организации согласился с новой ценой.';
+    case 'price_change_declined':return 'Владелец организации отклонил новую цену.';
+    case 'grace_started':return p.grace_ends_at?`Продлите подписку до ${date(p.grace_ends_at)}.`:'Подписка ожидает продления.';
+    default:return 'Обновлены условия подписки.';
+  }
+}
+
 function TenantCard({ id, role, onBack }: { id: string; role: string; onBack: () => void }) {
   const { data: d, err, loading, reload } = useLoad<Row>('tenant', { tenant_id: id });
+  const [eventPage,setEventPage]=useState(0);
+  const events=useLoad<Row>('tenant_events',{tenant_id:id,limit:50,offset:eventPage*50},[id,eventPage]);
+  useEffect(()=>setEventPage(0),[id]);
   const [msg, setMsg] = useState(''); const [reason,setReason]=useState(''); const [impBusy,setImpBusy]=useState(false);
   if (!d) return <><button className="back" onClick={onBack}>← Назад</button><State err={err} loading={loading} /></>;
   const t = d.tenant as Row; const subs: Row[] = d.subscriptions; const cur = subs.find((s) => ['trial', 'active', 'grace', 'suspended'].includes(s.status)) ?? subs[0];
@@ -303,7 +328,7 @@ function TenantCard({ id, role, onBack }: { id: string; role: string; onBack: ()
     <section className="card"><h3>Владельцы и сотрудники</h3><Table head={['Email', 'Роль', 'Последний вход']}>{(d.members as Row[]).map((m) => <tr key={m.user_id}><td>{m.email}</td><td>{m.role}</td><td>{fmtDateTime(m.last_sign_in_at)}</td></tr>)}</Table></section>
     <section className="card"><h3>История подписок</h3><Table head={['Тариф', 'Статус', 'Начало', 'Окончание']}>{subs.map((s) => <tr key={s.id}><td>{s.plan_code}</td><td><Badge phase={s.phase} /></td><td>{fmtDate(s.starts_at)}</td><td>{s.ends_at ? fmtDate(s.ends_at) : '—'}</td></tr>)}</Table></section>
     <section className="card"><h3>Платежи</h3><Table head={['Дата', 'Сумма', 'Период', 'Способ', 'Статус']}>{(d.payments as Row[]).map((p) => <tr key={p.id}><td>{fmtDate(p.received_at)}</td><td>{kzt(p.amount_kzt)}</td><td>{fmtDate(p.period_start)} — {fmtDate(p.period_end)}</td><td>{METHODS[p.method] ?? p.method}</td><td><Badge phase={p.status} /></td></tr>)}</Table></section>
-    <section className="card"><h3>События</h3><Table head={['Когда', 'Событие', 'Данные']}>{(d.events as Row[]).map((e) => <tr key={e.id}><td>{fmtDateTime(e.created_at)}</td><td>{e.type}</td><td className="muted small">{JSON.stringify(e.payload)}</td></tr>)}</Table></section>
+    <section className="card col"><div><h3>История подписки</h3><p className="muted small">Платежи, изменения тарифа и статуса организации.</p></div><State err={events.err} loading={events.loading}/>{events.data&&<>{(events.data.items as Row[]).length===0?<p className="muted">Событий пока нет.</p>:<div className="pf-event-list">{(events.data.items as Row[]).map((e)=><article className="pf-event" key={e.id}><div className="row between wrap"><b>{subscriptionEventTitle(String(e.type))}</b><time className="muted small">{fmtDateTime(e.created_at)}</time></div><p className="muted small">{subscriptionEventDetail(e)}</p></article>)}</div>}{((events.data.items as Row[]).length>0||eventPage>0)&&<nav className="admin-service-pagination" aria-label="История подписки"><button className="admin-page-button" disabled={eventPage===0||events.loading} onClick={()=>setEventPage(eventPage-1)}>Назад</button><span className="muted small">Страница <b>{eventPage+1}</b></span><button className="admin-page-button" disabled={!events.data.has_more||events.loading} onClick={()=>setEventPage(eventPage+1)}>Далее</button></nav>}</>}</section>
   </>);
 }
 

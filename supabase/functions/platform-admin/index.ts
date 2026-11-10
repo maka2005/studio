@@ -105,9 +105,9 @@ Deno.serve(async (req) => {
   if (action === 'whoami') return json(req, { ok: true, email: user.email, role, aal: aalOf(token), mfa_required: mfaNeeded });
   if (mfaNeeded) return json(req, { error: 'mfa_required' }, 403);
 
-  const readActions = new Set(['whoami','dashboard','tenants','tenant','subscriptions','plans','payments','audit','notifications','settings','admins']);
-  const financeActions = new Set(['payments','payment_create','payment_confirm','payment_refund','payment_fail','subscriptions','dashboard','audit','notifications','tenants','tenant','plans']);
-  const supportActions = new Set(['tenants','tenant','resend_invite','impersonation_start','impersonation_check','impersonation_end','impersonation_log']);
+  const readActions = new Set(['whoami','dashboard','tenants','tenant','tenant_events','subscriptions','plans','payments','audit','notifications','settings','admins']);
+  const financeActions = new Set(['payments','payment_create','payment_confirm','payment_refund','payment_fail','subscriptions','dashboard','audit','notifications','tenants','tenant','tenant_events','plans']);
+  const supportActions = new Set(['tenants','tenant','tenant_events','resend_invite','impersonation_start','impersonation_check','impersonation_end','impersonation_log']);
   const allowedByRole = role === 'owner' ? null : role === 'read_only' ? readActions : role === 'finance' ? financeActions : supportActions;
   if (!['owner','support','finance','read_only'].includes(role) || (allowedByRole && !allowedByRole.has(action)))
     return json(req, { error: 'forbidden' }, 403);
@@ -236,6 +236,7 @@ Deno.serve(async (req) => {
       case 'dashboard': rpc = { name: 'platform_dashboard', args: { p_actor: actor } }; break;
       case 'tenants': rpc = { name: 'platform_list_tenants', args: { p_actor: actor, p_search: str(body.search, 80) || null, p_phase: str(body.phase, 20) || null, p_plan: str(body.plan, 20) || null, p_limit: Number(body.limit) || 50, p_offset: Number(body.offset) || 0 } }; break;
       case 'tenant': { const id = uuidOf(body.tenant_id); if (!id) return json(req, { error: 'bad_request' }, 400); rpc = { name: 'platform_tenant_card', args: { p_actor: actor, p_tenant: id } }; break; }
+      case 'tenant_events': { const id = uuidOf(body.tenant_id); if (!id) return json(req, { error: 'bad_request' }, 400); rpc = { name: 'platform_tenant_events', args: { p_actor: actor, p_tenant: id, p_limit: Number(body.limit) || 50, p_offset: Math.max(0, Number(body.offset) || 0) } }; break; }
       case 'subscriptions': rpc = { name: 'platform_list_subscriptions', args: { p_actor: actor, p_phase: str(body.phase, 20) || null, p_limit: Number(body.limit) || 100 } }; break;
       case 'plans': rpc = { name: 'platform_list_plans', args: { p_actor: actor } }; break;
       case 'plan_save': rpc = { name: 'platform_upsert_plan', args: { p_actor: actor, p: obj(body.plan) } }; break;
