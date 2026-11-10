@@ -240,7 +240,7 @@ Deno.serve(async (req) => {
       case 'plans': rpc = { name: 'platform_list_plans', args: { p_actor: actor } }; break;
       case 'plan_save': rpc = { name: 'platform_upsert_plan', args: { p_actor: actor, p: obj(body.plan) } }; break;
       case 'payments': rpc = { name: 'platform_list_payments', args: { p_actor: actor, p_status: str(body.status, 20) || null, p_limit: Number(body.limit) || 100 } }; break;
-      case 'audit': rpc = { name: 'platform_audit_list', args: { p_actor: actor, p_tenant: uuidOf(body.tenant_id), p_from: str(body.from, 40) || null, p_to: str(body.to, 40) || null, p_limit: Number(body.limit) || 200 } }; break;
+      case 'audit': rpc = { name: 'platform_audit_list', args: { p_actor: actor, p_tenant: uuidOf(body.tenant_id), p_from: str(body.from, 40) || null, p_to: str(body.to, 40) || null, p_action: str(body.audit_action, 100) || null, p_limit: Number(body.limit) || 51, p_offset: Math.max(0, Number(body.offset) || 0) } }; break;
       case 'notifications': rpc = { name: 'platform_notifications', args: { p_actor: actor, p_limit: Number(body.limit) || 200 } }; break;
       case 'notifications_read': {
         const ids = Array.isArray(body.ids) ? body.ids.map(uuidOf).filter((id): id is string => !!id).slice(0,500) : [];
