@@ -45,6 +45,7 @@ export function PlatformAdmin() {
   const [step, setStep] = useState<Step>('loading');
   const [msg, setMsg] = useState('');
   const [role, setRole] = useState('read_only');
+  const [accountEmail, setAccountEmail] = useState('');
 
   const check = useCallback(async () => {
     const { data } = await supabase.auth.getSession();
@@ -52,6 +53,7 @@ export function PlatformAdmin() {
     try {
       const me = await call<Row>('whoami');
       setRole(String(me.role ?? 'read_only'));
+      setAccountEmail(String(me.email ?? ''));
       const aal = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
       if (aal.data?.nextLevel === 'aal2' && aal.data.currentLevel !== 'aal2') { setStep('mfa'); return; }
       if (me.mfa_required) { setStep('enroll'); return; }
@@ -80,7 +82,7 @@ export function PlatformAdmin() {
   if (step === 'login') return <Login msg={msg} onDone={check} />;
   if (step === 'mfa') return <MfaVerify onDone={check} />;
   if (step === 'enroll') return <MfaEnroll onDone={check} />;
-  return <Console role={role} onLogout={async () => { await supabase.auth.signOut(); setStep('login'); }} onMfa={() => setStep('mfa')} />;
+  return <Console role={role} accountEmail={accountEmail} onLogout={async () => { await supabase.auth.signOut(); setStep('login'); }} onMfa={() => setStep('mfa')} />;
 }
 
 function Login({ msg, onDone }: { msg: string; onDone: () => void }) {
@@ -142,7 +144,8 @@ function MfaEnroll({ onDone }: { onDone: () => void }) {
 const TABS = ['Дашборд', 'Организации', 'Новая организация', 'Подписки', 'Тарифы', 'Платежи', 'Уведомления', 'Журнал', 'Администраторы', 'Настройки'] as const;
 type Tab = (typeof TABS)[number];
 
-function Console({ onLogout, role }: { onLogout: () => void; onMfa: () => void; role: string }) {
+const PLATFORM_ROLE_LABEL: Record<string, string> = { owner: 'Владелец', support: 'Поддержка', finance: 'Финансы', read_only: 'Только чтение' };
+function Console({ onLogout, role, accountEmail }: { onLogout: () => void; onMfa: () => void; role: string; accountEmail: string }) {
   const [tab, setTab] = useState<Tab>(role === 'support' ? 'Организации' : 'Дашборд');
   const [openTenant, setOpenTenant] = useState<string | null>(null);
   const platformNotices=useLoad<Row[]>('notifications',{limit:200})
@@ -158,7 +161,7 @@ function Console({ onLogout, role }: { onLogout: () => void; onMfa: () => void; 
   useEffect(() => { if (!visibleTabs.includes(tab)) setTab(role === 'support' ? 'Организации' : 'Дашборд'); }, [role]);
   return (
     <main className="page pf-wide">
-      <header className="pf-app-header"><div className="pf-brand"><span className="pf-brand-mark">S</span><div><b>Servio</b><span>Platform console</span></div></div><div className="pf-header-actions"><span className="pf-header-user">Администратор</span><button className="pf-logout" onClick={onLogout}>Выйти</button></div></header>
+      <header className="pf-app-header"><div className="pf-brand"><span className="pf-brand-mark">S</span><div><b>Servio</b><span>Platform console</span></div></div><div className="pf-header-actions"><span className="pf-header-user">{PLATFORM_ROLE_LABEL[role] ?? 'Нет доступа'}{accountEmail && <><br/><small>{accountEmail}</small></>}</span><button className="pf-logout" onClick={onLogout}>Выйти</button></div></header>
       <div className="pf-console-layout"><nav className="pf-tabs" aria-label="Разделы платформы">{visibleTabs.map((t) => <button key={t} className={tab === t && !openTenant ? 'is-current' : ''} onClick={() => { setOpenTenant(null); setTab(t); if(t==='Уведомления'){const ids=platformNotices.data?.filter(x=>!x.is_read).map(x=>String(x.id))??[];if(ids.length)void call('notifications_read',{ids}).then(()=>platformNotices.reload())} }}>{t}{t==='Уведомления'&&platformNotices.data?.some(x=>!x.is_read)&&<i className="admin-unread-dot" aria-label="Есть непрочитанные уведомления"/>}</button>)}</nav>
       <section className="pf-console-content">{openTenant ? <TenantCard id={openTenant} onBack={() => setOpenTenant(null)} />
         : tab === 'Дашборд' ? <Dashboard onOpen={setOpenTenant} onNavigate={setTab} />

@@ -86,6 +86,16 @@ Deno.serve(async (req) => {
     return json(req, { ok: true });
   }
 
+  // Configured platform owner can restore the owner role after a mistaken role change.
+  if (action === 'recover_owner') {
+    const expected = (Deno.env.get('PLATFORM_SUPERADMIN_EMAIL') ?? '').trim().toLowerCase();
+    if (!expected || user.email?.toLowerCase() !== expected) return json(req, { error: 'forbidden' }, 403);
+    const { error } = await admin.from('platform_admins').upsert({ user_id: user.id, role: 'owner', is_active: true });
+    if (error) return json(req, { error: 'operation_failed' }, 500);
+    await admin.rpc('platform_log', { p_actor: user.id, p_action: 'admin.owner_recovery', p_tenant: null, p_payload: { email: user.email } });
+    return json(req, { ok: true });
+  }
+
   // --- 3. роль проверяется на сервере по таблице platform_admins
   const { data: adminRow, error: roleError } = await admin.from('platform_admins').select('role,is_active').eq('user_id', user.id).maybeSingle();
   if (roleError) return json(req, { error: 'temporarily_unavailable' }, 503);
@@ -114,8 +124,13 @@ Deno.serve(async (req) => {
 
   try {
     if (action === 'admins') {
-      const { data, error } = await admin.rpc('platform_admin_list', { p_actor: actor });
-      if (error) return json(req, { error: 'forbidden' }, 403);
+      if (role !== 'owner') return json(req, { error: 'forbidden' }, 403);
+      const { data: rows, error } = await admin.from('platform_admins').select('user_id,role,is_active,created_at').order('created_at', { ascending: true });
+      if (error) return json(req, { error: 'operation_failed' }, 500);
+      const data = await Promise.all((rows ?? []).map(async (row) => {
+        const result = await admin.auth.admin.getUserById(row.user_id);
+        return { ...row, email: result.data.user?.email ?? '' };
+      }));
       return json(req, { ok: true, data });
     }
     if (action === 'admin_add' || action === 'admin_update' || action === 'admin_disable' || action === 'admin_reset_mfa') {
