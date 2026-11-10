@@ -316,8 +316,8 @@ function Subscriptions({ onOpen }: { onOpen: (id: string) => void }) {
   return (<>
     <select className="field" value={phase} onChange={(e) => setPhase(e.target.value)}><option value="">Все статусы</option>{Object.entries(PHASE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
     {msg && <p className="err">{msg}</p>}<State err={err} loading={loading && !data} />
-    {data && <Table head={['Организация', 'Тариф', 'Статус', 'Начало', 'Окончание', 'Действия']}>{data.map((s) => (
-      <tr key={s.id}><td><button className="pf-link" onClick={() => onOpen(s.tenant_id)}>{s.name ?? s.slug}</button></td><td>{s.plan_code}</td><td><Badge phase={s.phase} /></td><td>{fmtDate(s.starts_at)}</td><td>{s.ends_at ? fmtDate(s.ends_at) : 'бессрочно'}</td>
+    {data && <Table head={['Организация', 'Тариф', 'Цена по подписке', 'Статус', 'Начало', 'Окончание', 'Действия']}>{data.map((s) => (
+      <tr key={s.id}><td><button className="pf-link" onClick={() => onOpen(s.tenant_id)}>{s.name ?? s.slug}</button></td><td>{s.plan_code}</td><td>{kzt(s.price_kzt)} / {s.price_period_months} мес.</td><td><Badge phase={s.phase} /></td><td>{fmtDate(s.starts_at)}</td><td>{s.ends_at ? fmtDate(s.ends_at) : 'бессрочно'}</td>
         <td className="pf-actions">
           {s.ends_at && <button onClick={() => act(() => runSubAction(s.id, 'extend', { months: 1 }))}>+1 мес.</button>}
           <button onClick={() => { const c = window.prompt('Код тарифа (START / PRO):'); if (c) void act(() => runSubAction(s.id, 'change_plan', { plan_code: c.trim().toUpperCase() })); }}>Тариф</button>
@@ -333,7 +333,7 @@ function Plans() {
   const [msg, setMsg] = useState('');
   const save = async (p: Row, patch: Row) => { setMsg(''); try { await call('plan_save', { plan: { id: p.id, ...patch } }); await reload(); } catch (e) { setMsg(errText(e)); } };
   return (<><State err={err} loading={loading && !data} />{msg && <p className="err">{msg}</p>}
-    <p className="muted small">Тарифы нельзя удалять — только выключать.</p>
+    <p className="muted small">Тарифы нельзя удалять — только выключать. Изменение цены действует для новых подписок; текущая цена клиента сохраняется.</p>
     {data?.map((p) => <PlanRow key={p.id} p={p} onSave={(patch) => save(p, patch)} />)}</>);
 }
 function PlanRow({ p, onSave }: { p: Row; onSave: (patch: Row) => void }) {
