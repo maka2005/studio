@@ -161,6 +161,10 @@ function Login() {
 
 function Cabinet({ b, onLogout }: { b: Business; onLogout: () => void }) {
   const [tab, setTab] = useState<(typeof TABS)[number]>('Записи')
+  const [readPriceNotices,setReadPriceNotices]=useState<string[]>([])
+  const priceNotices=useQuery({queryKey:['owner','price-changes',b.slug],queryFn:()=>owner.pendingPriceChanges(b.slug),refetchInterval:60_000,enabled:true})
+  useEffect(()=>{try{setReadPriceNotices(JSON.parse(localStorage.getItem(`owner-price-notices:${b.slug}`)??'[]'))}catch{setReadPriceNotices([])}},[b.slug])
+  useEffect(()=>{if(tab==='Центр уведомлений'&&priceNotices.data){const ids=priceNotices.data.map(x=>x.id);localStorage.setItem(`owner-price-notices:${b.slug}`,JSON.stringify(ids));setReadPriceNotices(ids)}},[tab,priceNotices.data,b.slug])
   const me = useQuery({ queryKey: ['owner', 'me', b.slug], queryFn: () => owner.me(b.slug) })
   const access = useQuery({ queryKey: ['owner', 'access', b.slug], queryFn: () => owner.access(b.slug), enabled: !!me.data })
   if (me.isPending) return <LoadingScreen label="Проверяем доступ…" />
@@ -204,7 +208,6 @@ function Cabinet({ b, onLogout }: { b: Business; onLogout: () => void }) {
           Выйти
         </button>
       </div>
-      <SubscriptionBanner slug={b.slug} canRespond={role === 'owner'} />
       {role === 'owner' && <ExportButton slug={b.slug} />}
       <div className="admin-layout">
         <nav className="admin-side" aria-label="Разделы кабинета">
@@ -232,7 +235,7 @@ function Cabinet({ b, onLogout }: { b: Business; onLogout: () => void }) {
                         aria-current={tab === t ? 'page' : undefined}
                         onClick={() => setTab(t)}
                       >
-                        {TAB_LABELS[t] ?? t}
+                        {TAB_LABELS[t] ?? t}{t==='Центр уведомлений'&&priceNotices.data?.some(x=>!readPriceNotices.includes(x.id))&&<i className="admin-unread-dot" aria-label="Есть непрочитанные уведомления"/>}
                       </button>
                     ))}
                   </div>

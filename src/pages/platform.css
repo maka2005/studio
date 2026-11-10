@@ -76,4 +76,7 @@
 .owner-account-grid>div{display:grid;gap:5px;padding:14px;border:1px solid #ffffff0e;border-radius:13px;background:#ffffff04}
 .pf-notifications{display:grid;gap:12px}
 .pf-notice{margin:0!important;border-color:#ffffff14!important;background:linear-gradient(140deg,#191b21,#111318)!important}
+.admin-group-tab,.pf-tabs button{position:relative}
+.admin-unread-dot{position:absolute;top:3px;right:4px;width:8px;height:8px;border:2px solid #17191f;border-radius:50%;background:#ff5c68;box-shadow:0 0 0 2px #ff5c6840}
+.pf-tabs .admin-unread-dot{top:3px;right:3px;border-color:#111318}
 @media(max-width:520px){.owner-account-grid{grid-template-columns:1fr}}
