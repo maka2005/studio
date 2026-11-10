@@ -160,11 +160,9 @@ function Login() {
 }
 
 function Cabinet({ b, onLogout }: { b: Business; onLogout: () => void }) {
+  const qc=useQueryClient()
   const [tab, setTab] = useState<(typeof TABS)[number]>('Записи')
-  const [readPriceNotices,setReadPriceNotices]=useState<string[]>([])
   const priceNotices=useQuery({queryKey:['owner','price-changes',b.slug],queryFn:()=>owner.pendingPriceChanges(b.slug),refetchInterval:60_000,enabled:true})
-  useEffect(()=>{try{setReadPriceNotices(JSON.parse(localStorage.getItem(`owner-price-notices:${b.slug}`)??'[]'))}catch{setReadPriceNotices([])}},[b.slug])
-  useEffect(()=>{if(tab==='Центр уведомлений'&&priceNotices.data){const ids=priceNotices.data.map(x=>x.id);localStorage.setItem(`owner-price-notices:${b.slug}`,JSON.stringify(ids));setReadPriceNotices(ids)}},[tab,priceNotices.data,b.slug])
   const me = useQuery({ queryKey: ['owner', 'me', b.slug], queryFn: () => owner.me(b.slug) })
   const access = useQuery({ queryKey: ['owner', 'access', b.slug], queryFn: () => owner.access(b.slug), enabled: !!me.data })
   if (me.isPending) return <LoadingScreen label="Проверяем доступ…" />
@@ -233,9 +231,9 @@ function Cabinet({ b, onLogout }: { b: Business; onLogout: () => void }) {
                         type="button"
                         className={`admin-group-tab${tab === t ? ' is-current' : ''}`}
                         aria-current={tab === t ? 'page' : undefined}
-                        onClick={() => setTab(t)}
+                        onClick={() => {setTab(t);if(t==='Центр уведомлений'){const ids=priceNotices.data?.filter(x=>!x.is_read).map(x=>x.id)??[];if(ids.length)void owner.markPriceChangesRead(b.slug,ids).then(()=>qc.invalidateQueries({queryKey:['owner','price-changes',b.slug]}))}}}
                       >
-                        {TAB_LABELS[t] ?? t}{t==='Центр уведомлений'&&priceNotices.data?.some(x=>!readPriceNotices.includes(x.id))&&<i className="admin-unread-dot" aria-label="Есть непрочитанные уведомления"/>}
+                        {TAB_LABELS[t] ?? t}{t==='Центр уведомлений'&&priceNotices.data?.some(x=>!x.is_read)&&<i className="admin-unread-dot" aria-label="Есть непрочитанные уведомления"/>}
                       </button>
                     ))}
                   </div>

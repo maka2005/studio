@@ -7,7 +7,7 @@ const OWNER_RPCS = new Set([
   'owner_block','owner_add_payment','owner_upsert_service','owner_delete_service','owner_upsert_resource','owner_delete_resource',
   'owner_notification_settings','owner_update_notification_settings','owner_update_config','owner_update_legal','owner_telegram_code',
   'owner_telegram_links','owner_notification_status','owner_telegram_unlink','owner_waitlist','owner_waitlist_status',
-  'owner_subscription','owner_pending_price_change','owner_respond_price_change','owner_promo_codes','owner_upsert_promo','owner_delete_promo','owner_reviews','owner_publish_review','owner_source_stats',
+  'owner_subscription','owner_pending_price_change','owner_mark_price_changes_read','owner_respond_price_change','owner_promo_codes','owner_upsert_promo','owner_delete_promo','owner_reviews','owner_publish_review','owner_source_stats',
 ]);
 
 const getConfig = () => ({

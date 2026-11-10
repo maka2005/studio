@@ -143,15 +143,12 @@ type Tab = (typeof TABS)[number];
 function Console({ onLogout }: { onLogout: () => void; onMfa: () => void }) {
   const [tab, setTab] = useState<Tab>('Дашборд');
   const [openTenant, setOpenTenant] = useState<string | null>(null);
-  const [readPlatformNotices,setReadPlatformNotices]=useState<string[]>([])
-  const platformNotices=useLoad<Row[]>('audit',{limit:200})
-  useEffect(()=>{try{setReadPlatformNotices(JSON.parse(localStorage.getItem('platform-price-notices:read')??'[]'))}catch{setReadPlatformNotices([])}},[])
+  const platformNotices=useLoad<Row[]>('notifications',{limit:200})
   useEffect(()=>{const timer=window.setInterval(()=>void platformNotices.reload(),60_000);return()=>window.clearInterval(timer)},[platformNotices.reload])
-  useEffect(()=>{if(tab==='Уведомления'&&platformNotices.data){const ids=platformNotices.data.filter(x=>String(x.action).startsWith('price_change.')).map(x=>String(x.id));localStorage.setItem('platform-price-notices:read',JSON.stringify(ids));setReadPlatformNotices(ids)}},[tab,platformNotices.data])
   return (
     <main className="page pf-wide">
       <header className="pf-app-header"><div className="pf-brand"><span className="pf-brand-mark">S</span><div><b>Servio</b><span>Platform console</span></div></div><div className="pf-header-actions"><span className="pf-header-user">Администратор</span><button className="pf-logout" onClick={onLogout}>Выйти</button></div></header>
-      <div className="pf-console-layout"><nav className="pf-tabs" aria-label="Разделы платформы">{TABS.map((t) => <button key={t} className={tab === t && !openTenant ? 'is-current' : ''} onClick={() => { setOpenTenant(null); setTab(t); }}>{t}{t==='Уведомления'&&platformNotices.data?.some(x=>String(x.action).startsWith('price_change.')&&!readPlatformNotices.includes(String(x.id)))&&<i className="admin-unread-dot" aria-label="Есть непрочитанные уведомления"/>}</button>)}</nav>
+      <div className="pf-console-layout"><nav className="pf-tabs" aria-label="Разделы платформы">{TABS.map((t) => <button key={t} className={tab === t && !openTenant ? 'is-current' : ''} onClick={() => { setOpenTenant(null); setTab(t); if(t==='Уведомления'){const ids=platformNotices.data?.filter(x=>!x.is_read).map(x=>String(x.id))??[];if(ids.length)void call('notifications_read',{ids}).then(()=>platformNotices.reload())} }}>{t}{t==='Уведомления'&&platformNotices.data?.some(x=>!x.is_read)&&<i className="admin-unread-dot" aria-label="Есть непрочитанные уведомления"/>}</button>)}</nav>
       <section className="pf-console-content">{openTenant ? <TenantCard id={openTenant} onBack={() => setOpenTenant(null)} />
         : tab === 'Дашборд' ? <Dashboard onOpen={setOpenTenant} onNavigate={setTab} />
         : tab === 'Организации' ? <Tenants onOpen={setOpenTenant} />
@@ -404,9 +401,11 @@ function Audit() {
 }
 
 function PlatformNotifications() {
-  const {data,err,loading,reload}=useLoad<Row[]>('audit',{limit:200});
-  const notices=(data??[]).filter(x=>String(x.action).startsWith('price_change.'));
-  return <div className="pf-notifications"><div className="pf-panel-heading"><div><span className="pf-kicker">SERVIO</span><h2>Уведомления</h2></div><button className="pf-action-secondary" onClick={()=>void reload()} disabled={loading}>{loading?'Обновляем…':'Обновить'}</button></div><State err={err} loading={loading&&!data}/>{notices.length===0&&!loading?<p className="muted">Новых событий по изменению цен нет.</p>:notices.map((n)=><article className="card pf-notice" key={n.id}><div className="row between wrap"><b>{n.action==='price_change.declined'?'Организация отказалась от новой цены':'Изменение цены подписки'}</b><time className="muted small">{fmtDateTime(n.created_at)}</time></div><p>{n.name??n.slug??'Организация'} · {n.payload?.old_price??'—'} ₸ → {n.payload?.new_price??'—'} ₸</p><p className="muted small">Начало действия: {fmtDateTime(n.payload?.effective_at)} · Ответил: {n.actor_email??'представитель организации'}</p></article>)}</div>
+  const {data,err,loading,reload}=useLoad<Row[]>('notifications',{limit:200});
+  const notices=data??[];
+  const marked=useRef(new Set<string>());
+  useEffect(()=>{const ids=notices.filter(n=>!n.is_read&&!marked.current.has(String(n.id))).map(n=>String(n.id));if(ids.length){ids.forEach(id=>marked.current.add(id));void call('notifications_read',{ids}).then(()=>reload()).catch(()=>ids.forEach(id=>marked.current.delete(id))) }},[notices,reload]);
+  return <div className="pf-notifications"><div className="pf-panel-heading"><div><span className="pf-kicker">SERVIO</span><h2>Уведомления</h2></div><button className="pf-action-secondary" onClick={()=>void reload()} disabled={loading}>{loading?'Обновляем…':'Обновить'}</button></div><State err={err} loading={loading&&!data}/>{notices.length===0&&!loading?<p className="muted">Событий по изменению цен нет.</p>:notices.map((n)=><article className="card pf-notice" key={n.id}><div className="row between wrap"><b>{n.action==='price_change.declined'?'Организация отказалась от новой цены':'Изменение цены подписки'}</b><span className={`pf-notice-status${n.is_read?'':' unread'}`}>{n.is_read?'Прочитано':'Новое'}</span><time className="muted small">{fmtDateTime(n.created_at)}</time></div><p>{n.slug??'Организация'} · {n.payload?.old_price??'—'} ₸ → {n.payload?.new_price??'—'} ₸</p><p className="muted small">Начало действия: {fmtDateTime(n.payload?.effective_at)}</p></article>)}</div>
 }
 
 function Settings() {

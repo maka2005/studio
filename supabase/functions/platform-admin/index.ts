@@ -115,6 +115,11 @@ Deno.serve(async (req) => {
       case 'plan_save': rpc = { name: 'platform_upsert_plan', args: { p_actor: actor, p: obj(body.plan) } }; break;
       case 'payments': rpc = { name: 'platform_list_payments', args: { p_actor: actor, p_status: str(body.status, 20) || null, p_limit: Number(body.limit) || 100 } }; break;
       case 'audit': rpc = { name: 'platform_audit_list', args: { p_actor: actor, p_tenant: uuidOf(body.tenant_id), p_from: str(body.from, 40) || null, p_to: str(body.to, 40) || null, p_limit: Number(body.limit) || 200 } }; break;
+      case 'notifications': rpc = { name: 'platform_notifications', args: { p_actor: actor, p_limit: Number(body.limit) || 200 } }; break;
+      case 'notifications_read': {
+        const ids = Array.isArray(body.ids) ? body.ids.map(uuidOf).filter((id): id is string => !!id).slice(0,500) : [];
+        rpc = { name: 'platform_mark_notifications_read', args: { p_actor: actor, p_ids: ids } }; break;
+      }
       case 'settings': rpc = { name: 'platform_get_settings', args: { p_actor: actor } }; break;
       case 'settings_set': rpc = { name: 'platform_set_setting', args: { p_actor: actor, p_key: str(body.key, 40), p_value: body.value ?? null } }; break;
       case 'sync': rpc = { name: 'platform_sync_subscriptions', args: {} }; break;
