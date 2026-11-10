@@ -179,13 +179,23 @@ function Dashboard({ onOpen, onNavigate }: { onOpen: (id: string) => void; onNav
   const { data: d, err, loading, reload } = useLoad<Row>('dashboard');
   if (!d) return <><State err={err} loading={loading} />{err && <button className="pf-action-secondary pf-retry" onClick={() => void reload()}>Повторить загрузку</button>}</>;
   const months: Row[] = d.new_by_month ?? []; const max = Math.max(1, ...months.map((m) => Number(m.count)));
-  const cards: [string, string | number][] = [['Организаций', d.organizations], ['Активные', d.active], ['Пробный период', d.trial], ['Grace', d.grace], ['Приостановлены', d.suspended], ['Выручка за месяц', kzt(d.revenue_month_kzt)]];
+  const revenueMonths: Row[] = d.revenue_by_month ?? []; const maxRevenue = Math.max(1, ...revenueMonths.map((m) => Number(m.amount_kzt)));
+  const cards: [string, string | number, string][] = [
+    ['MRR', kzt(d.mrr_kzt), 'Регулярная выручка в месяц'],
+    ['ARR', kzt(d.arr_kzt), 'MRR × 12'],
+    ['Churn за месяц', `${Number(d.churn_rate_pct ?? 0).toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%`, `${d.churned_this_month ?? 0} ушедших · платящие сейчас + ушедшие`],
+    ['Trial → Paid', `${Number(d.trial_conversion_pct ?? 0).toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%`, 'Конверсия пробных подписок за 12 мес.'],
+    ['ARPU', kzt(d.arpu_kzt), 'MRR на платящую организацию'],
+    ['Выручка за месяц', kzt(d.revenue_month_kzt), 'Подтверждённые платежи'],
+  ];
   return (<>
     <div className="pf-dashboard-heading">
       <div><span className="pf-kicker">ОБЗОР ПЛАТФОРМЫ</span><h2>Добро пожаловать</h2><p className="muted">Состояние организаций, подписок и платежей в одном месте.</p></div>
       <div className="pf-dashboard-actions"><button className="pf-action-secondary" onClick={() => void reload()} disabled={loading}>{loading ? 'Обновляем…' : '↻ Обновить'}</button><button className="pf-action-primary" onClick={() => onNavigate('Новая организация')}>＋ Новая организация</button></div>
     </div>
-    <div className="pf-cards">{cards.map(([k, v], index) => <div className={`card pf-metric pf-metric-${index}`} key={k}><span className="muted small">{k}</span><b className="big">{v}</b></div>)}</div>
+    <div className="pf-cards">{cards.map(([k, v, hint], index) => <div className={`card pf-metric pf-metric-${index}`} key={k}><span className="muted small">{k}</span><b className="big">{v}</b><span className="pf-metric-hint">{hint}</span></div>)}</div>
+    <section className="card pf-panel"><div className="pf-panel-heading"><div><span className="pf-kicker">ВЫРУЧКА</span><h2>Платежи по месяцам</h2></div><span className="muted small">Последние 12 месяцев · ₸</span></div>
+      {revenueMonths.length === 0 ? <p className="muted">Подтверждённых платежей пока нет.</p> : <div className="pf-revenue-chart" role="img" aria-label="Выручка по месяцам за последние 12 месяцев">{revenueMonths.map((m) => <div className="pf-revenue-column" key={m.month} title={`${m.month}: ${kzt(Number(m.amount_kzt))}`}><span>{kzt(Number(m.amount_kzt))}</span><i style={{ height: `${Math.max(3, Number(m.amount_kzt) / maxRevenue * 100)}%` }} /><small>{m.month}</small></div>)}</div>}</section>
     <section className="card pf-panel"><div className="pf-panel-heading"><div><span className="pf-kicker">ТРЕБУЮТ ВНИМАНИЯ</span><h2>Истекают за 7 дней</h2></div><button className="pf-link" onClick={() => onNavigate('Подписки')}>Все подписки <span aria-hidden="true">→</span></button></div>
       {(d.expiring ?? []).length === 0 ? <p className="muted">Нет.</p> : (
         <Table head={['Организация', 'Тариф', 'Статус', 'Окончание']}>{(d.expiring as Row[]).map((r) => (
