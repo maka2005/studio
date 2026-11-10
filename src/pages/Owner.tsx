@@ -6,7 +6,7 @@ import { ru } from 'date-fns/locale'
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 import { downloadOwnerExport, ownerRequest, type OwnerUser } from '../lib/ownerSession'
 import { supabase } from '../lib/supabase'
-import { errText, fetchServices, fetchSlots, owner, type OwnerBooking, type OwnerNotificationSettings, type OwnerAuditEvent } from '../lib/api'
+import { errText, fetchServices, fetchSlots, owner, type OwnerBooking, type OwnerNotificationSettings, type OwnerAuditEvent, type OwnerBillingNotification } from '../lib/api'
 import { duration, money, telHref } from '../lib/format'
 import { assetUrl, type Business, type Ctx } from '../lib/tenant'
 import { prepareImage, removeByUrl, uploadImage } from '../lib/media'
@@ -165,6 +165,7 @@ function Cabinet({ b, onLogout, impersonation }: { b: Business; onLogout: () => 
   const priceNotices=useQuery({queryKey:['owner','price-changes',b.slug],queryFn:()=>owner.pendingPriceChanges(b.slug),refetchInterval:60_000,enabled:true})
   const me = useQuery({ queryKey: ['owner', 'me', b.slug], queryFn: () => owner.me(b.slug) })
   const access = useQuery({ queryKey: ['owner', 'access', b.slug], queryFn: () => owner.access(b.slug), enabled: !!me.data })
+  const billingNotices=useQuery({queryKey:['owner','billing-notifications',b.slug],queryFn:()=>owner.billingNotifications(b.slug,50,0),enabled:access.data==='owner'||access.data==='manager',refetchInterval:30_000,refetchOnWindowFocus:true})
   if (me.isPending) return <LoadingScreen label="Проверяем доступ…" />
   if (me.isError)
     return (
@@ -242,9 +243,9 @@ function Cabinet({ b, onLogout, impersonation }: { b: Business; onLogout: () => 
                         type="button"
                         className={`admin-group-tab${tab === t ? ' is-current' : ''}`}
                         aria-current={tab === t ? 'page' : undefined}
-                        onClick={() => {setTab(t);if(t==='Центр уведомлений'){const ids=priceNotices.data?.filter(x=>!x.is_read).map(x=>x.id)??[];if(ids.length)void owner.markPriceChangesRead(b.slug,ids).then(()=>qc.invalidateQueries({queryKey:['owner','price-changes',b.slug]}))}}}
+                        onClick={() => {setTab(t);if(t==='Центр уведомлений'){const ids=priceNotices.data?.filter(x=>!x.is_read).map(x=>x.id)??[];if(ids.length)void owner.markPriceChangesRead(b.slug,ids).then(()=>qc.invalidateQueries({queryKey:['owner','price-changes',b.slug]}));const eventIds=billingNotices.data?.filter(x=>!x.is_read).map(x=>x.id)??[];if(eventIds.length)void owner.markBillingNotificationsRead(b.slug,eventIds).then(()=>qc.invalidateQueries({queryKey:['owner','billing-notifications',b.slug]}))}}}
                       >
-                        {TAB_LABELS[t] ?? t}{t==='Центр уведомлений'&&priceNotices.data?.some(x=>!x.is_read)&&<i className="admin-unread-dot" aria-label="Есть непрочитанные уведомления"/>}
+                        {TAB_LABELS[t] ?? t}{t==='Центр уведомлений'&&(priceNotices.data?.some(x=>!x.is_read)||billingNotices.data?.some(x=>!x.is_read))&&<i className="admin-unread-dot" aria-label="Есть непрочитанные уведомления"/>}
                       </button>
                     ))}
                   </div>
@@ -254,6 +255,7 @@ function Cabinet({ b, onLogout, impersonation }: { b: Business; onLogout: () => 
           })}
         </nav>
         <div className="admin-main">
+      {(role === 'owner' || role === 'manager') && <SubscriptionBanner slug={b.slug} canRespond={role === 'owner'} latestSuspension={billingNotices.data?.find(e=>e.event_type==='suspended')} />}
       {tab === 'Записи' && <Bookings b={b} role={role} />}
       {tab === 'Сотрудники' && role === 'owner' && <TeamAccess b={b} />}
       {tab === 'Сотрудники' && role === 'manager' && <TeamAccess b={b} canManageManagers={false} />}
@@ -295,7 +297,7 @@ function ExportButton({ slug }: { slug: string }) {
 }
 
 // Статус подписки для владельца. Если запрос не удался (например, не разрешён прокси), баннер просто не показывается.
-function SubscriptionBanner({ slug, canRespond }: { slug: string; canRespond: boolean }) {
+function SubscriptionBanner({ slug, canRespond, latestSuspension }: { slug: string; canRespond: boolean; latestSuspension?: OwnerBillingNotification }) {
   const sub = useQuery({ queryKey: ['owner', 'subscription', slug], queryFn: () => owner.subscription(slug), retry: false })
   const qc = useQueryClient()
   const proposals = useQuery({ queryKey: ['owner', 'price-changes', slug], queryFn: () => owner.pendingPriceChanges(slug), retry: false, refetchInterval: 60_000, refetchOnWindowFocus: true })
@@ -318,6 +320,7 @@ function SubscriptionBanner({ slug, canRespond }: { slug: string; canRespond: bo
       <>{proposals.isError && <p className="err small">Не удалось проверить новые условия подписки. Обновите кабинет.</p>}{priceNotice}<div className="card col" role="alert" style={{ borderColor: '#ff5a5a' }}>
         <b>Подписка приостановлена</b>
         <p className="muted">Онлайн-запись для клиентов и уведомления отключены. Ваши данные сохранены, кабинет и выгрузка данных доступны. Для возобновления свяжитесь с поддержкой Servio и оплатите тариф{s.plan_name ? ` ${s.plan_name}` : ''}{s.price_kzt ? ` (${s.price_kzt.toLocaleString('ru-RU')} ₸/мес)` : ''}.</p>
+        {!!latestSuspension?.payload.reason&&<p><b>Причина приостановки:</b> {String(latestSuspension.payload.reason)}</p>}
       </div></>
     )
   if (s.state === 'grace')
@@ -367,10 +370,21 @@ function OwnerAccount({slug}:{slug:string}) {
 
 function OwnerNotificationCenter({slug,canRespond}:{slug:string;canRespond:boolean}) {
   const q=useQuery({queryKey:['owner','price-changes',slug],queryFn:()=>owner.pendingPriceChanges(slug),refetchInterval:60_000,refetchOnWindowFocus:true});
+  const events=useQuery({queryKey:['owner','billing-notifications',slug],queryFn:()=>owner.billingNotifications(slug,50,0),refetchInterval:30_000,refetchOnWindowFocus:true});
   const qc=useQueryClient(); const [msg,setMsg]=useState('');
   const respond=useMutation({mutationFn:({id,accept}:{id:string;accept:boolean})=>owner.respondPriceChange(slug,id,accept),onSuccess:async()=>{setMsg('Ответ сохранён.');await qc.invalidateQueries({queryKey:['owner','price-changes',slug]});await qc.invalidateQueries({queryKey:['owner','subscription',slug]})},onError:()=>setMsg('Не удалось сохранить ответ. Обновите страницу и повторите.')});
-  return <div className="col"><div className="admin-subheading"><div><h2>Центр уведомлений</h2><p className="muted small">События подписки и важные сообщения Servio.</p></div></div>{msg&&<p className="muted small" role="status">{msg}</p>}{q.isPending?<p className="muted">Проверяем уведомления…</p>:q.isError?<p className="err">Не удалось загрузить уведомления. <button className="link" onClick={()=>void q.refetch()}>Повторить</button></p>:q.data?.length?q.data.map(p=><article className="card col owner-price-notice" key={p.id}><b>Изменение цены подписки</b><p>Сейчас: {p.old_price_kzt.toLocaleString('ru-RU')} ₸ за {p.old_period_months} мес. · Новые условия: {p.new_price_kzt.toLocaleString('ru-RU')} ₸ за {p.new_period_months} мес.</p><p className="muted small">Вступает в силу {new Date(p.effective_at).toLocaleDateString('ru-RU')}. До этой даты действует текущая цена. При отказе подписка не продлится на новых условиях и завершится по окончании оплаченного срока.</p>{canRespond?<div className="row wrap"><button className="btn" disabled={respond.isPending} onClick={()=>respond.mutate({id:p.id,accept:true})}>Принять условия</button><button className="btn ghost" disabled={respond.isPending} onClick={()=>{if(window.confirm('Отказ означает, что подписка не продлится на новых условиях.'))respond.mutate({id:p.id,accept:false})}}>Отказаться</button></div>:<p className="muted small">Решение принимает владелец организации.</p>}</article>):<p className="muted">Новых уведомлений нет.</p>}</div>
+  const unread=events.data?.filter(e=>!e.is_read)??[];
+  const markRead=async()=>{if(!unread.length)return;try{await owner.markBillingNotificationsRead(slug,unread.map(e=>e.id));await qc.invalidateQueries({queryKey:['owner','billing-notifications',slug]})}catch{setMsg('Не удалось отметить уведомления прочитанными. Повторите позже.')}};
+  const empty=q.data?.length===0&&(events.data?.length??0)===0;
+  return <div className="col"><div className="admin-subheading"><div><h2>Центр уведомлений</h2><p className="muted small">Статус подписки и важные сообщения Servio.</p></div>{unread.length>0&&<button className="btn ghost mini" onClick={()=>void markRead()}>Отметить прочитанными</button>}</div>{msg&&<p className="muted small" role="status">{msg}</p>}
+    {events.isPending?<p className="muted">Проверяем события подписки…</p>:events.isError?<p className="err">Не удалось загрузить события подписки. <button className="link" onClick={()=>void events.refetch()}>Повторить</button></p>:events.data?.length?<section className="col"><h3>Подписка и платежи</h3>{events.data.map(e=><article className="card col owner-price-notice" key={e.id} style={!e.is_read?{borderColor:'var(--accent,#568cff)'}:undefined}><div className="row between wrap"><b>{billingEventTitle(e.event_type)}</b><time className="muted small">{new Date(e.created_at).toLocaleString('ru-RU',{dateStyle:'medium',timeStyle:'short'})}</time></div><p>{billingEventDetail(e)}</p>{!e.is_read&&<span className="muted small">Новое</span>}</article>)}</section>:null}
+    {q.isPending?<p className="muted">Проверяем изменения условий…</p>:q.isError?<p className="err">Не удалось загрузить предложения о цене. <button className="link" onClick={()=>void q.refetch()}>Повторить</button></p>:q.data?.length?<section className="col"><h3>Новые условия тарифа</h3>{q.data.map(p=><article className="card col owner-price-notice" key={p.id}><b>Изменение цены подписки</b><p>Сейчас: {p.old_price_kzt.toLocaleString('ru-RU')} ₸ за {p.old_period_months} мес. · Новые условия: {p.new_price_kzt.toLocaleString('ru-RU')} ₸ за {p.new_period_months} мес.</p><p className="muted small">Вступает в силу {new Date(p.effective_at).toLocaleDateString('ru-RU')}. До этой даты действует текущая цена. При отказе подписка не продлится на новых условиях и завершится по окончании оплаченного срока.</p>{canRespond?<div className="row wrap"><button className="btn" disabled={respond.isPending} onClick={()=>respond.mutate({id:p.id,accept:true})}>Принять условия</button><button className="btn ghost" disabled={respond.isPending} onClick={()=>{if(window.confirm('Отказ означает, что подписка не продлится на новых условиях.'))respond.mutate({id:p.id,accept:false})}}>Отказаться</button></div>:<p className="muted small">Решение принимает владелец организации.</p>}</article>)}</section>:null}
+    {!q.isPending&&!events.isPending&&empty&&<p className="muted">Новых уведомлений нет.</p>}
+  </div>
 }
+
+function billingEventTitle(type:string){return ({suspended:'Подписка приостановлена',resumed:'Подписка возобновлена',expired:'Срок подписки закончился',grace_started:'Начался льготный период',extended:'Срок подписки продлён',plan_changed:'Изменён тариф',dates_changed:'Изменены даты подписки',cancelled:'Подписка отменена',payment_failed:'Не удалось подтвердить платёж',price_change_accepted:'Новая цена принята',price_change_declined:'Новая цена отклонена'} as Record<string,string>)[type]??'Изменение подписки'}
+function billingEventDetail(e:OwnerBillingNotification){const p=e.payload??{};const reason=String(p.reason??'').trim();if(e.event_type==='suspended')return `${reason?`Причина: ${reason}. `:''}Онлайн-запись временно отключена. Данные организации сохранены. Чтобы восстановить работу, свяжитесь с поддержкой Servio.`;if(e.event_type==='payment_failed')return `${reason?`Причина: ${reason}. `:''}Платёж не прошёл. Проверьте перевод или обратитесь в поддержку Servio для сверки.`;if(e.event_type==='grace_started')return 'Подписка ожидает продления. Продлите её до окончания льготного периода, чтобы сервис продолжил работу.';if(e.event_type==='resumed')return 'Доступ к функциям подписки восстановлен.';if(e.event_type==='expired'||e.event_type==='cancelled')return 'Данные организации сохранены. Для возобновления обслуживания свяжитесь с поддержкой Servio.';if(e.event_type==='extended')return 'Период действия подписки продлён.';if(e.event_type==='plan_changed')return 'В подписке организации изменён тариф.';if(e.event_type==='dates_changed')return 'Обновлён срок действия подписки.';if(e.event_type==='price_change_accepted')return 'Владелец организации принял предложенные условия тарифа.';if(e.event_type==='price_change_declined')return 'Предложенные условия тарифа отклонены.';return 'Появилось обновление по подписке. Подробности можно уточнить у поддержки Servio.'}
 
 function MyAccess({b}:{b:Business}){
  const [key,setKey]=useState('');const [message,setMessage]=useState('');const [busy,setBusy]=useState(false)
@@ -453,13 +467,13 @@ function AuditHistory({b}:{b:Business}) {
   const q=useQuery({queryKey:['owner','audit',b.slug,page],queryFn:()=>owner.auditHistory(b.slug,limit+1,page*limit)});
   const items=q.data?.slice(0,limit)??[];const hasNext=(q.data?.length??0)>limit;
   return <div className="col"><div className="admin-subheading"><div><h2>История изменений</h2><p className="muted small">Записи, услуги, команда, оплаты, настройки и действия поддержки.</p></div></div>
-    {q.isPending?<p className="muted">Загрузка истории…</p>:q.isError?<p className="err">Не удалось загрузить историю. <button className="link" onClick={()=>void q.refetch()}>Повторить</button></p>:items.length===0?<p className="muted">Изменений пока нет.</p>:<div className="admin-audit-list">{items.map(e=><article className="card admin-audit-event" key={e.id}><div className="row between wrap"><b>{auditEntity(e.entity)} · {auditAction(e.action,e.entity)}</b><time className="muted small">{fmtT(b,e.created_at,'d MMM yyyy, HH:mm')}</time></div><p className="muted small">{auditDetail(e,b.currency,b.timezone)}{e.actor_email?` · ${e.entity==='support'?'Сотрудник поддержки':'Изменил'}: ${e.actor_email}`:''}</p></article>)}</div>}
+    {q.isPending?<p className="muted">Загрузка истории…</p>:q.isError?<p className="err">Не удалось загрузить историю. <button className="link" onClick={()=>void q.refetch()}>Повторить</button></p>:items.length===0?<p className="muted">Изменений пока нет.</p>:<div className="admin-audit-list">{items.map(e=><article className="card admin-audit-event" key={e.id}><div className="row between wrap"><b>{auditEntity(e.entity)} · {auditAction(e.action,e.entity)}</b><time className="muted small">{fmtT(b,e.created_at,'d MMM yyyy, HH:mm')}</time></div><p className="muted small">{auditDetail(e,b.currency,b.timezone)}{e.actor_email?` · ${e.entity==='support'?'Сотрудник поддержки':'Изменил'}: ${e.actor_email}`:e.entity==='subscription'?' · Сервис Servio':''}</p></article>)}</div>}
     {q.data&& (items.length>0||page>0)&&<nav className="admin-service-pagination" aria-label="История изменений"><button className="admin-page-button" disabled={page===0} onClick={()=>setPage(page-1)}>Назад</button><span className="muted small">Страница <b>{page+1}</b></span><button className="admin-page-button" disabled={!hasNext} onClick={()=>setPage(page+1)}>Далее</button></nav>}
   </div>
 }
 
-function auditEntity(entity:string) { return ({booking:'Запись',service:'Услуга',resource:'Мастер / пост',payment:'Оплата',studio:'Студия',notifications:'Уведомления',team:'Доступ сотрудника',support:'Поддержка'} as Record<string,string>)[entity]??'Действие в организации' }
-function auditAction(action:string,entity='') { if(entity==='team'&&action==='created')return 'доступ выдан';if(entity==='team'&&action==='updated')return 'права изменены';if(entity==='team'&&action==='deleted')return 'доступ отозван';return ({created:'создано',updated:'изменено',deleted:'удалено',payment:'оплата добавлена',refund:'возврат добавлен',settings_changed:'настройки обновлены',password_reset:'выдан новый временный пароль',account_recovered:'восстановлен доступ',support_started:'вход в кабинет',support_action:'изменение в кабинете',support_ended:'завершение сеанса',support_expired:'доступ завершился по времени'} as Record<string,string>)[action]??'данные обновлены' }
+function auditEntity(entity:string) { return ({booking:'Запись',service:'Услуга',resource:'Мастер / пост',payment:'Оплата',studio:'Студия',notifications:'Уведомления',team:'Доступ сотрудника',support:'Поддержка',subscription:'Подписка'} as Record<string,string>)[entity]??'Действие в организации' }
+function auditAction(action:string,entity='') { if(entity==='team'&&action==='created')return 'доступ выдан';if(entity==='team'&&action==='updated')return 'права изменены';if(entity==='team'&&action==='deleted')return 'доступ отозван';if(entity==='subscription')return billingEventTitle(action).toLocaleLowerCase('ru-RU');return ({created:'создано',updated:'изменено',deleted:'удалено',payment:'оплата добавлена',refund:'возврат добавлен',settings_changed:'настройки обновлены',password_reset:'выдан новый временный пароль',account_recovered:'восстановлен доступ',support_started:'вход в кабинет',support_action:'изменение в кабинете',support_ended:'завершение сеанса',support_expired:'доступ завершился по времени'} as Record<string,string>)[action]??'данные обновлены' }
 const SUPPORT_ACTION_LABELS:Record<string,string>={owner_set_status:'изменила статус записи',owner_cancel:'отменила запись',owner_erase_customer:'удалила данные клиента',owner_reschedule:'перенесла запись',owner_create_booking:'создала запись',owner_block:'закрыла время для записи',owner_add_payment:'добавила оплату',owner_upsert_service:'изменила услугу',owner_delete_service:'удалила услугу',owner_upsert_resource:'изменила мастера или пост',owner_delete_resource:'удалила мастера или пост',owner_update_notification_settings:'изменила настройки уведомлений',owner_update_config:'изменила настройки организации',owner_update_legal:'изменила реквизиты',owner_telegram_unlink:'отключила Telegram',owner_waitlist_status:'изменила статус листа ожидания',owner_upsert_promo:'изменила промокод',owner_delete_promo:'удалила промокод',owner_publish_review:'изменила видимость отзыва'};
 function auditDetail(e:OwnerAuditEvent,currency:string,timezone:string) {
   let d:Record<string,unknown>=e.details??{};
@@ -470,6 +484,7 @@ function auditDetail(e:OwnerAuditEvent,currency:string,timezone:string) {
     if(e.action==='support_ended')return 'Сеанс доступа поддержки завершён';
     if(e.action==='support_expired')return 'Сеанс поддержки автоматически завершён по истечении 30 минут';
   }
+  if(e.entity==='subscription')return billingEventDetail({id:String(e.id),event_type:e.action,payload:d,created_at:e.created_at,is_read:true});
   if(e.entity==='service'||e.entity==='resource') {
     const pieces:string[]=[];
     const format=(key:string,value:unknown)=>key==='price_cents'?money(Number(value)/100,currency):key==='active'?(value===true||value==='true'?'показывается клиентам':'скрыта от клиентов'):String(value??'—');

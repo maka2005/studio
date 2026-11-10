@@ -124,6 +124,7 @@ export type OwnerStats = { visits: number; done: number; booked: number; receive
 export type OwnerRepeatStats = { completed_visits: number; unique_clients: number; returning_clients: number; returning_visits: number; average_check_cents: number };
 export type OwnerNotificationSettings = { reminder_hours_before: number; repeat_after_days: number; reminder_message: string | null; repeat_message: string | null };
 export type OwnerAuditEvent = { id: number; created_at: string; entity: string; entity_id: string | null; action: string; details: Record<string, unknown>; actor_email: string | null };
+export type OwnerBillingNotification = { id: string; event_type: string; payload: Record<string, unknown>; created_at: string; is_read: boolean };
 export type OwnerNotificationStatus = { pending: number; failed: number; last_sent_at: string | null };
 export type OwnerSubscription = { state: 'open' | 'grace' | 'closed'; phase: string; plan_code?: string; plan_name?: string; price_kzt?: number; price_period_months?: number; starts_at?: string | null; ends_at?: string | null; grace_ends_at?: string | null; days_left?: number | null };
 export const owner = {
@@ -131,6 +132,8 @@ export const owner = {
   subscription: (slug: string) => rpc<OwnerSubscription>('owner_subscription', { p_slug: slug }),
   pendingPriceChanges: (slug: string) => rpc<{ id:string; old_price_kzt:number; old_period_months:number; new_price_kzt:number; new_period_months:number; effective_at:string; created_at:string; is_read:boolean }[]>('owner_pending_price_change', { p_slug: slug }),
   markPriceChangesRead: (slug:string,ids:string[]) => rpc<void>('owner_mark_price_changes_read',{p_slug:slug,p_ids:ids}),
+  billingNotifications: (slug:string,limit=50,offset=0) => rpc<OwnerBillingNotification[]>('owner_billing_notifications',{p_slug:slug,p_limit:limit,p_offset:offset}),
+  markBillingNotificationsRead: (slug:string,ids:string[]) => rpc<void>('owner_mark_billing_notifications_read',{p_slug:slug,p_ids:ids}),
   respondPriceChange: (slug:string,id:string,accept:boolean) => rpc<void>('owner_respond_price_change', { p_slug:slug,p_id:id,p_accept:accept }),
   access: (slug: string) => rpc<'owner'|'manager'|'staff'|null>('owner_access', { p_slug: slug }),
   bookings: (slug: string, from: string, to: string) => rpc<OwnerBooking[]>('owner_bookings', { p_slug: slug, p_from: from, p_to: to }),
