@@ -146,12 +146,13 @@ function Console({ onLogout }: { onLogout: () => void; onMfa: () => void }) {
   const [readPlatformNotices,setReadPlatformNotices]=useState<string[]>([])
   const platformNotices=useLoad<Row[]>('audit',{limit:200})
   useEffect(()=>{try{setReadPlatformNotices(JSON.parse(localStorage.getItem('platform-price-notices:read')??'[]'))}catch{setReadPlatformNotices([])}},[])
+  useEffect(()=>{const timer=window.setInterval(()=>void platformNotices.reload(),60_000);return()=>window.clearInterval(timer)},[platformNotices.reload])
   useEffect(()=>{if(tab==='Уведомления'&&platformNotices.data){const ids=platformNotices.data.filter(x=>String(x.action).startsWith('price_change.')).map(x=>String(x.id));localStorage.setItem('platform-price-notices:read',JSON.stringify(ids));setReadPlatformNotices(ids)}},[tab,platformNotices.data])
   return (
     <main className="page pf-wide">
-      <header className="row between"><h1>Servio · платформа</h1><button className="btn ghost inline" onClick={onLogout}>Выйти</button></header>
-      <nav className="pf-tabs">{TABS.map((t) => <button key={t} className={tab === t && !openTenant ? 'is-current' : ''} onClick={() => { setOpenTenant(null); setTab(t); }}>{t}{t==='Уведомления'&&platformNotices.data?.some(x=>String(x.action).startsWith('price_change.')&&!readPlatformNotices.includes(String(x.id)))&&<i className="admin-unread-dot" aria-label="Есть непрочитанные уведомления"/>}</button>)}</nav>
-      {openTenant ? <TenantCard id={openTenant} onBack={() => setOpenTenant(null)} />
+      <header className="pf-app-header"><div className="pf-brand"><span className="pf-brand-mark">S</span><div><b>Servio</b><span>Platform console</span></div></div><div className="pf-header-actions"><span className="pf-header-user">Администратор</span><button className="pf-logout" onClick={onLogout}>Выйти</button></div></header>
+      <div className="pf-console-layout"><nav className="pf-tabs" aria-label="Разделы платформы">{TABS.map((t) => <button key={t} className={tab === t && !openTenant ? 'is-current' : ''} onClick={() => { setOpenTenant(null); setTab(t); }}>{t}{t==='Уведомления'&&platformNotices.data?.some(x=>String(x.action).startsWith('price_change.')&&!readPlatformNotices.includes(String(x.id)))&&<i className="admin-unread-dot" aria-label="Есть непрочитанные уведомления"/>}</button>)}</nav>
+      <section className="pf-console-content">{openTenant ? <TenantCard id={openTenant} onBack={() => setOpenTenant(null)} />
         : tab === 'Дашборд' ? <Dashboard onOpen={setOpenTenant} onNavigate={setTab} />
         : tab === 'Организации' ? <Tenants onOpen={setOpenTenant} />
         : tab === 'Новая организация' ? <CreateTenant onCreated={(id) => setOpenTenant(id)} />
@@ -160,7 +161,7 @@ function Console({ onLogout }: { onLogout: () => void; onMfa: () => void }) {
         : tab === 'Платежи' ? <Payments />
         : tab === 'Уведомления' ? <PlatformNotifications />
         : tab === 'Журнал' ? <Audit />
-        : <Settings />}
+        : <Settings />}</section></div>
     </main>);
 }
 
