@@ -71,3 +71,9 @@
 @media(max-width:460px){.pf-wide>header{align-items:flex-start}.pf-wide>header .btn{padding:9px 12px}.pf-dashboard-heading p{font-size:13px}.pf-dashboard-actions button{padding:0 10px;font-size:12px}.pf-panel-heading{flex-direction:column}.pf-panel-heading>.pf-link{align-self:flex-end}.pf-bar{grid-template-columns:76px minmax(50px,1fr) 28px;gap:8px;font-size:12px}.pf-table{min-width:560px}}
 .pf-retry{margin-top:10px;padding:10px 14px;border:1px solid #ffffff18;border-radius:11px;background:#ffffff08;color:#e4e8ef;font:inherit;cursor:pointer}
 .owner-price-notice{margin:12px 0!important;border-color:color-mix(in srgb,var(--accent) 45%,var(--line))!important;background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 9%,#15171c),#111318)!important}
+.owner-account-card{border-color:#ffffff16!important;background:linear-gradient(145deg,#17191f,#111317)!important}
+.owner-account-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.owner-account-grid>div{display:grid;gap:5px;padding:14px;border:1px solid #ffffff0e;border-radius:13px;background:#ffffff04}
+.pf-notifications{display:grid;gap:12px}
+.pf-notice{margin:0!important;border-color:#ffffff14!important;background:linear-gradient(140deg,#191b21,#111318)!important}
+@media(max-width:520px){.owner-account-grid{grid-template-columns:1fr}}

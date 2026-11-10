@@ -137,7 +137,7 @@ function MfaEnroll({ onDone }: { onDone: () => void }) {
 }
 
 /* ----------------------------------------------------------------------------------- каркас */
-const TABS = ['Дашборд', 'Организации', 'Новая организация', 'Подписки', 'Тарифы', 'Платежи', 'Журнал', 'Настройки'] as const;
+const TABS = ['Дашборд', 'Организации', 'Новая организация', 'Подписки', 'Тарифы', 'Платежи', 'Уведомления', 'Журнал', 'Настройки'] as const;
 type Tab = (typeof TABS)[number];
 
 function Console({ onLogout }: { onLogout: () => void; onMfa: () => void }) {
@@ -154,6 +154,7 @@ function Console({ onLogout }: { onLogout: () => void; onMfa: () => void }) {
         : tab === 'Подписки' ? <Subscriptions onOpen={setOpenTenant} />
         : tab === 'Тарифы' ? <Plans />
         : tab === 'Платежи' ? <Payments />
+        : tab === 'Уведомления' ? <PlatformNotifications />
         : tab === 'Журнал' ? <Audit />
         : <Settings />}
     </main>);
@@ -395,6 +396,12 @@ function Audit() {
       <input className="field" type="date" value={from} onChange={(e) => setFrom(e.target.value)} aria-label="С даты" /><input className="field" type="date" value={to} onChange={(e) => setTo(e.target.value)} aria-label="По дату" /></div>
     <State err={err} loading={loading && !data} />
     {data && <Table head={['Когда', 'Кто', 'Действие', 'Организация', 'Данные']}>{data.map((a) => <tr key={a.id}><td>{fmtDateTime(a.created_at)}</td><td>{a.actor_email ?? '—'}</td><td>{a.action}</td><td>{a.slug ?? '—'}</td><td className="muted small">{JSON.stringify(a.payload)}</td></tr>)}</Table>}</>);
+}
+
+function PlatformNotifications() {
+  const {data,err,loading,reload}=useLoad<Row[]>('audit',{limit:200});
+  const notices=(data??[]).filter(x=>String(x.action).startsWith('price_change.'));
+  return <div className="pf-notifications"><div className="pf-panel-heading"><div><span className="pf-kicker">SERVIO</span><h2>Уведомления</h2></div><button className="pf-action-secondary" onClick={()=>void reload()} disabled={loading}>{loading?'Обновляем…':'Обновить'}</button></div><State err={err} loading={loading&&!data}/>{notices.length===0&&!loading?<p className="muted">Новых событий по изменению цен нет.</p>:notices.map((n)=><article className="card pf-notice" key={n.id}><div className="row between wrap"><b>{n.action==='price_change.declined'?'Организация отказалась от новой цены':'Изменение цены подписки'}</b><time className="muted small">{fmtDateTime(n.created_at)}</time></div><p>{n.name??n.slug??'Организация'} · {n.payload?.old_price??'—'} ₸ → {n.payload?.new_price??'—'} ₸</p><p className="muted small">Начало действия: {fmtDateTime(n.payload?.effective_at)} · Ответил: {n.actor_email??'представитель организации'}</p></article>)}</div>
 }
 
 function Settings() {

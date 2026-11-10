@@ -16,18 +16,19 @@ import { SERVICE_CATEGORIES, serviceCategories } from '../lib/serviceCatalog'
 import './owner-login.css'
 import './owner-media.css'
 
-const TABS = ['Записи', 'Отчёты', 'Сотрудники', 'Мой доступ', 'Команда и посты', 'История', 'Ожидание', 'Промокоды', 'Отзывы', 'Услуги', 'Студия', 'Фото', 'Уведомления', 'Документы'] as const
+const TABS = ['Записи', 'Отчёты', 'Сотрудники', 'Личный кабинет', 'Центр уведомлений', 'Мой доступ', 'Команда и посты', 'История', 'Ожидание', 'Промокоды', 'Отзывы', 'Услуги', 'Студия', 'Фото', 'Уведомления', 'Документы'] as const
 
 // Группы разделов кабинета. Идентификаторы вкладок не меняются, меняются только подписи и группировка.
 const TAB_GROUPS: { name: string; tabs: (typeof TABS)[number][] }[] = [
   { name: 'Сегодня', tabs: ['Записи', 'Ожидание'] },
   { name: 'Клиенты', tabs: ['История', 'Отзывы', 'Промокоды', 'Уведомления'] },
+  { name: 'Мой кабинет', tabs: ['Личный кабинет', 'Центр уведомлений'] },
   { name: 'Услуги и студия', tabs: ['Услуги', 'Студия', 'Фото', 'Документы'] },
   { name: 'Команда', tabs: ['Сотрудники', 'Команда и посты', 'Мой доступ'] },
   { name: 'Отчёты', tabs: ['Отчёты'] },
 ];
 const TAB_LABELS: Partial<Record<(typeof TABS)[number], string>> = {
-  'Мой доступ': 'Мой аккаунт',
+  'Мой доступ': 'Резервный доступ',
   'Команда и посты': 'Посты и мастера',
 };
 const STATUS: Record<string, string> = {
@@ -245,6 +246,8 @@ function Cabinet({ b, onLogout }: { b: Business; onLogout: () => void }) {
       {tab === 'Сотрудники' && role === 'owner' && <TeamAccess b={b} />}
       {tab === 'Сотрудники' && role === 'manager' && <TeamAccess b={b} canManageManagers={false} />}
       {tab === 'Мой доступ' && <MyAccess b={b} />}
+      {tab === 'Личный кабинет' && <OwnerAccount slug={b.slug} />}
+      {tab === 'Центр уведомлений' && <OwnerNotificationCenter slug={b.slug} canRespond={role === 'owner'} />}
       {tab === 'Отчёты' && <Reports b={b} />}
       {tab === 'Команда и посты' && <TeamResources b={b} />}
       {tab === 'История' && <AuditHistory b={b} />}
@@ -340,6 +343,21 @@ function TeamAccess({ b, canManageManagers = true }: { b: Business; canManageMan
 function TeamMemberRow({member,resources,onSave,onRemove,onReset,canManageManagers,busy}:{member:{user_id:string;email:string;role:'manager'|'staff';resource_id:string|null;resource_name:string|null};resources:{id:string;name:string}[];onSave:(x:{user_id:string;role:'manager'|'staff';resource_id:string|null})=>void;onRemove:()=>void;onReset:()=>void;canManageManagers:boolean;busy:boolean}){
   const [role,setRole]=useState(member.role);const [resource,setResource]=useState(member.resource_id??'');
   return <div className="card col"><b>{member.email}</b><div className="row wrap"><select className="field" value={role} onChange={e=>setRole(e.target.value as 'manager'|'staff')}><option value="staff">Сотрудник</option>{canManageManagers&&<option value="manager">Менеджер</option>}</select>{role==='staff'&&<select className="field" value={resource} onChange={e=>setResource(e.target.value)}><option value="">Выберите пост</option>{resources.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select>}<button className="btn ghost mini" disabled={busy||(role==='staff'&&!resource)} onClick={()=>onSave({user_id:member.user_id,role,resource_id:role==='staff'?resource:null})}>Сохранить</button><button className="btn ghost mini" disabled={busy} onClick={onReset}>Выдать новый пароль</button><button className="btn danger mini" disabled={busy} onClick={onRemove}>Отозвать доступ</button></div></div>
+}
+
+function OwnerAccount({slug}:{slug:string}) {
+  const q=useQuery({queryKey:['owner','subscription',slug],queryFn:()=>owner.subscription(slug),refetchInterval:60_000});
+  if(q.isPending)return <p className="muted">Загружаем подписку…</p>;
+  if(q.isError)return <p className="err">Не удалось загрузить подписку. <button className="link" onClick={()=>void q.refetch()}>Повторить</button></p>;
+  const s=q.data; const date=(v?:string|null)=>v?new Date(v).toLocaleDateString('ru-RU'):'—';
+  return <div className="col"><div className="admin-subheading"><div><h2>Личный кабинет</h2><p className="muted small">Текущие условия и оплата подписки.</p></div></div><section className="card col owner-account-card"><div className="row between wrap"><b>Тариф {s.plan_name??s.plan_code??'—'}</b><span className={`pf-badge pf-${s.phase}`}>{s.phase}</span></div><div className="owner-account-grid"><div><span className="muted small">Подписка действует до</span><b>{s.ends_at?date(s.ends_at):'Без срока'}</b></div><div><span className="muted small">Осталось</span><b>{s.days_left==null?'—':`${Math.max(0,s.days_left)} дней`}</b></div><div><span className="muted small">К оплате за период</span><b>{(s.price_kzt??0).toLocaleString('ru-RU')} ₸</b></div><div><span className="muted small">Период</span><b>{s.price_period_months??1} мес.</b></div></div>{s.phase==='grace'&&<p className="err small">Подписка требует продления. Льготный срок до {date(s.grace_ends_at)}.</p>}</section></div>
+}
+
+function OwnerNotificationCenter({slug,canRespond}:{slug:string;canRespond:boolean}) {
+  const q=useQuery({queryKey:['owner','price-changes',slug],queryFn:()=>owner.pendingPriceChanges(slug),refetchInterval:60_000,refetchOnWindowFocus:true});
+  const qc=useQueryClient(); const [msg,setMsg]=useState('');
+  const respond=useMutation({mutationFn:({id,accept}:{id:string;accept:boolean})=>owner.respondPriceChange(slug,id,accept),onSuccess:async()=>{setMsg('Ответ сохранён.');await qc.invalidateQueries({queryKey:['owner','price-changes',slug]});await qc.invalidateQueries({queryKey:['owner','subscription',slug]})},onError:()=>setMsg('Не удалось сохранить ответ. Обновите страницу и повторите.')});
+  return <div className="col"><div className="admin-subheading"><div><h2>Центр уведомлений</h2><p className="muted small">События подписки и важные сообщения Servio.</p></div></div>{msg&&<p className="muted small" role="status">{msg}</p>}{q.isPending?<p className="muted">Проверяем уведомления…</p>:q.isError?<p className="err">Не удалось загрузить уведомления. <button className="link" onClick={()=>void q.refetch()}>Повторить</button></p>:q.data?.length?q.data.map(p=><article className="card col owner-price-notice" key={p.id}><b>Изменение цены подписки</b><p>Сейчас: {p.old_price_kzt.toLocaleString('ru-RU')} ₸ за {p.old_period_months} мес. · Новые условия: {p.new_price_kzt.toLocaleString('ru-RU')} ₸ за {p.new_period_months} мес.</p><p className="muted small">Вступает в силу {new Date(p.effective_at).toLocaleDateString('ru-RU')}. До этой даты действует текущая цена. При отказе подписка не продлится на новых условиях и завершится по окончании оплаченного срока.</p>{canRespond?<div className="row wrap"><button className="btn" disabled={respond.isPending} onClick={()=>respond.mutate({id:p.id,accept:true})}>Принять условия</button><button className="btn ghost" disabled={respond.isPending} onClick={()=>{if(window.confirm('Отказ означает, что подписка не продлится на новых условиях.'))respond.mutate({id:p.id,accept:false})}}>Отказаться</button></div>:<p className="muted small">Решение принимает владелец организации.</p>}</article>):<p className="muted">Новых уведомлений нет.</p>}</div>
 }
 
 function MyAccess({b}:{b:Business}){
