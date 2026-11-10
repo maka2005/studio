@@ -203,7 +203,7 @@ function Cabinet({ b, onLogout }: { b: Business; onLogout: () => void }) {
           Выйти
         </button>
       </div>
-      <SubscriptionBanner slug={b.slug} />
+      <SubscriptionBanner slug={b.slug} canRespond={role === 'owner'} />
       {role === 'owner' && <ExportButton slug={b.slug} />}
       <div className="admin-layout">
         <nav className="admin-side" aria-label="Разделы кабинета">
@@ -280,7 +280,7 @@ function ExportButton({ slug }: { slug: string }) {
 }
 
 // Статус подписки для владельца. Если запрос не удался (например, не разрешён прокси), баннер просто не показывается.
-function SubscriptionBanner({ slug }: { slug: string }) {
+function SubscriptionBanner({ slug, canRespond }: { slug: string; canRespond: boolean }) {
   const sub = useQuery({ queryKey: ['owner', 'subscription', slug], queryFn: () => owner.subscription(slug), retry: false })
   const qc = useQueryClient()
   const proposals = useQuery({ queryKey: ['owner', 'price-changes', slug], queryFn: () => owner.pendingPriceChanges(slug), retry: false, refetchInterval: 60_000, refetchOnWindowFocus: true })
@@ -292,7 +292,7 @@ function SubscriptionBanner({ slug }: { slug: string }) {
     <p>Текущая цена: <b>{p.old_price_kzt.toLocaleString('ru-RU')} ₸ за {p.old_period_months} мес.</b><br/>Новая цена: <b>{p.new_price_kzt.toLocaleString('ru-RU')} ₸ за {p.new_period_months} мес.</b></p>
     <p className="muted small">Изменение вступит в силу {new Date(p.effective_at).toLocaleDateString('ru-RU')}. До вашего согласия сохраняется текущая цена. При отказе подписка продолжит действовать по прежней цене; свяжитесь с поддержкой, чтобы обсудить варианты.</p>
     {priceMsg && <p className="muted small" role="status">{priceMsg}</p>}
-    <div className="row wrap"><button className="btn" disabled={answerPrice.isPending} onClick={() => answerPrice.mutate({id:p.id,accept:true})}>Принять новую цену</button><button className="btn ghost" disabled={answerPrice.isPending} onClick={() => { if(window.confirm('Отклонить изменение цены? Текущие условия сохранятся; свяжитесь с поддержкой по дальнейшим вариантам.')) answerPrice.mutate({id:p.id,accept:false}) }}>Отклонить</button></div>
+    {canRespond ? <div className="row wrap"><button className="btn" disabled={answerPrice.isPending} onClick={() => answerPrice.mutate({id:p.id,accept:true})}>Принять новую цену</button><button className="btn ghost" disabled={answerPrice.isPending} onClick={() => { if(window.confirm('При отказе сервис продолжит работать до конца оплаченного периода, затем подписка не продлится и онлайн-запись будет отключена. Уведомление об отказе получит Servio. Продолжить?')) answerPrice.mutate({id:p.id,accept:false}) }}>Отклонить</button></div> : <p className="muted small">Ответить на предложение может владелец организации.</p>}
   </div>)
   if (!s) return <>{proposals.isError && <p className="err small">Не удалось проверить новые условия подписки. Обновите кабинет.</p>}{priceNotice}</>
   const date = (v?: string | null) => (v ? new Date(v).toLocaleDateString('ru-RU') : '')
@@ -312,9 +312,7 @@ function SubscriptionBanner({ slug }: { slug: string }) {
         <p className="muted">Всё продолжает работать до {date(s.grace_ends_at)}. После этой даты онлайн-запись и уведомления будут отключены. Оплатите продление, чтобы этого избежать.</p>
       </div></>
     )
-  if (s.days_left != null && s.days_left <= 7 && s.phase !== 'none')
-    return <>{proposals.isError && <p className="err small">Не удалось проверить новые условия подписки. Обновите кабинет.</p>}{priceNotice}<p className="muted small">Подписка действует до {date(s.ends_at)} (осталось дней: {s.days_left}).</p></>
-  return <>{proposals.isError && <p className="err small">Не удалось проверить новые условия подписки. Обновите кабинет.</p>}{priceNotice}</>
+  return <>{proposals.isError && <p className="err small">Не удалось проверить новые условия подписки. Обновите кабинет.</p>}{priceNotice}{s.phase !== 'none' && <div className="card owner-subscription-summary"><b>Подписка · {s.plan_name ?? s.plan_code}</b><span>Окончание: {s.ends_at ? date(s.ends_at) : 'без срока'}</span><span>Осталось: {s.days_left == null ? '—' : `${Math.max(0,s.days_left)} дн.`}</span><span>К оплате за период: {(s.price_kzt ?? 0).toLocaleString('ru-RU')} ₸ / {s.price_period_months ?? 1} мес.</span></div>}</>
 }
 
 function TeamAccess({ b, canManageManagers = true }: { b: Business; canManageManagers?: boolean }) {
