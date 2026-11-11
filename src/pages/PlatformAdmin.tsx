@@ -157,7 +157,8 @@ function Console({ onLogout, role, accountEmail }: { onLogout: () => void; onMfa
   // A new response is surfaced even when the administrator stays on another section.
   useEffect(()=>{const timer=window.setInterval(()=>void platformNotices.reload(),30_000);return()=>window.clearInterval(timer)},[platformNotices.reload])
   const visibleTabs = TABS.filter((t) => {
-    if (role === 'owner' || t === 'Администраторы') return role === 'owner';
+    if (role === 'owner') return true;
+    if (t === 'Администраторы') return false;
     if (t === 'Новая организация' || t === 'Настройки') return false;
     if (role === 'finance') return !['Организации','Уведомления','Администраторы','Настройки'].includes(t);
     if (role === 'read_only') return !['Уведомления'].includes(t);
