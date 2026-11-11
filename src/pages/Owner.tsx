@@ -205,7 +205,7 @@ function Cabinet({ b, onLogout, impersonation }: { b: Business; onLogout: () => 
   };
   return (
     <section className="pad admin-shell">
-      {archiveStatus.data?.archived&&<aside className="owner-subscription-alert card" role="alert"><b>Организация находится в архиве</b><p>Доступ к управлению и онлайн-записи приостановлен. Данные сохранены. Свяжитесь с поддержкой Servio для восстановления доступа.{archiveStatus.data.deletion_requested_at&&' Также зарегистрирован запрос на удаление данных.'}</p></aside>}
+      {archiveStatus.data?.archived&&<aside className="owner-subscription-alert card" role="alert"><b>Организация находится в архиве</b><p>Доступ к управлению и онлайн-записи приостановлен. Данные сохранены. Перед закрытием скачайте копию данных или свяжитесь с поддержкой Servio для восстановления доступа.{archiveStatus.data.deletion_requested_at&&' Также зарегистрирован запрос на удаление данных.'}</p>{role==='owner'&&<ExportButton slug={b.slug}/>}</aside>}
       {impersonation && <aside className="impersonation-banner" role="status" aria-label="Активен режим поддержки">
         <span className="impersonation-banner-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3.5 19 6v5.1c0 4.2-2.8 7.7-7 9.4-4.2-1.7-7-5.2-7-9.4V6l7-2.5Z" stroke="currentColor" strokeWidth="1.7"/><path d="m9 12 2 2 4-4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg></span>
         <span className="impersonation-banner-copy"><span className="impersonation-banner-title">Режим поддержки <i>·</i> вы в кабинете организации</span><span className="impersonation-banner-reason"><b>Причина</b>{impersonation.reason}</span></span>
