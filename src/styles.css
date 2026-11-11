@@ -198,7 +198,7 @@ body:has(.admin-main){padding-bottom:24px}
 .admin-group-title:hover{background:#171a21;color:#fff}
 .admin-group.is-active .admin-group-title{color:#fff;background:color-mix(in srgb,var(--accent) 14%,transparent)}
 .admin-group-chevron{color:#5d6472;font-size:18px;line-height:1;transition:transform .2s}
-.admin-group.is-active .admin-group-chevron{transform:rotate(90deg);color:var(--accent)}
+.admin-group.is-expanded .admin-group-chevron{transform:rotate(90deg);color:var(--accent)}
 .admin-group.is-single .admin-group-chevron{display:none}
 .admin-group-tabs{display:flex;flex-direction:column;gap:2px;margin:2px 0 6px 14px;padding-left:12px;border-left:1px solid var(--line)}
 .admin-group-tab{padding:9px 12px;border:0;border-radius:11px;background:transparent;color:#9aa1ad;font-family:inherit;font-weight:500;font-size:14px;line-height:1.2;cursor:pointer;text-align:left;transition:background .18s,color .18s}
@@ -212,13 +212,13 @@ body:has(.admin-main){padding-bottom:24px}
   .admin-group{display:contents}
   .admin-group-title{order:0;flex:0 0 auto;width:auto;padding:9px 13px;font-size:14px;border:1px solid var(--line);background:#101216;border-radius:999px}
   .admin-group.is-active .admin-group-title{background:var(--accent);color:#06101f;border-color:transparent;font-weight:700}
-  .admin-group.is-active .admin-group-chevron{display:none}
+  .admin-group.is-expanded .admin-group-chevron{display:none}
   .admin-group-chevron{display:none}
   .admin-group-tabs{order:1;flex:0 0 100%;flex-direction:row;gap:6px;margin:0;padding:6px 0 0;border-left:0;border-top:1px solid var(--line);overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none;-webkit-overflow-scrolling:touch;scroll-snap-type:x proximity}
   .admin-group-tabs::-webkit-scrollbar{display:none}
   .admin-group-tab{flex:0 0 auto;padding:8px 13px;border-radius:999px;border:1px solid var(--line);background:#101216;font-size:13px;scroll-snap-align:start}
   .admin-group-tab.is-current{border-color:transparent}
-  .admin-group:not(.is-active) .admin-group-tabs{display:none}
+  .admin-group:not(.is-expanded) .admin-group-tabs{display:none}
   .admin-group-tab:hover{background:#171a21}
 }
 @media(max-width:760px){

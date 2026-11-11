@@ -162,11 +162,13 @@ function Login() {
 function Cabinet({ b, onLogout, impersonation }: { b: Business; onLogout: () => void; impersonation?:{reason:string;expires_at:string;tenant_slug:string} }) {
   const qc=useQueryClient()
   const [tab, setTab] = useState<(typeof TABS)[number]>('Записи')
+  const [expandedGroups,setExpandedGroups]=useState<Record<string,boolean>>({})
   const priceNotices=useQuery({queryKey:['owner','price-changes',b.slug],queryFn:()=>owner.pendingPriceChanges(b.slug),refetchInterval:60_000,enabled:true})
   const me = useQuery({ queryKey: ['owner', 'me', b.slug], queryFn: () => owner.me(b.slug) })
   const access = useQuery({ queryKey: ['owner', 'access', b.slug], queryFn: () => owner.access(b.slug), enabled: !!me.data })
   const billingNotices=useQuery({queryKey:['owner','billing-notifications',b.slug],queryFn:()=>owner.billingNotifications(b.slug,50,0),enabled:access.data==='owner'||access.data==='manager',retry:false,refetchInterval:30_000,refetchOnWindowFocus:true})
   const planUsage=useQuery({queryKey:['owner','plan-usage',b.slug],queryFn:()=>owner.planUsage(b.slug),enabled:access.data==='owner'||access.data==='manager',retry:false,refetchOnWindowFocus:true})
+  const archiveStatus=useQuery({queryKey:['owner','archive-status',b.slug],queryFn:()=>owner.archiveStatus(b.slug),enabled:access.data==='owner',retry:false})
   if (me.isPending) return <LoadingScreen label="Проверяем доступ…" />
   if (me.isError)
     return (
@@ -197,6 +199,7 @@ function Cabinet({ b, onLogout, impersonation }: { b: Business; onLogout: () => 
     .map((g) => ({ name: g.name, tabs: g.tabs.filter((t) => visibleTabs.includes(t)) as (typeof TABS)[number][] }))
     .filter((g) => g.tabs.length > 0);
   const activeGroup = groupList.find((g) => g.tabs.includes(tab));
+  useEffect(()=>{if(activeGroup)setExpandedGroups(prev=>({...prev,[activeGroup.name]:true}))},[activeGroup?.name])
   const stopImpersonation = async () => {
     await ownerRequest('impersonate_stop');
     qc.removeQueries({ queryKey: ['owner'] });
@@ -204,6 +207,7 @@ function Cabinet({ b, onLogout, impersonation }: { b: Business; onLogout: () => 
   };
   return (
     <section className="pad admin-shell">
+      {archiveStatus.data?.archived&&<aside className="owner-subscription-alert card" role="alert"><b>Организация находится в архиве</b><p>Доступ к управлению и онлайн-записи приостановлен. Данные сохранены. Свяжитесь с поддержкой Servio для восстановления доступа.{archiveStatus.data.deletion_requested_at&&' Также зарегистрирован запрос на удаление данных.'}</p></aside>}
       {impersonation && <aside className="impersonation-banner" role="status" aria-label="Активен режим поддержки">
         <span className="impersonation-banner-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3.5 19 6v5.1c0 4.2-2.8 7.7-7 9.4-4.2-1.7-7-5.2-7-9.4V6l7-2.5Z" stroke="currentColor" strokeWidth="1.7"/><path d="m9 12 2 2 4-4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg></span>
         <span className="impersonation-banner-copy"><span className="impersonation-banner-title">Режим поддержки <i>·</i> вы в кабинете организации</span><span className="impersonation-banner-reason"><b>Причина</b>{impersonation.reason}</span></span>
@@ -224,19 +228,19 @@ function Cabinet({ b, onLogout, impersonation }: { b: Business; onLogout: () => 
         <nav className="admin-side" aria-label="Разделы кабинета">
           {groupList.map((g) => {
             const isActive = activeGroup?.name === g.name;
-            const firstTab = g.tabs[0];
+            const isExpanded = expandedGroups[g.name] ?? isActive;
             return (
-              <div key={g.name} className={`admin-group${isActive ? ' is-active' : ''}${g.tabs.length === 1 ? ' is-single' : ''}`}>
+              <div key={g.name} className={`admin-group${isActive ? ' is-active' : ''}${isExpanded ? ' is-expanded' : ''}${g.tabs.length === 1 ? ' is-single' : ''}`}>
                 <button
                   type="button"
                   className="admin-group-title"
-                  aria-current={isActive ? 'true' : undefined}
-                  onClick={() => { if (firstTab) setTab(firstTab) }}
+                  aria-expanded={isExpanded}
+                  onClick={() => setExpandedGroups(prev=>({...prev,[g.name]:!isExpanded}))}
                 >
                   <span>{g.name}</span>
                   <span className="admin-group-chevron" aria-hidden="true">›</span>
                 </button>
-                {g.tabs.length > 1 && (
+                {g.tabs.length > 1 && isExpanded && (
                   <div className="admin-group-tabs">
                     {g.tabs.map((t) => (
                       <button

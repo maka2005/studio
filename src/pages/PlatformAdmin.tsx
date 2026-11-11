@@ -161,7 +161,7 @@ function Console({ onLogout, role, accountEmail }: { onLogout: () => void; onMfa
     if (t === 'Администраторы') return false;
     if (t === 'Новая организация' || t === 'Настройки') return false;
     if (role === 'finance') return !['Организации','Уведомления','Администраторы','Настройки'].includes(t);
-    if (role === 'read_only') return !['Уведомления'].includes(t);
+    if (role === 'read_only') return !['Уведомления','Документы'].includes(t);
     return !['Дашборд','Подписки','Тарифы','Платежи','Настройки'].includes(t);
   });
   useEffect(() => { if (!visibleTabs.includes(tab)) setTab(role === 'support' ? 'Организации' : 'Дашборд'); }, [role]);

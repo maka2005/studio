@@ -132,6 +132,7 @@ export const owner = {
   me: (slug: string) => rpc<boolean>('owner_me', { p_slug: slug }),
   subscription: (slug: string) => rpc<OwnerSubscription>('owner_subscription', { p_slug: slug }),
   planUsage: (slug:string) => rpc<OwnerPlanUsage>('owner_plan_usage',{p_slug:slug}),
+  archiveStatus: (slug:string) => rpc<{archived:boolean;archived_at:string|null;deletion_requested_at:string|null}>('owner_archive_status',{p_slug:slug}),
   pendingPriceChanges: (slug: string) => rpc<{ id:string; old_price_kzt:number; old_period_months:number; new_price_kzt:number; new_period_months:number; effective_at:string; created_at:string; is_read:boolean }[]>('owner_pending_price_change', { p_slug: slug }),
   markPriceChangesRead: (slug:string,ids:string[]) => rpc<void>('owner_mark_price_changes_read',{p_slug:slug,p_ids:ids}),
   billingNotifications: (slug:string,limit=50,offset=0) => rpc<OwnerBillingNotification[]>('owner_billing_notifications',{p_slug:slug,p_limit:limit,p_offset:offset}),
