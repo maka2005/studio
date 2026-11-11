@@ -258,7 +258,7 @@ function Cabinet({ b, onLogout, impersonation }: { b: Business; onLogout: () => 
           })}
         </nav>
         <div className="admin-main">
-      {tab === 'Записи' && <Bookings b={b} role={role} />}
+      {tab === 'Записи' && <Bookings b={b} role={role??undefined} />}
       {tab === 'Сотрудники' && role === 'owner' && <TeamAccess b={b} />}
       {tab === 'Сотрудники' && role === 'manager' && <TeamAccess b={b} canManageManagers={false} />}
       {tab === 'Мой доступ' && <MyAccess b={b} />}
@@ -672,7 +672,7 @@ function Bookings({ b, role = 'owner' }: { b: Business; role?: 'owner'|'manager'
           </button>
         ))
       )}
-      {sel && <Actions b={b} bk={sel} role={role} onClose={() => setSel(null)} onDone={refresh} />}
+      {sel && <Actions b={b} bk={sel} role={role??undefined} onClose={() => setSel(null)} onDone={refresh} />}
       {add && <AddBooking b={b} onClose={() => setAdd(false)} onDone={refresh} />}
       {block && <BlockPost b={b} onClose={() => setBlock(false)} onDone={refresh} />}
     </>
