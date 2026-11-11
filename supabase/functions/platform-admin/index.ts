@@ -34,14 +34,14 @@ const aalOf = (token: string): string => {
 
 const ERROR_STATUS: Record<string, number> = {
   forbidden: 403, not_found: 404, slug_taken: 409, subscription_exists: 409, idempotency_conflict: 409,
-  bad_status: 409, no_paid_payment: 409, unlimited_subscription: 409,
-  plan_limit_employees: 409, plan_limit_services: 409, plan_limit_bookings_per_month: 409,
+  bad_status: 409, no_paid_payment: 409, unlimited_subscription: 409, bad_request:400,
+  plan_limit_employees: 409, plan_limit_services: 409, plan_limit_bookings_per_month: 409, trial_already_used:409,
 };
 const KNOWN = [
   'forbidden', 'not_found', 'slug_taken', 'bad_slug', 'bad_name', 'bad_timezone', 'owner_missing', 'plan_not_found', 'bad_duration',
   'bad_dates', 'bad_status', 'bad_action', 'bad_setting', 'bad_value', 'reason_required', 'subscription_exists', 'idempotency_conflict',
   'no_paid_payment', 'unlimited_subscription', 'bad_limits', 'bad_features',
-  'plan_limit_employees', 'plan_limit_services', 'plan_limit_bookings_per_month',
+  'plan_limit_employees', 'plan_limit_services', 'plan_limit_bookings_per_month','trial_already_used','trial_identity_required',
 ];
 
 async function findUserByEmail(admin: ReturnType<typeof createClient>, email: string) {
@@ -243,6 +243,13 @@ Deno.serve(async (req) => {
         const id=uuidOf(body.tenant_id); if(!id||role!=='owner')return json(req,{error:'forbidden'},403);
         rpc={name:'platform_set_tenant_plan_override',args:{p_actor:actor,p_tenant:id,p_limits:obj(body.limits),p_features:obj(body.features),p_reason:str(body.reason,500)}}; break;
       }
+      case 'tenant_lifecycle': {
+        const id=uuidOf(body.tenant_id), action=str(body.lifecycle_action,30), reason=str(body.reason,500);
+        if(!id||role!=='owner'||reason.length<5)return json(req,{error:'forbidden'},403);
+        rpc={name:'platform_tenant_lifecycle',args:{p_actor:actor,p_tenant:id,p_action:action,p_reason:reason}};break;
+      }
+      case 'billing_documents': rpc={name:'platform_billing_documents_list',args:{p_actor:actor,p_tenant:uuidOf(body.tenant_id)}};break;
+      case 'billing_document_save': rpc={name:'platform_billing_document_save',args:{p_actor:actor,p:obj(body.document)}};break;
       case 'subscriptions': rpc = { name: 'platform_list_subscriptions', args: { p_actor: actor, p_phase: str(body.phase, 20) || null, p_limit: Number(body.limit) || 100 } }; break;
       case 'plans': rpc = { name: 'platform_list_plans', args: { p_actor: actor } }; break;
       case 'plan_save': rpc = { name: 'platform_upsert_plan', args: { p_actor: actor, p: obj(body.plan) } }; break;

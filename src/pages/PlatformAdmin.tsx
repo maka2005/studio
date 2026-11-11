@@ -17,6 +17,8 @@ const ERR: Record<string, string> = {
   reason_required: 'Укажите причину (от 3 символов).', owner_create_failed: 'Не удалось создать владельца.', operation_failed: 'Операция не выполнена.',
   temporarily_unavailable: 'Сервис временно недоступен.', idempotency_conflict: 'Ключ операции уже использован для другой организации.',
   bad_limits: 'Проверьте значения лимитов тарифов.', bad_features: 'Проверьте доступ к функциям тарифа.',
+  trial_already_used: 'Пробный период уже использовался для этого email, телефона или БИН/ИИН.', trial_identity_required:'Для пробного периода укажите email владельца.',
+  deletion_requested: 'Удаление уже запрошено.',
   plan_limit_employees: 'Достигнут лимит сотрудников по тарифу.', plan_limit_services: 'Достигнут лимит услуг по тарифу. Для начального набора выберите тариф с большим лимитом.', plan_limit_bookings_per_month: 'Достигнут месячный лимит записей.',
 };
 const errText = (e: unknown) => { const m = (e as Error)?.message ?? ''; return ERR[m] ?? 'Ошибка: ' + (m || 'неизвестно'); };
@@ -144,7 +146,7 @@ function MfaEnroll({ onDone }: { onDone: () => void }) {
 }
 
 /* ----------------------------------------------------------------------------------- каркас */
-const TABS = ['Дашборд', 'Организации', 'Новая организация', 'Подписки', 'Тарифы', 'Платежи', 'Уведомления', 'Журнал', 'Администраторы', 'Настройки'] as const;
+const TABS = ['Дашборд', 'Организации', 'Новая организация', 'Подписки', 'Тарифы', 'Платежи', 'Документы', 'Уведомления', 'Журнал', 'Администраторы', 'Настройки'] as const;
 type Tab = (typeof TABS)[number];
 
 const PLATFORM_ROLE_LABEL: Record<string, string> = { owner: 'Владелец', support: 'Поддержка', finance: 'Финансы', read_only: 'Только чтение' };
@@ -157,7 +159,7 @@ function Console({ onLogout, role, accountEmail }: { onLogout: () => void; onMfa
   const visibleTabs = TABS.filter((t) => {
     if (role === 'owner' || t === 'Администраторы') return role === 'owner';
     if (t === 'Новая организация' || t === 'Настройки') return false;
-    if (role === 'finance') return !['Организации','Уведомления'].includes(t);
+    if (role === 'finance') return !['Организации','Уведомления','Администраторы','Настройки'].includes(t);
     if (role === 'read_only') return !['Уведомления'].includes(t);
     return !['Дашборд','Подписки','Тарифы','Платежи','Настройки'].includes(t);
   });
@@ -173,6 +175,7 @@ function Console({ onLogout, role, accountEmail }: { onLogout: () => void; onMfa
         : tab === 'Подписки' ? <Subscriptions onOpen={setOpenTenant} />
         : tab === 'Тарифы' ? <Plans />
         : tab === 'Платежи' ? <Payments />
+        : tab === 'Документы' ? <BillingDocuments />
         : tab === 'Уведомления' ? <PlatformNotifications />
         : tab === 'Журнал' ? <Audit />
         : tab === 'Администраторы' ? <Admins />
@@ -309,6 +312,7 @@ function TenantCard({ id, role, onBack }: { id: string; role: string; onBack: ()
   const events=useLoad<Row>('tenant_events',{tenant_id:id,limit:50,offset:eventPage*50},[id,eventPage]);
   useEffect(()=>setEventPage(0),[id]);
   const [msg, setMsg] = useState(''); const [reason,setReason]=useState(''); const [impBusy,setImpBusy]=useState(false);
+  const [lifeReason,setLifeReason]=useState('');
   if (!d) return <><button className="back" onClick={onBack}>← Назад</button><State err={err} loading={loading} /></>;
   const t = d.tenant as Row; const subs: Row[] = d.subscriptions; const cur = subs.find((s) => ['trial', 'active', 'grace', 'suspended'].includes(s.status)) ?? subs[0];
   const exportData = async () => {
@@ -331,18 +335,20 @@ function TenantCard({ id, role, onBack }: { id: string; role: string; onBack: ()
   };
   return (<>
     <button className="back" onClick={onBack}>← Назад</button>
-    <section className="card"><div className="row between wrap"><div><h2>{t.config?.name ?? t.slug}</h2><p className="muted small">{t.slug} · {t.timezone} · создана {fmtDate(t.created_at)} · доступ: {d.access_state}</p></div>
+    <section className="card"><div className="row between wrap"><div><h2>{t.config?.name ?? t.slug}</h2><p className="muted small">{t.slug} · {t.timezone} · создана {fmtDate(t.created_at)} · доступ: {d.access_state}</p>{t.archived_at&&<p className="err small">В архиве с {fmtDate(t.archived_at)}{t.deletion_requested_at?` · удаление запрошено, хранение до ${fmtDate(new Date(new Date(t.deletion_requested_at).getTime()+30*86400000).toISOString())}`:''}</p>}</div>
       <div className="row wrap"><a className="btn ghost inline" href={`/s/${t.slug}/`} target="_blank" rel="noreferrer">Публичная страница</a><button className="btn ghost inline" onClick={exportData}>Экспорт данных</button></div></div>
       {msg && <p className="err">{msg}</p>}
+      {role==='owner'&&<div className="col"><label className="pf-label">Причина действия с организацией<input className="field" minLength={5} maxLength={500} value={lifeReason} onChange={e=>setLifeReason(e.target.value)} placeholder="Обязательная причина (не менее 5 символов)"/></label><div className="row wrap"><button className="btn ghost" disabled={lifeReason.trim().length<5} onClick={()=>void act(()=>call('tenant_lifecycle',{tenant_id:id,lifecycle_action:t.archived_at?'restore':'archive',reason:lifeReason.trim()}))}>{t.archived_at?'Восстановить':'В архив'}</button><button className="btn danger" disabled={lifeReason.trim().length<5||!!t.deletion_requested_at} onClick={()=>{if(window.confirm('Удаление будет запрошено с 30-дневным сроком хранения. Данные сейчас не стираются. Продолжить?'))void act(()=>call('tenant_lifecycle',{tenant_id:id,lifecycle_action:'delete_request',reason:lifeReason.trim()}))}}>Запросить удаление (30 дней)</button></div></div>}
       <p className="muted small">Сотрудники: {d.counters.staff} · Услуги: {d.counters.services} · Записи за 30 дней: {d.counters.bookings_30d}</p></section>
     {['owner','support'].includes(role) && <form className="card col" onSubmit={(e)=>void startImpersonation(e)}><h3>Режим поддержки</h3><p className="muted small">Вход в кабинет владельца на 30 минут. Причина обязательна; действия будут записаны в журнал.</p><label className="pf-label">Причина доступа<textarea className="field" minLength={5} maxLength={500} rows={2} value={reason} onChange={e=>setReason(e.target.value)} placeholder="Например: воспроизведение ошибки при создании записи" required /></label><button className="pf-action-primary" disabled={impBusy||reason.trim().length<5}>{impBusy?'Открываем кабинет…':'Войти в кабинет организации'}</button></form>}
-    <section className="card"><h3>Текущая подписка</h3>
+      <section className="card"><h3>Текущая подписка</h3>
       {cur ? <><p><Badge phase={cur.phase} /> {cur.plan_code} · {fmtDate(cur.starts_at)} — {cur.ends_at ? fmtDate(cur.ends_at) : 'бессрочно'}{cur.grace_ends_at ? ` (grace до ${fmtDate(cur.grace_ends_at)})` : ''}</p>
         <div className="pf-actions">
           {cur.ends_at && <button onClick={() => act(() => runSubAction(cur.id, 'extend', { months: 1 }))}>Продлить на 1 мес.</button>}
-          {['trial', 'active', 'grace'].includes(cur.phase) && <button onClick={() => act(() => runSubAction(cur.id, 'suspend', { reason: 'Приостановлено администратором' }))}>Приостановить</button>}
+          {['trial', 'active', 'grace'].includes(cur.phase) && <button onClick={() => {const why=window.prompt('Причина приостановки (обязательно):');if(why?.trim())void act(() => runSubAction(cur.id, 'suspend', { reason: why.trim() }))}}>Приостановить</button>}
           {['suspended', 'expired'].includes(cur.phase) && <button onClick={() => act(() => resumeFlow(cur.id))}>Возобновить</button>}
           <button onClick={() => { const code = window.prompt('Код тарифа (START / PRO):'); if (code) void act(() => runSubAction(cur.id, 'change_plan', { plan_code: code.trim().toUpperCase() })); }}>Сменить тариф</button>
+          {['trial','active','grace','suspended'].includes(cur.status)&&<button className="danger" onClick={()=>{const why=window.prompt('Причина отмены подписки (обязательно):');if(why?.trim())void act(()=>runSubAction(cur.id,'cancel',{reason:why.trim()}))}}>Отменить подписку</button>}
         </div></> : <p className="muted">Подписки нет.</p>}</section>
     {role==='owner'&&<TenantPlanOverrides tenantId={id} access={d.plan_access??{}} usage={d.plan_usage??{}} onSaved={()=>void reload()}/>}
     <section className="card"><h3>Владельцы и сотрудники</h3><Table head={['Email', 'Роль', 'Последний вход']}>{(d.members as Row[]).map((m) => <tr key={m.user_id}><td>{m.email}</td><td>{m.role}</td><td>{fmtDateTime(m.last_sign_in_at)}</td></tr>)}</Table></section>
@@ -355,7 +361,7 @@ function TenantCard({ id, role, onBack }: { id: string; role: string; onBack: ()
 /* ----------------------------------------------------------------------------------- создание организации */
 function CreateTenant({ onCreated }: { onCreated: (id: string) => void }) {
   const today = new Date().toISOString().slice(0, 10);
-  const [f, setF] = useState<Row>({ name: '', slug: '', business_type: 'autoservice', owner_name: '', owner_email: '', phone: '', address: '', timezone: 'Asia/Aqtobe', currency: '₸', plan_code: 'START', start: today, months: 1, trial: true, services: '' });
+  const [f, setF] = useState<Row>({ name: '', slug: '', business_type: 'autoservice', owner_name: '', owner_email: '', phone: '', bin_iin:'', address: '', timezone: 'Asia/Aqtobe', currency: '₸', plan_code: 'START', start: today, months: 1, trial: true, services: '' });
   const [busy, setBusy] = useState(false); const [err, setErr] = useState(''); const [ok, setOk] = useState('');
   const key = useRef(newKey()); // один ключ на форму: повторный клик «Создать» не создаёт дубликат
   const set = (k: string, v: unknown) => setF((p) => ({ ...p, [k]: v }));
@@ -372,7 +378,7 @@ function CreateTenant({ onCreated }: { onCreated: (id: string) => void }) {
   return (
     <form className="card col pf-form" onSubmit={submit}><h2>Новая организация</h2>
       {input('Название', 'name')}{input('Slug (адрес /s/slug)', 'slug', 'text', 'my-studio')}{input('Тип бизнеса', 'business_type')}
-      {input('Имя владельца', 'owner_name')}{input('Email владельца', 'owner_email', 'email')}{input('Телефон', 'phone', 'tel')}{input('Адрес', 'address')}
+      {input('Имя владельца', 'owner_name')}{input('Email владельца', 'owner_email', 'email')}{input('Телефон', 'phone', 'tel')}{input('БИН/ИИН (для защиты trial)', 'bin_iin')}{input('Адрес', 'address')}
       {input('Часовой пояс', 'timezone')}{input('Валюта', 'currency')}
       <label className="pf-label">Тариф<select className="field" value={f.plan_code} onChange={(e) => set('plan_code', e.target.value)}><option>START</option><option>PRO</option></select></label>
       <label className="pf-check"><input type="checkbox" checked={f.trial} onChange={(e) => set('trial', e.target.checked)} /> Пробный период (длительность из настроек)</label>
@@ -429,6 +435,17 @@ function PlanRow({ p, onSave }: { p: Row; onSave: (patch: Row) => void }) {
       <div className="pf-plan-limits">{limitFields.map(([key,label])=><label key={key} className="pf-label">{label}<input className="field" type="number" min={1} step={1} value={limits[key]??''} onChange={e=>setLimit(key,e.target.value)} placeholder="Без ограничений"/></label>)}</div>
       <b>Доступ к функциям</b><div className="row wrap">{accessFields.map(([key,label])=><label key={key} className="pf-check"><input type="checkbox" checked={featureAccess[key]!==false} onChange={e=>setFeatureAccess((prev:Row)=>({...prev,[key]:e.target.checked}))}/>{label}</label>)}</div>
       <button className="btn inline" onClick={() => onSave({ name, price_kzt: Number(price), description: desc, features: features.split(',').map((x) => x.trim()).filter(Boolean), limits:Object.fromEntries(limitFields.map(([key])=>[key,limits[key]===''?null:(limits[key]===undefined?(p.limits?.[key]??null):limits[key])])),feature_access:featureAccess })}>Сохранить</button></section>);
+}
+
+function BillingDocuments(){
+  const {data:docs,err,loading,reload}=useLoad<Row[]>('billing_documents');
+  const tenants=useLoad<Row[]>('tenants',{limit:200});
+  const today=new Date().toISOString().slice(0,10);
+  const [f,setF]=useState<Row>({tenant_id:'',document_type:'invoice',number:'',issue_date:today,service_from:today,service_to:today,amount_kzt:0,description:'Подписка Servio',status:'draft',esf_status:'not_issued',esf_number:''});
+  const [msg,setMsg]=useState('');
+  const save=async(e:FormEvent)=>{e.preventDefault();setMsg('');try{await call('billing_document_save',{document:{...f,amount_kzt:Number(f.amount_kzt),seller:{name:'Servio',country:'Казахстан'},buyer:{tenant_id:f.tenant_id}}});setMsg('Документ сохранён. Это внутренний документ, не официальная ЭСФ.');await reload()}catch(e){setMsg(errText(e))}};
+  const print=(d:Row)=>{const w=window.open('','_blank');if(!w)return;w.document.write(`<meta charset="utf-8"><title>${d.document_type==='invoice'?'Счёт':'Акт'} ${d.number}</title><h1>${d.document_type==='invoice'?'Счёт на оплату':'Акт оказанных услуг'}</h1><p>№ ${d.number} от ${fmtDate(d.issue_date)}</p><p>Исполнитель: Servio, Казахстан</p><p>Заказчик: ${d.tenant_slug??d.tenant_id}</p><p>Период: ${fmtDate(d.service_from)} — ${fmtDate(d.service_to)}</p><p>${d.description}</p><h2>${kzt(d.amount_kzt)}</h2><p>ЭСФ: ${d.esf_number??'не оформлена'} · ${d.esf_status}</p><small>Печатная форма Servio не является официальной ЭСФ.</small><script>window.print()</script>`);w.document.close()};
+  return <div className="col"><section className="card col"><h2>Счета и акты</h2><p className="muted small">Внутренние документы по подписке. ЭСФ оформляется отдельно в государственной ИС ЭСФ.</p><form className="col" onSubmit={save}><select className="field" required value={f.tenant_id} onChange={e=>setF({...f,tenant_id:e.target.value})}><option value="">Организация</option>{tenants.data?.map(t=><option key={t.id} value={t.id}>{t.name??t.slug}</option>)}</select><select className="field" value={f.document_type} onChange={e=>setF({...f,document_type:e.target.value})}><option value="invoice">Счёт</option><option value="act">Акт</option></select><input className="field" required placeholder="Номер документа" value={f.number} onChange={e=>setF({...f,number:e.target.value})}/><div className="row wrap">{(['issue_date','service_from','service_to'] as const).map((key)=><label className="pf-label" key={key}>{key==='issue_date'?'Дата документа':key==='service_from'?'Услуги с':'Услуги по'}<input className="field" type="date" value={f[key]} onChange={e=>setF({...f,[key]:e.target.value})}/></label>)}</div><input className="field" type="number" min="0" value={f.amount_kzt} onChange={e=>setF({...f,amount_kzt:e.target.value})}/><input className="field" placeholder="Описание услуг" value={f.description} onChange={e=>setF({...f,description:e.target.value})}/><input className="field" placeholder="Номер ЭСФ из ИС ЭСФ (если есть)" value={f.esf_number} onChange={e=>setF({...f,esf_number:e.target.value,esf_status:e.target.value?'issued':'not_issued'})}/><button className="btn">Сохранить документ</button></form>{msg&&<p className="muted small">{msg}</p>}</section><State err={err} loading={loading&&!docs}/>{docs&&<Table head={['Тип / номер','Организация','Период','Сумма','ЭСФ','Действия']}>{docs.map(d=><tr key={d.id}><td>{d.document_type==='invoice'?'Счёт':'Акт'} №{d.number}</td><td>{d.tenant_id}</td><td>{fmtDate(d.service_from)} — {fmtDate(d.service_to)}</td><td>{kzt(d.amount_kzt)}</td><td>{d.esf_number??'Нет'} · {d.esf_status}</td><td><button onClick={()=>print(d)}>Печать</button></td></tr>)}</Table>}</div>
 }
 
 /* ----------------------------------------------------------------------------------- платежи */
