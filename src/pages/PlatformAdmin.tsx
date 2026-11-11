@@ -307,6 +307,22 @@ function TenantPlanOverrides({tenantId,access,usage,onSaved}:{tenantId:string;ac
   </section>
 }
 
+const CASE_CATEGORY: Record<string,string> = { support:'Поддержка', billing:'Биллинг', technical:'Технический вопрос', other:'Другое' };
+const CASE_STATUS: Record<string,string> = { open:'Открыто', in_progress:'В работе', resolved:'Решено' };
+function TenantSupportPanel({tenantId}:{tenantId:string}){
+  const {data,err,loading,reload}=useLoad<Row>('tenant_support',{tenant_id:tenantId},[tenantId]);
+  const [note,setNote]=useState(''),[subject,setSubject]=useState(''),[category,setCategory]=useState('support'),[message,setMessage]=useState(''),[busy,setBusy]=useState(false),[msg,setMsg]=useState('');
+  const submit=async(action:string,body:Row)=>{setBusy(true);setMsg('');try{await call(action,{tenant_id:tenantId,...body});await reload();return true}catch(e){setMsg(errText(e));return false}finally{setBusy(false)}};
+  return <section className="card col"><div><h3>Внутренние заметки и обращения</h3><p className="muted small">Видно только платформенным администраторам. Владелец организации эти записи не видит.</p></div>
+    <State err={err} loading={loading}/>
+    <div className="pf-support-grid"><div className="col"><h4>Добавить заметку</h4><textarea className="field" rows={3} maxLength={3000} value={note} onChange={e=>setNote(e.target.value)} placeholder="Внутренняя заметка для команды Servio"/><button className="btn" disabled={busy||!note.trim()} onClick={async()=>{if(await submit('tenant_note_add',{body:note.trim()}))setNote('')}}>{busy?'Сохраняем…':'Сохранить заметку'}</button>
+      <div className="pf-support-list">{(data?.notes??[]).map((item:Row)=><article className="pf-event" key={item.id}><div className="row between wrap"><b>{item.created_by_email}</b><time className="muted small">{fmtDateTime(item.created_at)}</time></div><p>{item.body}</p></article>)}{data&&!data.notes?.length&&<p className="muted small">Заметок пока нет.</p>}</div>
+    </div><div className="col"><h4>Новое обращение</h4><input className="field" maxLength={200} value={subject} onChange={e=>setSubject(e.target.value)} placeholder="Краткая тема обращения"/><select className="field" value={category} onChange={e=>setCategory(e.target.value)}>{Object.entries(CASE_CATEGORY).map(([key,label])=><option value={key} key={key}>{label}</option>)}</select><textarea className="field" rows={2} maxLength={3000} value={message} onChange={e=>setMessage(e.target.value)} placeholder="Кратко: о чём договорились или что проверили"/><button className="btn" disabled={busy||subject.trim().length<3} onClick={async()=>{if(await submit('tenant_case_create',{subject:subject.trim(),category,message:message.trim()})){setSubject('');setMessage('')}}}>Создать обращение</button>
+      <div className="pf-support-list">{(data?.cases??[]).map((item:Row)=>{const history=(data?.case_events??[]).filter((event:Row)=>event.case_id===item.id).sort((a:Row,b:Row)=>new Date(a.created_at).getTime()-new Date(b.created_at).getTime());return <article className="pf-event" key={item.id}><div className="row between wrap"><div><b>{item.subject}</b><span className="muted small"> · {CASE_CATEGORY[item.category]??'Другое'}</span></div><span className="pf-badge">{CASE_STATUS[item.status]??item.status}</span></div><p className="muted small">Создал: {item.created_by_email} · Обновлено {fmtDateTime(item.updated_at)}</p><div className="pf-case-history">{history.map((event:Row)=><div key={event.id} className="muted small"><b>{event.actor_email}</b> · {fmtDateTime(event.created_at)} · {CASE_STATUS[event.status]??event.status}{event.message?` — ${event.message}`:''}</div>)}</div><div className="row wrap"><select aria-label="Статус обращения" className="field" defaultValue={item.status} onChange={e=>void submit('tenant_case_update',{case_id:item.id,status:e.target.value})}>{Object.entries(CASE_STATUS).map(([key,label])=><option value={key} key={key}>{label}</option>)}</select></div></article>})}{data&&!data.cases?.length&&<p className="muted small">Обращений пока нет.</p>}</div>
+    </div></div>{msg&&<p className="err" role="status">{msg}</p>}
+  </section>
+}
+
 function TenantCard({ id, role, onBack }: { id: string; role: string; onBack: () => void }) {
   const { data: d, err, loading, reload } = useLoad<Row>('tenant', { tenant_id: id });
   const [eventPage,setEventPage]=useState(0);
@@ -352,6 +368,7 @@ function TenantCard({ id, role, onBack }: { id: string; role: string; onBack: ()
           {['trial','active','grace','suspended'].includes(cur.status)&&<button className="danger" onClick={()=>{const why=window.prompt('Причина отмены подписки (обязательно):');if(why?.trim())void act(()=>runSubAction(cur.id,'cancel',{reason:why.trim()}))}}>Отменить подписку</button>}
         </div></> : <p className="muted">Подписки нет.</p>}</section>
     {role==='owner'&&<TenantPlanOverrides tenantId={id} access={d.plan_access??{}} usage={d.plan_usage??{}} onSaved={()=>void reload()}/>}
+    {['owner','support'].includes(role)&&<TenantSupportPanel tenantId={id}/>}
     <section className="card"><h3>Владельцы и сотрудники</h3><Table head={['Email', 'Роль', 'Последний вход']}>{(d.members as Row[]).map((m) => <tr key={m.user_id}><td>{m.email}</td><td>{m.role}</td><td>{fmtDateTime(m.last_sign_in_at)}</td></tr>)}</Table></section>
     <section className="card"><h3>История подписок</h3><Table head={['Тариф', 'Статус', 'Начало', 'Окончание']}>{subs.map((s) => <tr key={s.id}><td>{s.plan_code}</td><td><Badge phase={s.phase} /></td><td>{fmtDate(s.starts_at)}</td><td>{s.ends_at ? fmtDate(s.ends_at) : '—'}</td></tr>)}</Table></section>
     <section className="card"><h3>Платежи</h3><Table head={['Дата', 'Сумма', 'Период', 'Способ', 'Статус']}>{(d.payments as Row[]).map((p) => <tr key={p.id}><td>{fmtDate(p.received_at)}</td><td>{kzt(p.amount_kzt)}</td><td>{fmtDate(p.period_start)} — {fmtDate(p.period_end)}</td><td>{METHODS[p.method] ?? p.method}</td><td><Badge phase={p.status} /></td></tr>)}</Table></section>

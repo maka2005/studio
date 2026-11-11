@@ -109,7 +109,7 @@ Deno.serve(async (req) => {
 
   const readActions = new Set(['whoami','dashboard','tenants','tenant','tenant_events','subscriptions','plans','payments','audit','notifications','settings','admins','billing_documents']);
   const financeActions = new Set(['payments','payment_create','payment_confirm','payment_refund','payment_fail','subscriptions','dashboard','audit','notifications','tenants','tenant','tenant_events','plans','billing_documents','billing_document_save']);
-  const supportActions = new Set(['tenants','tenant','tenant_events','resend_invite','impersonation_start','impersonation_check','impersonation_end','impersonation_log']);
+  const supportActions = new Set(['tenants','tenant','tenant_events','tenant_support','tenant_note_add','tenant_case_create','tenant_case_update','resend_invite','impersonation_start','impersonation_check','impersonation_end','impersonation_log']);
   const allowedByRole = role === 'owner' ? null : role === 'read_only' ? readActions : role === 'finance' ? financeActions : supportActions;
   if (!['owner','support','finance','read_only'].includes(role) || (allowedByRole && !allowedByRole.has(action)))
     return json(req, { error: 'forbidden' }, 403);
@@ -125,6 +125,59 @@ Deno.serve(async (req) => {
   const uuidOf = (v: unknown) => { const s = str(v, 40); return UUID.test(s) ? s : null; };
 
   try {
+    if (action === 'tenant_support' || action === 'tenant_note_add' || action === 'tenant_case_create' || action === 'tenant_case_update') {
+      if (!['owner','support'].includes(role)) return json(req, { error: 'forbidden' }, 403);
+      const tenantId = uuidOf(body.tenant_id);
+      if (!tenantId) return json(req, { error: 'bad_request' }, 400);
+      const { data: tenant } = await admin.from('tenants').select('id').eq('id', tenantId).maybeSingle();
+      if (!tenant) return json(req, { error: 'not_found' }, 404);
+      const actorEmail = str(user.email, 254);
+      if (action === 'tenant_support') {
+        const [{ data: notes, error: notesError }, { data: cases, error: casesError }] = await Promise.all([
+          admin.from('platform_tenant_notes').select('id,body,created_by_email,created_at').eq('tenant_id', tenantId).order('created_at', { ascending: false }).limit(100),
+          admin.from('platform_tenant_cases').select('id,subject,category,status,created_by_email,updated_by_email,created_at,updated_at').eq('tenant_id', tenantId).order('updated_at', { ascending: false }).limit(100),
+        ]);
+        if (notesError || casesError) throw notesError ?? casesError;
+        const caseIds = (cases ?? []).map((item) => item.id);
+        let caseEvents: unknown[] = [];
+        if (caseIds.length) {
+          const { data, error } = await admin.from('platform_tenant_case_events').select('id,case_id,event_type,message,status,actor_email,created_at').eq('tenant_id', tenantId).in('case_id', caseIds).order('created_at', { ascending: false }).limit(200);
+          if (error) throw error;
+          caseEvents = data ?? [];
+        }
+        return json(req, { ok: true, data: { notes: notes ?? [], cases: cases ?? [], case_events: caseEvents } });
+      }
+      if (action === 'tenant_note_add') {
+        const note = str(body.body, 3000);
+        if (note.length < 1) return json(req, { error: 'bad_request' }, 400);
+        const { error } = await admin.from('platform_tenant_notes').insert({ tenant_id: tenantId, body: note, created_by: actor, created_by_email: actorEmail });
+        if (error) throw error;
+        await admin.rpc('platform_log', { p_actor: actor, p_action: 'tenant.internal_note.add', p_tenant: tenantId, p_payload: { length: note.length } });
+        return json(req, { ok: true });
+      }
+      if (action === 'tenant_case_create') {
+        const subject = str(body.subject, 200), category = str(body.category, 40), message = str(body.message, 3000);
+        if (subject.length < 3 || !['support','billing','technical','other'].includes(category)) return json(req, { error: 'bad_request' }, 400);
+        const { data: item, error } = await admin.from('platform_tenant_cases').insert({ tenant_id: tenantId, subject, category, status: 'open', created_by: actor, updated_by: actor, created_by_email: actorEmail, updated_by_email: actorEmail }).select('id').single();
+        if (error || !item) throw error ?? new Error('operation_failed');
+        const { error: eventError } = await admin.from('platform_tenant_case_events').insert({ tenant_id: tenantId, case_id: item.id, event_type: 'created', message: message || null, status: 'open', actor_id: actor, actor_email: actorEmail });
+        if (eventError) throw eventError;
+        await admin.rpc('platform_log', { p_actor: actor, p_action: 'tenant.support_case.create', p_tenant: tenantId, p_payload: { case_id: item.id, category } });
+        return json(req, { ok: true, data: { id: item.id } });
+      }
+      const caseId = uuidOf(body.case_id), status = str(body.status, 20), message = str(body.message, 3000);
+      if (!caseId || !['open','in_progress','resolved'].includes(status)) return json(req, { error: 'bad_request' }, 400);
+      const { data: current } = await admin.from('platform_tenant_cases').select('id,status').eq('id', caseId).eq('tenant_id', tenantId).maybeSingle();
+      if (!current) return json(req, { error: 'not_found' }, 404);
+      const { error } = await admin.from('platform_tenant_cases').update({ status, updated_by: actor, updated_by_email: actorEmail, updated_at: new Date().toISOString() }).eq('id', caseId).eq('tenant_id', tenantId);
+      if (error) throw error;
+      if (status !== current.status || message) {
+        const { error: eventError } = await admin.from('platform_tenant_case_events').insert({ tenant_id: tenantId, case_id: caseId, event_type: status !== current.status ? 'updated' : 'message', message: message || null, status, actor_id: actor, actor_email: actorEmail });
+        if (eventError) throw eventError;
+      }
+      await admin.rpc('platform_log', { p_actor: actor, p_action: 'tenant.support_case.update', p_tenant: tenantId, p_payload: { case_id: caseId, before_status: current.status, after_status: status, message_added: !!message } });
+      return json(req, { ok: true });
+    }
     if (action === 'impersonation_start') {
       const tenantId = uuidOf(body.tenant_id);
       const reason = str(body.reason, 500);
