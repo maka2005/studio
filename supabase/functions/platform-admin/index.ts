@@ -107,8 +107,8 @@ Deno.serve(async (req) => {
   if (action === 'whoami') return json(req, { ok: true, email: user.email, role, aal: aalOf(token), mfa_required: mfaNeeded });
   if (mfaNeeded) return json(req, { error: 'mfa_required' }, 403);
 
-  const readActions = new Set(['whoami','dashboard','tenants','tenant','tenant_events','subscriptions','plans','payments','audit','notifications','settings','admins']);
-  const financeActions = new Set(['payments','payment_create','payment_confirm','payment_refund','payment_fail','subscriptions','dashboard','audit','notifications','tenants','tenant','tenant_events','plans']);
+  const readActions = new Set(['whoami','dashboard','tenants','tenant','tenant_events','subscriptions','plans','payments','audit','notifications','settings','admins','billing_documents']);
+  const financeActions = new Set(['payments','payment_create','payment_confirm','payment_refund','payment_fail','subscriptions','dashboard','audit','notifications','tenants','tenant','tenant_events','plans','billing_documents','billing_document_save']);
   const supportActions = new Set(['tenants','tenant','tenant_events','resend_invite','impersonation_start','impersonation_check','impersonation_end','impersonation_log']);
   const allowedByRole = role === 'owner' ? null : role === 'read_only' ? readActions : role === 'finance' ? financeActions : supportActions;
   if (!['owner','support','finance','read_only'].includes(role) || (allowedByRole && !allowedByRole.has(action)))
@@ -269,7 +269,9 @@ Deno.serve(async (req) => {
       }
       case 'subscription_action': {
         const id = uuidOf(body.subscription_id); if (!id || !needKey()) return json(req, { error: 'bad_request' }, 400);
-        rpc = { name: 'platform_subscription_action', args: { p_actor: actor, p_key: idem, p_sub: id, p_action: str(body.type, 20), p: obj(body.data) } }; break;
+        const type=str(body.type,20), data=obj(body.data);
+        if(type==='cancel'&&str(data.reason,500).length<5)return json(req,{error:'reason_required'},400);
+        rpc = { name: 'platform_subscription_action', args: { p_actor: actor, p_key: idem, p_sub: id, p_action: type, p: data } }; break;
       }
       case 'payment_create': {
         const id = uuidOf(body.tenant_id); const pay = obj(body.payment);
