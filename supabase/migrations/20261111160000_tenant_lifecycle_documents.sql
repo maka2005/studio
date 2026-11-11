@@ -19,6 +19,31 @@ begin
 end $$;
 alter table public.tenants add column if not exists archived_at timestamptz;
 
+-- Archived tenants are closed centrally, so booking endpoints and notification
+-- delivery stop using the existing access-state checks.
+create or replace function public.tenant_access_state(p_tenant uuid) returns text
+language plpgsql stable security definer set search_path=public as $$
+declare s public.subscriptions; ph text;
+begin
+  if exists(select 1 from public.tenants where id=p_tenant and archived_at is not null) then return 'closed'; end if;
+  select * into s from public.subscriptions where tenant_id=p_tenant
+    order by (status in ('trial','active','grace','suspended')) desc,created_at desc limit 1;
+  if not found then return 'open'; end if;
+  ph:=public.subscription_phase(s.status,s.starts_at,s.ends_at,s.grace_ends_at);
+  return case when ph in ('trial','active') then 'open' when ph='grace' then 'grace' else 'closed' end;
+end $$;
+
+-- Block organization owner/manager operations after archive, while keeping
+-- read-only subscription/billing views reachable for support and export.
+create or replace function public.owner_tenant(p_slug text) returns uuid
+language plpgsql stable security definer set search_path=public as $$
+declare t uuid;
+begin
+  select id into t from public.tenants where slug=p_slug and archived_at is null;
+  if t is null or public.member_role(t) not in ('owner','manager') then raise exception 'forbidden'; end if;
+  return t;
+end $$;
+
 create table if not exists public.platform_billing_documents(
   id uuid primary key default gen_random_uuid(),
   tenant_id uuid not null references public.tenants(id) on delete restrict,
