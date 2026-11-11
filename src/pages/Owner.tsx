@@ -169,6 +169,12 @@ function Cabinet({ b, onLogout, impersonation }: { b: Business; onLogout: () => 
   const billingNotices=useQuery({queryKey:['owner','billing-notifications',b.slug],queryFn:()=>owner.billingNotifications(b.slug,50,0),enabled:access.data==='owner'||access.data==='manager',retry:false,refetchInterval:30_000,refetchOnWindowFocus:true})
   const planUsage=useQuery({queryKey:['owner','plan-usage',b.slug],queryFn:()=>owner.planUsage(b.slug),enabled:access.data==='owner'||access.data==='manager',retry:false,refetchOnWindowFocus:true})
   const archiveStatus=useQuery({queryKey:['owner','archive-status',b.slug],queryFn:()=>owner.archiveStatus(b.slug),enabled:access.data==='owner',retry:false})
+  const role=access.data
+  const roleTabs=(role==='staff'?['Записи','Мой доступ']:role==='manager'?TABS.filter((t)=>!['Студия','Фото','Уведомления','Документы'].includes(t)):TABS) as readonly (typeof TABS)[number][]
+  const visibleTabs=roleTabs.filter(t=>!(t==='Отзывы'&&planUsage.data?.features.reviews===false))
+  const groupList=TAB_GROUPS.map(g=>({name:g.name,tabs:g.tabs.filter((t)=>visibleTabs.includes(t)) as (typeof TABS)[number][]})).filter(g=>g.tabs.length>0)
+  const activeGroup=groupList.find(g=>g.tabs.includes(tab))
+  useEffect(()=>{if(activeGroup)setExpandedGroups(prev=>({...prev,[activeGroup.name]:true}))},[activeGroup?.name])
   if (me.isPending) return <LoadingScreen label="Проверяем доступ…" />
   if (me.isError)
     return (
@@ -191,15 +197,7 @@ function Cabinet({ b, onLogout, impersonation }: { b: Business; onLogout: () => 
     )
   if (access.isPending) return <LoadingScreen label="Загружаем права доступа…" />
   if (access.isError || !access.data) return <p className="pad err">Не удалось определить роль. Обновите страницу или обратитесь к владельцу.</p>
-  const role = access.data
-  const roleTabs = (role === 'staff' ? ['Записи','Мой доступ'] : role === 'manager' ? TABS.filter((t) => !['Студия','Фото','Уведомления','Документы'].includes(t)) : TABS) as readonly (typeof TABS)[number][]
-  const visibleTabs = roleTabs.filter(t=>!(t==='Отзывы'&&planUsage.data?.features.reviews===false))
   if (!visibleTabs.includes(tab)) setTab('Записи')
-  const groupList = TAB_GROUPS
-    .map((g) => ({ name: g.name, tabs: g.tabs.filter((t) => visibleTabs.includes(t)) as (typeof TABS)[number][] }))
-    .filter((g) => g.tabs.length > 0);
-  const activeGroup = groupList.find((g) => g.tabs.includes(tab));
-  useEffect(()=>{if(activeGroup)setExpandedGroups(prev=>({...prev,[activeGroup.name]:true}))},[activeGroup?.name])
   const stopImpersonation = async () => {
     await ownerRequest('impersonate_stop');
     qc.removeQueries({ queryKey: ['owner'] });
