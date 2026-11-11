@@ -47,6 +47,13 @@ Deno.serve(async (req) => {
         retry++;
         continue;
       }
+      const { data: telegramEnabled, error: featureError } = await admin.rpc('tenant_feature_enabled', { p_tenant: j.tenant_id, p_feature: 'telegram' });
+      if (featureError) throw featureError;
+      if (telegramEnabled !== true) {
+        await admin.from('notification_jobs').update({ status: 'failed', lease_until: null, last_error: 'feature_disabled' }).eq('id', j.id);
+        retry++;
+        continue;
+      }
       if (j.kind === 'waitlist_interest') {
         if (!links?.length) {
           await finishJob(admin, j.id, false, 'no_telegram_chat_linked');

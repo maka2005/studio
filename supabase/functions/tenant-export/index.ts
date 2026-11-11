@@ -63,6 +63,11 @@ Deno.serve(async (req) => {
   ]);
   const byOwner = member?.role === 'owner';
   if (!byOwner && isAdmin !== true) return json(req, { error: 'forbidden' }, 403);
+  if (byOwner) {
+    const { data: allowed, error: featureError } = await admin.rpc('tenant_feature_enabled', { p_tenant: tenant.id, p_feature: 'export' });
+    if (featureError) return json(req, { error: 'temporarily_unavailable' }, 503);
+    if (allowed !== true) return json(req, { error: 'feature_disabled' }, 403);
+  }
 
   const rate = await admin.rpc('consume_platform_rate', { p_scope: 'platform_export', p_key: `user:${user.id}`, p_limit: 10, p_window: 3600 });
   if (rate.error) return json(req, { error: 'temporarily_unavailable' }, 503);

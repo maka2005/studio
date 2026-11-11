@@ -64,9 +64,9 @@ Deno.serve(async (req) => {
   });
   if (error) {
     const message = error.message ?? '';
-    const known = ['tenant_not_found', 'service_not_found', 'past_start', 'slot_taken', 'invalid_slot', 'bad_name', 'bad_phone', 'bad_car', 'consent_required', 'promo_invalid', 'booking_closed'];
+    const known = ['tenant_not_found', 'service_not_found', 'past_start', 'slot_taken', 'invalid_slot', 'bad_name', 'bad_phone', 'bad_car', 'consent_required', 'promo_invalid', 'booking_closed', 'plan_limit_bookings_per_month'];
     const code = known.find((item) => message.includes(item));
-    if (code) return json({ error: code }, code === 'slot_taken' || code === 'invalid_slot' ? 409 : code === 'booking_closed' ? 403 : 400);
+    if (code) return json({ error: code }, code === 'slot_taken' || code === 'invalid_slot' || code.startsWith('plan_limit_') ? 409 : code === 'booking_closed' ? 403 : 400);
     console.error('booking create failed:', message);
     return json({ error: 'booking_unavailable' }, 503);
   }

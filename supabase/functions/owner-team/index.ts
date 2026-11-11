@@ -66,7 +66,7 @@ Deno.serve(async(req)=>{
  if(action==='set_role'){
   const id=typeof p?.user_id==='string'?p.user_id:''; const role=p?.role; const resource=typeof p?.resource_id==='string'?p.resource_id:null;
   const {error}=await admin.rpc('owner_team_set',{p_slug:slug,p_actor:user.id,p_user:id,p_role:role,p_resource:resource});
-  return error?json(req,{error:'operation_failed'},400):json(req,{ok:true});
+  return error?json(req,{error:error.message.startsWith('plan_limit_')?error.message:'operation_failed'},400):json(req,{ok:true});
  }
  if(action!=='create')return json(req,{error:'bad_request'},400);
  const email=typeof p?.email==='string'?p.email.trim().toLowerCase():''; const role=p?.role; const resource=typeof p?.resource_id==='string'?p.resource_id:null;
@@ -81,12 +81,14 @@ Deno.serve(async(req)=>{
  }
  let temporaryPassword:string|null=null; let userId=foundUser?.id??'';
  if(!foundUser){
+  const {error:capacityError}=await admin.rpc('owner_team_require_capacity',{p_slug:slug,p_actor:user.id});
+  if(capacityError)return json(req,{error:capacityError.message.startsWith('plan_limit_')?capacityError.message:'operation_failed'},400);
   temporaryPassword=`K${Array.from(crypto.getRandomValues(new Uint8Array(20)),x=>(x%36).toString(36)).join('')}!a9`;
   const {data,error}=await admin.auth.admin.createUser({email,password:temporaryPassword,email_confirm:true,user_metadata:{must_change_password:true}});
   if(error)return json(req,{error:error.message.toLowerCase().includes('already')?'email_exists':'create_failed'},400);
   userId=data.user.id;
  }
  const {error}=await admin.rpc('owner_team_set',{p_slug:slug,p_actor:user.id,p_user:userId,p_role:role,p_resource:resource});
- if(error)return json(req,{error:'operation_failed'},400);
+ if(error)return json(req,{error:error.message.startsWith('plan_limit_')?error.message:'operation_failed'},400);
  return json(req,{ok:true,created:!foundUser,temporary_password:temporaryPassword});
 });

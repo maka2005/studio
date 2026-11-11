@@ -165,7 +165,8 @@ function Cabinet({ b, onLogout, impersonation }: { b: Business; onLogout: () => 
   const priceNotices=useQuery({queryKey:['owner','price-changes',b.slug],queryFn:()=>owner.pendingPriceChanges(b.slug),refetchInterval:60_000,enabled:true})
   const me = useQuery({ queryKey: ['owner', 'me', b.slug], queryFn: () => owner.me(b.slug) })
   const access = useQuery({ queryKey: ['owner', 'access', b.slug], queryFn: () => owner.access(b.slug), enabled: !!me.data })
-  const billingNotices=useQuery({queryKey:['owner','billing-notifications',b.slug],queryFn:()=>owner.billingNotifications(b.slug,50,0),enabled:access.data==='owner'||access.data==='manager',refetchInterval:30_000,refetchOnWindowFocus:true})
+  const billingNotices=useQuery({queryKey:['owner','billing-notifications',b.slug],queryFn:()=>owner.billingNotifications(b.slug,50,0),enabled:access.data==='owner'||access.data==='manager',retry:false,refetchInterval:30_000,refetchOnWindowFocus:true})
+  const planUsage=useQuery({queryKey:['owner','plan-usage',b.slug],queryFn:()=>owner.planUsage(b.slug),enabled:access.data==='owner'||access.data==='manager',retry:false,refetchOnWindowFocus:true})
   if (me.isPending) return <LoadingScreen label="Проверяем доступ…" />
   if (me.isError)
     return (
@@ -189,7 +190,8 @@ function Cabinet({ b, onLogout, impersonation }: { b: Business; onLogout: () => 
   if (access.isPending) return <LoadingScreen label="Загружаем права доступа…" />
   if (access.isError || !access.data) return <p className="pad err">Не удалось определить роль. Обновите страницу или обратитесь к владельцу.</p>
   const role = access.data
-  const visibleTabs = (role === 'staff' ? ['Записи','Мой доступ'] : role === 'manager' ? TABS.filter((t) => !['Студия','Фото','Уведомления','Документы'].includes(t)) : TABS) as readonly (typeof TABS)[number][]
+  const roleTabs = (role === 'staff' ? ['Записи','Мой доступ'] : role === 'manager' ? TABS.filter((t) => !['Студия','Фото','Уведомления','Документы'].includes(t)) : TABS) as readonly (typeof TABS)[number][]
+  const visibleTabs = roleTabs.filter(t=>!(t==='Отзывы'&&planUsage.data?.features.reviews===false))
   if (!visibleTabs.includes(tab)) setTab('Записи')
   const groupList = TAB_GROUPS
     .map((g) => ({ name: g.name, tabs: g.tabs.filter((t) => visibleTabs.includes(t)) as (typeof TABS)[number][] }))
@@ -357,16 +359,22 @@ function TeamMemberRow({member,resources,onSave,onRemove,onReset,canManageManage
 
 function OwnerAccount({slug,canExport,canRespond,latestSuspension}:{slug:string;canExport:boolean;canRespond:boolean;latestSuspension?:OwnerBillingNotification}) {
   const q=useQuery({queryKey:['owner','subscription',slug],queryFn:()=>owner.subscription(slug),refetchInterval:60_000});
+  const planUsage=useQuery({queryKey:['owner','plan-usage',slug],queryFn:()=>owner.planUsage(slug),retry:false});
   if(q.isPending)return <p className="muted">Загружаем подписку…</p>;
   if(q.isError)return <p className="err">Не удалось загрузить подписку. <button className="link" onClick={()=>void q.refetch()}>Повторить</button></p>;
   const s=q.data; const date=(v?:string|null)=>v?new Date(v).toLocaleDateString('ru-RU'):'—';
   const statusLabels:Record<string,string>={trial:'Пробный период',active:'Активна',grace:'Льготный период',scheduled:'Запланирована',suspended:'Приостановлена',expired:'Истекла',cancelled:'Отменена',none:'Нет подписки'};
-  return <div className="col"><div className="admin-subheading"><div><h2>Личный кабинет</h2><p className="muted small">Текущие условия и оплата подписки.</p></div></div><SubscriptionBanner slug={slug} canRespond={canRespond} latestSuspension={latestSuspension}/><section className="card col owner-account-card"><div className="row between wrap"><b>Тариф {s.plan_name??s.plan_code??'—'}</b><span className={`pf-badge pf-${s.phase}`}>{statusLabels[s.phase]??'Статус уточняется'}</span></div><div className="owner-account-grid"><div><span className="muted small">Подписка действует до</span><b>{s.ends_at?date(s.ends_at):'Без срока'}</b></div><div><span className="muted small">Осталось</span><b>{s.days_left==null?'—':`${Math.max(0,s.days_left)} дней`}</b></div><div><span className="muted small">К оплате за период</span><b>{(s.price_kzt??0).toLocaleString('ru-RU')} ₸</b></div><div><span className="muted small">Период</span><b>{s.price_period_months??1} мес.</b></div></div></section>{canExport&&<ExportButton slug={slug}/>}</div>
+  const rows:[string,string][]=[['employees','Сотрудники'],['services','Услуги'],['bookings_per_month','Записи за этот месяц']];
+  const featureRows:[string,string][]=[['telegram','Telegram'],['export','Выгрузка данных'],['reviews','Отзывы']];
+  const usageValue=(key:string)=>{const current=Number(planUsage.data?.usage?.[key]??0);const cap=planUsage.data?.limits?.[key];return `${current.toLocaleString('ru-RU')} / ${cap==null?'без ограничений':Number(cap).toLocaleString('ru-RU')}`};
+  return <div className="col"><div className="admin-subheading"><div><h2>Личный кабинет</h2><p className="muted small">Текущие условия и оплата подписки.</p></div></div><SubscriptionBanner slug={slug} canRespond={canRespond} latestSuspension={latestSuspension}/><section className="card col owner-account-card"><div className="row between wrap"><b>Тариф {s.plan_name??s.plan_code??'—'}</b><span className={`pf-badge pf-${s.phase}`}>{statusLabels[s.phase]??'Статус уточняется'}</span></div><div className="owner-account-grid"><div><span className="muted small">Подписка действует до</span><b>{s.ends_at?date(s.ends_at):'Без срока'}</b></div><div><span className="muted small">Осталось</span><b>{s.days_left==null?'—':`${Math.max(0,s.days_left)} дней`}</b></div><div><span className="muted small">К оплате за период</span><b>{(s.price_kzt??0).toLocaleString('ru-RU')} ₸</b></div><div><span className="muted small">Период</span><b>{s.price_period_months??1} мес.</b></div></div></section>
+    <section className="card col"><div className="row between wrap"><b>Использование тарифа</b>{planUsage.data&&<span className="muted small">{planUsage.data.plan_code}</span>}</div>{planUsage.isPending?<p className="muted small">Загружаем лимиты…</p>:planUsage.isError?<p className="err small">Не удалось загрузить лимиты. Обновите страницу.</p>:<><div className="owner-account-grid">{rows.map(([key,label])=><div key={key}><span className="muted small">{label}</span><b>{usageValue(key)}</b></div>)}</div><p className="muted small">Основной филиал: 1 / {planUsage.data.limits.branches==null?'без ограничений':planUsage.data.limits.branches}. Управление несколькими филиалами в приложении пока не подключено.</p><div className="row wrap">{featureRows.map(([key,label])=><span className={`pf-badge ${planUsage.data.features[key]?'pf-active':'pf-expired'}`} key={key}>{label}: {planUsage.data.features[key]?'доступно':'не включено'}</span>)}</div></>}</section>
+    {canExport&&planUsage.data?.features.export===true&&<ExportButton slug={slug}/>}</div>
 }
 
 function OwnerNotificationCenter({slug,canRespond}:{slug:string;canRespond:boolean}) {
   const q=useQuery({queryKey:['owner','price-changes',slug],queryFn:()=>owner.pendingPriceChanges(slug),refetchInterval:60_000,refetchOnWindowFocus:true});
-  const events=useQuery({queryKey:['owner','billing-notifications',slug],queryFn:()=>owner.billingNotifications(slug,50,0),refetchInterval:30_000,refetchOnWindowFocus:true});
+  const events=useQuery({queryKey:['owner','billing-notifications',slug],queryFn:()=>owner.billingNotifications(slug,50,0),retry:false,refetchInterval:30_000,refetchOnWindowFocus:true});
   const qc=useQueryClient(); const [msg,setMsg]=useState('');
   const respond=useMutation({mutationFn:({id,accept}:{id:string;accept:boolean})=>owner.respondPriceChange(slug,id,accept),onSuccess:async()=>{setMsg('Ответ сохранён.');await qc.invalidateQueries({queryKey:['owner','price-changes',slug]});await qc.invalidateQueries({queryKey:['owner','subscription',slug]})},onError:()=>setMsg('Не удалось сохранить ответ. Обновите страницу и повторите.')});
   const unread=events.data?.filter(e=>!e.is_read)??[];

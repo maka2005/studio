@@ -16,6 +16,8 @@ const ERR: Record<string, string> = {
   unlimited_subscription: 'Бессрочная подписка не продлевается.', bad_duration: 'Проверьте длительность.', bad_dates: 'Проверьте даты.',
   reason_required: 'Укажите причину (от 3 символов).', owner_create_failed: 'Не удалось создать владельца.', operation_failed: 'Операция не выполнена.',
   temporarily_unavailable: 'Сервис временно недоступен.', idempotency_conflict: 'Ключ операции уже использован для другой организации.',
+  bad_limits: 'Проверьте значения лимитов тарифов.', bad_features: 'Проверьте доступ к функциям тарифа.',
+  plan_limit_employees: 'Достигнут лимит сотрудников по тарифу.', plan_limit_services: 'Достигнут лимит услуг по тарифу. Для начального набора выберите тариф с большим лимитом.', plan_limit_bookings_per_month: 'Достигнут месячный лимит записей.',
 };
 const errText = (e: unknown) => { const m = (e as Error)?.message ?? ''; return ERR[m] ?? 'Ошибка: ' + (m || 'неизвестно'); };
 
@@ -284,6 +286,23 @@ function subscriptionEventDetail(e:Row){
   }
 }
 
+function TenantPlanOverrides({tenantId,access,usage,onSaved}:{tenantId:string;access:Row;usage:Row;onSaved:()=>void}){
+  const limitFields:[string,string][]=[['employees','Сотрудники'],['services','Услуги'],['branches','Филиалы'],['bookings_per_month','Записи в месяц']];
+  const featureFields:[string,string][]=[['telegram','Telegram'],['export','Экспорт ZIP'],['reviews','Отзывы']];
+  const [limits,setLimits]=useState<Row>({}); const [unlimited,setUnlimited]=useState<Row>({}); const [features,setFeatures]=useState<Row>({}); const [reason,setReason]=useState(''); const [msg,setMsg]=useState(''); const [busy,setBusy]=useState(false);
+  useEffect(()=>{const overrides=access?.override??{};const rawLimits=overrides.limits??{};setLimits(Object.fromEntries(limitFields.map(([key])=>[key,rawLimits[key]==null?'':String(rawLimits[key])])));setUnlimited(Object.fromEntries(limitFields.map(([key])=>[key,key in rawLimits&&rawLimits[key]===null])));setFeatures(Object.fromEntries(featureFields.map(([key])=>[key,typeof overrides.features?.[key]==='boolean'?String(overrides.features[key]):'inherit'])));setReason('')},[access]);
+  const save=async(reset=false)=>{if(reason.trim().length<5){setMsg('Укажите причину (не менее 5 символов).');return}setBusy(true);setMsg('');try{const lim=reset?{}:Object.fromEntries(limitFields.filter(([key])=>unlimited[key]||String(limits[key]??'').trim()!=='').map(([key])=>[key,unlimited[key]?null:Number(limits[key])]));const flags=reset?{}:Object.fromEntries(featureFields.filter(([key])=>features[key]&&features[key]!=='inherit').map(([key])=>[key,features[key]==='true']));await call('tenant_limits_set',{tenant_id:tenantId,limits:lim,features:flags,reason:reason.trim()});setMsg(reset?'Исключения сброшены.':'Индивидуальные лимиты сохранены.');setReason('');onSaved()}catch(e){setMsg(errText(e))}finally{setBusy(false)}};
+  const displayLimit=(key:string)=>access?.limits?.[key]==null?'без ограничений':Number(access.limits[key]).toLocaleString('ru-RU');
+  const usageValue=(key:string)=>usage?.[key]==null?'не учитывается':Number(usage[key]).toLocaleString('ru-RU');
+  return <section className="card col"><div><h3>Лимиты и функции организации</h3><p className="muted small">Тариф {access?.plan_code??'—'}. Текущие данные остаются доступными; превышение блокирует только новые добавления.</p></div>
+    <div className="pf-plan-limits">{limitFields.map(([key,label])=><label key={key} className="pf-label">{label}<span className="muted small">По тарифу: {displayLimit(key)} · Сейчас: {usageValue(key)}</span><input className="field" type="number" min={1} step={1} value={limits[key]??''} disabled={!!unlimited[key]} onChange={e=>setLimits((prev:Row)=>({...prev,[key]:e.target.value}))} placeholder="Наследовать лимит тарифа"/><span className="pf-check"><input type="checkbox" checked={!!unlimited[key]} onChange={e=>setUnlimited((prev:Row)=>({...prev,[key]:e.target.checked}))}/> Без лимита</span></label>)}</div>
+    <p className="muted small">Сейчас считается один основной филиал на организацию. Управление несколькими филиалами в приложении пока не подключено.</p>
+    <div className="col"><b>Исключения по функциям</b><div className="row wrap">{featureFields.map(([key,label])=><label className="pf-label" key={key}>{label}<select className="field" value={features[key]??'inherit'} onChange={e=>setFeatures((prev:Row)=>({...prev,[key]:e.target.value}))}><option value="inherit">Как в тарифе ({access?.features?.[key]===false?'выключено':'включено'})</option><option value="true">Включить</option><option value="false">Выключить</option></select></label>)}</div></div>
+    <label className="pf-label">Причина изменения<textarea className="field" rows={2} maxLength={500} minLength={5} value={reason} onChange={e=>setReason(e.target.value)} placeholder="Например: согласовано индивидуальное расширение тарифа"/></label>
+    {msg&&<p className="muted small" role="status">{msg}</p>}<div className="row wrap"><button className="btn" disabled={busy||reason.trim().length<5} onClick={()=>void save()}>{busy?'Сохраняем…':'Сохранить исключения'}</button><button className="btn ghost" disabled={busy||reason.trim().length<5} onClick={()=>void save(true)}>Сбросить к тарифу</button></div>{access?.override?.reason&&<p className="muted small">Последняя причина: {String(access.override.reason)}</p>}
+  </section>
+}
+
 function TenantCard({ id, role, onBack }: { id: string; role: string; onBack: () => void }) {
   const { data: d, err, loading, reload } = useLoad<Row>('tenant', { tenant_id: id });
   const [eventPage,setEventPage]=useState(0);
@@ -325,6 +344,7 @@ function TenantCard({ id, role, onBack }: { id: string; role: string; onBack: ()
           {['suspended', 'expired'].includes(cur.phase) && <button onClick={() => act(() => resumeFlow(cur.id))}>Возобновить</button>}
           <button onClick={() => { const code = window.prompt('Код тарифа (START / PRO):'); if (code) void act(() => runSubAction(cur.id, 'change_plan', { plan_code: code.trim().toUpperCase() })); }}>Сменить тариф</button>
         </div></> : <p className="muted">Подписки нет.</p>}</section>
+    {role==='owner'&&<TenantPlanOverrides tenantId={id} access={d.plan_access??{}} usage={d.plan_usage??{}} onSaved={()=>void reload()}/>}
     <section className="card"><h3>Владельцы и сотрудники</h3><Table head={['Email', 'Роль', 'Последний вход']}>{(d.members as Row[]).map((m) => <tr key={m.user_id}><td>{m.email}</td><td>{m.role}</td><td>{fmtDateTime(m.last_sign_in_at)}</td></tr>)}</Table></section>
     <section className="card"><h3>История подписок</h3><Table head={['Тариф', 'Статус', 'Начало', 'Окончание']}>{subs.map((s) => <tr key={s.id}><td>{s.plan_code}</td><td><Badge phase={s.phase} /></td><td>{fmtDate(s.starts_at)}</td><td>{s.ends_at ? fmtDate(s.ends_at) : '—'}</td></tr>)}</Table></section>
     <section className="card"><h3>Платежи</h3><Table head={['Дата', 'Сумма', 'Период', 'Способ', 'Статус']}>{(d.payments as Row[]).map((p) => <tr key={p.id}><td>{fmtDate(p.received_at)}</td><td>{kzt(p.amount_kzt)}</td><td>{fmtDate(p.period_start)} — {fmtDate(p.period_end)}</td><td>{METHODS[p.method] ?? p.method}</td><td><Badge phase={p.status} /></td></tr>)}</Table></section>
@@ -395,13 +415,20 @@ function Plans() {
 function PlanRow({ p, onSave }: { p: Row; onSave: (patch: Row) => void }) {
   const [name, setName] = useState<string>(p.name); const [price, setPrice] = useState<string>(String(p.price_kzt)); const [desc, setDesc] = useState<string>(p.description ?? '');
   const [features, setFeatures] = useState<string>((p.features as string[]).join(', '));
+  const [limits,setLimits]=useState<Row>(p.limits??{}); const [featureAccess,setFeatureAccess]=useState<Row>(p.feature_access??{telegram:true,export:true,reviews:true});
+  const setLimit=(key:string,value:string)=>setLimits((prev:Row)=>({...prev,[key]:value===''?null:Number(value)}));
+  const limitFields:[string,string][]=[['employees','Сотрудники'],['services','Услуги'],['branches','Филиалы'],['bookings_per_month','Записи в месяц']];
+  const accessFields:[string,string][]=[['telegram','Telegram'],['export','Экспорт ZIP'],['reviews','Отзывы']];
   return (
     <section className="card col"><div className="row between"><b>{p.code}</b><label className="pf-check"><input type="checkbox" checked={p.is_active} onChange={(e) => onSave({ is_active: e.target.checked })} /> Активен</label></div>
       <input className="field" value={name} onChange={(e) => setName(e.target.value)} aria-label="Название" />
       <input className="field" type="number" min={0} value={price} onChange={(e) => setPrice(e.target.value)} aria-label="Цена, ₸" />
       <textarea className="field" rows={2} value={desc} onChange={(e) => setDesc(e.target.value)} aria-label="Описание" />
       <input className="field" value={features} onChange={(e) => setFeatures(e.target.value)} aria-label="Возможности через запятую" />
-      <button className="btn inline" onClick={() => onSave({ name, price_kzt: Number(price), description: desc, features: features.split(',').map((x) => x.trim()).filter(Boolean) })}>Сохранить</button></section>);
+      <b>Лимиты тарифа</b><p className="muted small">Пустое значение означает «без ограничений». Для тарифа START и PRO ограничения проверяются при добавлении.</p>
+      <div className="pf-plan-limits">{limitFields.map(([key,label])=><label key={key} className="pf-label">{label}<input className="field" type="number" min={1} step={1} value={limits[key]??''} onChange={e=>setLimit(key,e.target.value)} placeholder="Без ограничений"/></label>)}</div>
+      <b>Доступ к функциям</b><div className="row wrap">{accessFields.map(([key,label])=><label key={key} className="pf-check"><input type="checkbox" checked={featureAccess[key]!==false} onChange={e=>setFeatureAccess((prev:Row)=>({...prev,[key]:e.target.checked}))}/>{label}</label>)}</div>
+      <button className="btn inline" onClick={() => onSave({ name, price_kzt: Number(price), description: desc, features: features.split(',').map((x) => x.trim()).filter(Boolean), limits:Object.fromEntries(limitFields.map(([key])=>[key,limits[key]===''?null:(limits[key]===undefined?(p.limits?.[key]??null):limits[key])])),feature_access:featureAccess })}>Сохранить</button></section>);
 }
 
 /* ----------------------------------------------------------------------------------- платежи */

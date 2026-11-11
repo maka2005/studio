@@ -94,6 +94,7 @@ Deno.serve(async (req) => {
       if (!ipAllowed || !tokenAllowed) return json({ error: 'rate_limited' }, 429);
       const { error } = await admin.rpc('submit_booking_review', { p_token: token, p_rating: rating, p_comment: comment });
       if (error?.code === '23505' || error?.message.includes('duplicate')) return json({ error: 'already_reviewed' }, 409);
+      if (error?.message.includes('feature_disabled')) return json({ error: 'feature_disabled' }, 403);
       if (error?.message.includes('review_unavailable')) return json({ error: 'review_unavailable' }, 400);
       if (error?.message.includes('bad_review')) return json({ error: 'bad_review' }, 400);
       if (error) throw error;
