@@ -1,0 +1,19 @@
+$color-bg: #ffffff;
+$color-bg-alt: #f6f8fb;
+$color-text: #0f172a;
+$color-text-muted: #5b6577;
+$color-border: #e2e8f0;
+$color-primary: #1f4fd8;
+$color-primary-hover: #1a43b8;
+$color-accent: #0ea5a4;
+$color-dark: #0f172a;
+$radius: 16px;
+$shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 8px 24px rgba(15, 23, 42, 0.06);
+$container: 1200px;
+$font: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+@mixin mobile {
+  @media (max-width: 767px) {
+    @content;
+  }
+}

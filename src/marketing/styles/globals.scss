@@ -1,0 +1,151 @@
+@use 'variables' as *;
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body:has(.marketing-site) {
+  margin: 0;
+  font-family: $font;
+  color: $color-text;
+  background: $color-bg;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.marketing-site img {
+  max-width: 100%;
+  display: block;
+}
+
+.marketing-site h1,
+.marketing-site h2,
+.marketing-site h3 {
+  margin: 0;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.marketing-site p {
+  margin: 0;
+}
+
+.marketing-site a {
+  color: $color-primary;
+}
+
+.marketing-site ul,
+.marketing-site ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.marketing-site button,
+.marketing-site input,
+.marketing-site select,
+.marketing-site textarea {
+  font: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid $color-primary;
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.skip-link {
+  position: absolute;
+  left: 16px;
+  top: -48px;
+  z-index: 100;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: $color-primary;
+  color: #fff;
+
+  &:focus {
+    top: 16px;
+  }
+}
+
+.page-intro {
+  padding: 72px 0 40px;
+  text-align: center;
+
+  h1 {
+    font-size: 44px;
+  }
+
+  p {
+    max-width: 640px;
+    margin: 16px auto 0;
+    color: $color-text-muted;
+    font-size: 18px;
+  }
+
+  @include mobile {
+    padding: 48px 0 24px;
+
+    h1 {
+      font-size: 32px;
+    }
+
+    p {
+      font-size: 16px;
+    }
+  }
+}
+
+.grid-3,
+.grid-4 {
+  display: grid;
+  gap: 24px;
+}
+
+.grid-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.grid-4 {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  .grid-3,
+  .grid-4 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@include mobile {
+  .grid-3,
+  .grid-4 {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}

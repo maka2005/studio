@@ -9,13 +9,14 @@ import './platform.css';
 type Row = Record<string, any>;
 
 const ERR: Record<string, string> = {
-  forbidden: 'Нет доступа.', unauthorized: 'Войдите заново.', mfa_required: 'Нужно подтверждение MFA.', rate_limited: 'Слишком много запросов. Подождите.',
-  slug_taken: 'Такой slug уже занят.', bad_slug: 'Slug: 2–40 символов a–z, 0–9, дефис.', bad_name: 'Название: 2–80 символов.', bad_request: 'Проверьте поля формы.',
+  forbidden: 'Нет доступа к этому разделу.', unauthorized: 'Срок входа истёк. Войдите ещё раз.', mfa_required: 'Подтвердите вход кодом из приложения.', rate_limited: 'Слишком много запросов. Попробуйте чуть позже.',
+  slug_taken: 'Этот адрес организации уже занят.', bad_slug: 'Укажите адрес латинскими буквами, цифрами и дефисом.', bad_name: 'Название должно содержать от 2 до 80 символов.', bad_request: 'Проверьте заполненные поля.',
   bad_timezone: 'Неизвестный часовой пояс.', plan_not_found: 'Тариф не найден или выключен.', subscription_exists: 'У организации уже есть действующая подписка.',
   no_paid_payment: 'Нет подтверждённого платежа. Подтвердите платёж или возобновите без оплаты.', bad_status: 'Действие недоступно в текущем статусе.',
   unlimited_subscription: 'Бессрочная подписка не продлевается.', bad_duration: 'Проверьте длительность.', bad_dates: 'Проверьте даты.',
   reason_required: 'Укажите причину (от 3 символов).', owner_create_failed: 'Не удалось создать владельца.', operation_failed: 'Операция не выполнена.',
   temporarily_unavailable: 'Сервис временно недоступен.', idempotency_conflict: 'Ключ операции уже использован для другой организации.',
+  invite_rate_limited: 'Почтовый сервис ограничил отправку. Подождите немного и попробуйте ещё раз.', invite_redirect_not_allowed: 'Ссылка приглашения не разрешена настройками Supabase Auth. Добавьте адрес страницы владельца в Redirect URLs.', invite_email_provider_error: 'Почтовый провайдер Supabase отклонил письмо. Проверьте SMTP и разрешённый адрес отправителя.', invite_email_failed: 'Supabase не смог отправить письмо. Проверьте настройки почты и повторите попытку.',
   bad_limits: 'Проверьте значения лимитов тарифов.', bad_features: 'Проверьте доступ к функциям тарифа.',
   trial_already_used: 'Пробный период уже использовался для этого email, телефона или БИН/ИИН.', trial_identity_required:'Для пробного периода укажите email владельца.',
   deletion_requested: 'Удаление уже запрошено.',
@@ -24,14 +25,13 @@ const ERR: Record<string, string> = {
 const errText = (e: unknown) => { const m = (e as Error)?.message ?? ''; return ERR[m] ?? 'Ошибка: ' + (m || 'неизвестно'); };
 
 async function call<T = Row>(action: string, body: Row = {}): Promise<T> {
-  const { data, error } = await supabase.functions.invoke('platform-admin', { body: { action, ...body } });
-  if (error) {
-    const payload = await (error as { context?: Response }).context?.clone().json().catch(() => null);
-    throw new Error(String(payload?.error ?? error.message));
-  }
-  if (data?.error) throw new Error(String(data.error));
-  return (data && 'data' in data ? data.data : data) as T;
+  const response=await fetch('/api/platform?action=invoke',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,body})});
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok||data?.error)throw new Error(String(data?.error??('request_failed_'+response.status)));
+  return (data&&'data' in data?data.data:data) as T;
 }
+async function platformAuth(action:string,body:Row={}){const isGet=action==='session'||action==='factors';const response=await fetch('/api/platform?action='+action,{method:isGet?'GET':'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:isGet?undefined:JSON.stringify(body)});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(String(data?.error??'request_failed'));return data}
+async function platformFile(action:string,body:Row){const response=await fetch('/api/platform?action='+action,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(!response.ok){const data=await response.json().catch(()=>({}));throw new Error(String(data?.error??'request_failed'))}return response.blob()}
 
 const fmtDate = (v?: string | null) => (v ? new Date(v).toLocaleDateString('ru-RU') : '—');
 const fmtDateTime = (v?: string | null) => (v ? new Date(v).toLocaleString('ru-RU') : '—');
@@ -53,15 +53,17 @@ export function PlatformAdmin() {
   const [accountEmail, setAccountEmail] = useState('');
 
   const check = useCallback(async () => {
-    const { data } = await supabase.auth.getSession();
-    if (!data.session) { setStep('login'); return; }
     try {
-      const me = await call<Row>('whoami');
+      let me = await platformAuth('session');
+      if(!me.user){
+        const legacy=(await supabase.auth.getSession()).data.session;
+        if(!legacy){setStep('login');return}
+        try{await platformAuth('migrate',{access_token:legacy.access_token,refresh_token:legacy.refresh_token});await supabase.auth.signOut({scope:'local'});me=await platformAuth('session')}catch{await supabase.auth.signOut({scope:'local'});setStep('login');return}
+      }
+      if(!me.authorized){try{await call('bootstrap');void check();return}catch{setStep('denied');return}}
       setRole(String(me.role ?? 'read_only'));
-      setAccountEmail(String(me.email ?? ''));
-      const aal = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-      if (aal.data?.nextLevel === 'aal2' && aal.data.currentLevel !== 'aal2') { setStep('mfa'); return; }
-      if (me.mfa_required) { setStep('enroll'); return; }
+      setAccountEmail(String(me.user.email ?? ''));
+      if(me.mfa_required){const factors=await platformAuth('factors');if((factors?.factors?.totp??factors?.totp??[]).length){setStep('mfa');return}setStep('enroll');return}
       setStep('ready');
     } catch (e) {
       if ((e as Error).message === 'forbidden') {
@@ -83,23 +85,23 @@ export function PlatformAdmin() {
   if (step === 'loading') return <main className="page"><p className="muted">Загрузка…</p></main>;
   if (step === 'denied') return (
     <main className="page"><section className="card col"><h1>403</h1><p className="muted">У этого аккаунта нет доступа к платформе.</p>
-      <button className="btn ghost" onClick={async () => { await supabase.auth.signOut(); setStep('login'); }}>Выйти</button></section></main>);
+      <button className="btn ghost" onClick={async () => { await platformAuth('logout'); setStep('login'); }}>Выйти</button></section></main>);
   if (step === 'login') return <Login msg={msg} onDone={check} />;
   if (step === 'mfa') return <MfaVerify onDone={check} />;
   if (step === 'enroll') return <MfaEnroll onDone={check} />;
-  return <Console role={role} accountEmail={accountEmail} onLogout={async () => { await supabase.auth.signOut(); setStep('login'); }} onMfa={() => setStep('mfa')} />;
+  return <Console role={role} accountEmail={accountEmail} onLogout={async () => { await platformAuth('logout'); setStep('login'); }} onMfa={() => setStep('mfa')} />;
 }
 
 function Login({ msg, onDone }: { msg: string; onDone: () => void }) {
   const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [err, setErr] = useState(msg); const [busy, setBusy] = useState(false);
   const submit = async (e: FormEvent) => {
     e.preventDefault(); setBusy(true); setErr('');
-    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    try{await platformAuth('login',{email:email.trim(),password})}catch{setBusy(false);setErr('Неверный email или пароль.');return}
     setBusy(false);
-    if (error) setErr('Неверный email или пароль.'); else onDone();
+    onDone();
   };
   return (
-    <main className="page"><form className="card col pf-narrow" onSubmit={submit}><h1>Servio · платформа</h1>
+    <main className="page pf-login-page"><form className="card col pf-narrow" onSubmit={submit}><div className="pf-login-brand"><span className="pf-brand-mark">S</span><span><b>Servio</b><small>Команда платформы</small></span></div><h1>Вход для команды</h1><p className="muted small">Здесь можно управлять организациями, оплатой и обращениями.</p>
       <input className="field" type="email" autoComplete="username" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required />
       <input className="field" type="password" autoComplete="current-password" placeholder="Пароль" value={password} onChange={(e) => setPassword(e.target.value)} required />
       {err && <p className="err">{err}</p>}
@@ -110,14 +112,13 @@ function MfaVerify({ onDone }: { onDone: () => void }) {
   const [code, setCode] = useState(''); const [err, setErr] = useState('');
   const submit = async (e: FormEvent) => {
     e.preventDefault(); setErr('');
-    const factors = await supabase.auth.mfa.listFactors();
-    const factor = factors.data?.totp?.[0];
-    if (!factor) { setErr('Фактор не найден.'); return; }
-    const { error } = await supabase.auth.mfa.challengeAndVerify({ factorId: factor.id, code: code.trim() });
-    if (error) setErr('Неверный код.'); else onDone();
+    const factors = await platformAuth('factors');
+    const factor = factors?.factors?.totp?.[0]??factors?.totp?.[0];
+    if (!factor) { setErr('Не удалось найти подтверждение для этого аккаунта.'); return; }
+    try{await platformAuth('mfa_verify',{factor_id:factor.id,code:code.trim()});onDone()}catch{setErr('Неверный код.')}
   };
   return (
-    <main className="page"><form className="card col pf-narrow" onSubmit={submit}><h1>Код из приложения</h1>
+    <main className="page pf-login-page"><form className="card col pf-narrow" onSubmit={submit}><div className="pf-login-brand"><span className="pf-brand-mark">S</span><span><b>Servio</b><small>Дополнительная проверка</small></span></div><h1>Подтвердите вход</h1><p className="muted small">Введите шестизначный код из приложения для подтверждения входа.</p>
       <input className="field" inputMode="numeric" autoComplete="one-time-code" maxLength={6} placeholder="6 цифр" value={code} onChange={(e) => setCode(e.target.value)} required />
       {err && <p className="err">{err}</p>}<button className="btn">Подтвердить</button></form></main>);
 }
@@ -125,18 +126,15 @@ function MfaVerify({ onDone }: { onDone: () => void }) {
 function MfaEnroll({ onDone }: { onDone: () => void }) {
   const [info, setInfo] = useState<{ id: string; qr: string; secret: string } | null>(null); const [code, setCode] = useState(''); const [err, setErr] = useState('');
   const start = async () => {
-    const { data, error } = await supabase.auth.mfa.enroll({ factorType: 'totp', friendlyName: `servio-${Date.now()}` });
-    if (error || !data) { setErr('Не удалось начать настройку MFA.'); return; }
-    setInfo({ id: data.id, qr: data.totp.qr_code, secret: data.totp.secret });
+    try{const data=await platformAuth('mfa_enroll',{friendly_name:'servio-'+Date.now()});setInfo({id:data.id,qr:data.totp.qr_code,secret:data.totp.secret})}catch{setErr('Не удалось начать настройку MFA.')}
   };
   const verify = async (e: FormEvent) => {
     e.preventDefault(); if (!info) return; setErr('');
-    const { error } = await supabase.auth.mfa.challengeAndVerify({ factorId: info.id, code: code.trim() });
-    if (error) setErr('Неверный код.'); else onDone();
+    try{await platformAuth('mfa_verify',{factor_id:info.id,code:code.trim()});onDone()}catch{setErr('Неверный код.')}
   };
   return (
-    <main className="page"><section className="card col pf-narrow"><h1>Включите MFA</h1>
-      <p className="muted">Для доступа к платформе нужен одноразовый код (Google Authenticator, 1Password и т. п.).</p>
+    <main className="page pf-login-page"><section className="card col pf-narrow"><div className="pf-login-brand"><span className="pf-brand-mark">S</span><span><b>Servio</b><small>Защищённый вход</small></span></div><h1>Защитите аккаунт</h1>
+      <p className="muted">Чтобы защитить аккаунт, подключите приложение для кодов входа, например Google Authenticator или 1Password.</p>
       {!info ? <button className="btn" onClick={start}>Настроить</button> : (
         <form className="col" onSubmit={verify}><img src={info.qr} alt="QR-код для приложения-аутентификатора" width={200} height={200} />
           <p className="muted small">Или введите ключ вручную: <code>{info.secret}</code></p>
@@ -146,37 +144,43 @@ function MfaEnroll({ onDone }: { onDone: () => void }) {
 }
 
 /* ----------------------------------------------------------------------------------- каркас */
-const TABS = ['Дашборд', 'Организации', 'Новая организация', 'Подписки', 'Тарифы', 'Платежи', 'Документы', 'Уведомления', 'Журнал', 'Администраторы', 'Настройки'] as const;
+const TABS = ['Главная', 'Организации', 'Поддержка', 'Заявки с сайта', 'Новая организация', 'Подписки', 'Тарифы', 'Платежи', 'Документы', 'Объявления и статус', 'Уведомления', 'Журнал', 'Администраторы', 'Настройки'] as const;
 type Tab = (typeof TABS)[number];
 
 const PLATFORM_ROLE_LABEL: Record<string, string> = { owner: 'Владелец', support: 'Поддержка', finance: 'Финансы', read_only: 'Только чтение' };
 function Console({ onLogout, role, accountEmail }: { onLogout: () => void; onMfa: () => void; role: string; accountEmail: string }) {
-  const [tab, setTab] = useState<Tab>(role === 'support' ? 'Организации' : 'Дашборд');
+  const [tab, setTab] = useState<Tab>(role === 'support' ? 'Поддержка' : 'Главная');
   const [openTenant, setOpenTenant] = useState<string | null>(null);
   const platformNotices=useLoad<Row[]>('notifications',{limit:200})
   // A new response is surfaced even when the administrator stays on another section.
   useEffect(()=>{const timer=window.setInterval(()=>void platformNotices.reload(),30_000);return()=>window.clearInterval(timer)},[platformNotices.reload])
   const visibleTabs = TABS.filter((t) => {
     if (role === 'owner') return true;
+    if (t === 'Поддержка') return role === 'support';
+    if (t === 'Заявки с сайта') return role === 'support' || role === 'owner';
+    if(t==='Объявления и статус')return false;
     if (t === 'Администраторы') return false;
     if (t === 'Новая организация' || t === 'Настройки') return false;
     if (role === 'finance') return !['Организации','Уведомления','Администраторы','Настройки'].includes(t);
     if (role === 'read_only') return !['Уведомления','Документы'].includes(t);
-    return !['Дашборд','Подписки','Тарифы','Платежи','Настройки'].includes(t);
+    return !['Главная','Подписки','Тарифы','Платежи','Настройки'].includes(t);
   });
-  useEffect(() => { if (!visibleTabs.includes(tab)) setTab(role === 'support' ? 'Организации' : 'Дашборд'); }, [role]);
+  useEffect(() => { if (!visibleTabs.includes(tab)) setTab(role === 'support' ? 'Поддержка' : 'Главная'); }, [role]);
   return (
     <main className="page pf-wide">
       <header className="pf-app-header"><div className="pf-brand"><span className="pf-brand-mark">S</span><div><b>Servio</b><span>Platform console</span></div></div><div className="pf-header-actions"><span className="pf-header-user">{PLATFORM_ROLE_LABEL[role] ?? 'Нет доступа'}{accountEmail && <><br/><small>{accountEmail}</small></>}</span><button className="pf-logout" onClick={onLogout}>Выйти</button></div></header>
       <div className="pf-console-layout"><nav className="pf-tabs" aria-label="Разделы платформы">{visibleTabs.map((t) => <button key={t} className={tab === t && !openTenant ? 'is-current' : ''} onClick={() => { setOpenTenant(null); setTab(t); if(t==='Уведомления'){const ids=platformNotices.data?.filter(x=>!x.is_read).map(x=>String(x.id))??[];if(ids.length)void call('notifications_read',{ids}).then(()=>platformNotices.reload())} }}>{t}{t==='Уведомления'&&platformNotices.data?.some(x=>!x.is_read)&&<i className="admin-unread-dot" aria-label="Есть непрочитанные уведомления"/>}</button>)}</nav>
       <section className="pf-console-content">{openTenant ? <TenantCard id={openTenant} role={role} onBack={() => setOpenTenant(null)} />
-        : tab === 'Дашборд' ? <Dashboard onOpen={setOpenTenant} onNavigate={setTab} />
+        : tab === 'Главная' ? <Dashboard onOpen={setOpenTenant} onNavigate={setTab} />
         : tab === 'Организации' ? <Tenants onOpen={setOpenTenant} />
+        : tab === 'Поддержка' ? <SupportQueue />
+        : tab === 'Заявки с сайта' ? <BusinessLeads />
         : tab === 'Новая организация' ? <CreateTenant onCreated={(id) => setOpenTenant(id)} />
         : tab === 'Подписки' ? <Subscriptions onOpen={setOpenTenant} />
         : tab === 'Тарифы' ? <Plans />
         : tab === 'Платежи' ? <Payments />
         : tab === 'Документы' ? <BillingDocuments />
+        : tab === 'Объявления и статус' ? <PlatformServiceAdmin />
         : tab === 'Уведомления' ? <PlatformNotifications />
         : tab === 'Журнал' ? <Audit />
         : tab === 'Администраторы' ? <Admins />
@@ -195,6 +199,11 @@ function useLoad<T>(action: string, body: Row = {}, deps: unknown[] = []) {
   useEffect(() => { void reload(); }, [reload, ...deps]);
   return { data, err, loading, reload };
 }
+function useAllTenants() {
+  const [data,setData]=useState<Row[]|null>(null); const [err,setErr]=useState(''); const [loading,setLoading]=useState(true);
+  useEffect(()=>{let live=true;setLoading(true);void (async()=>{try{const all:Row[]=[];for(let offset=0;offset<100000;offset+=200){const page=await call<Row[]>('tenants',{limit:200,offset});all.push(...page);if(page.length<200)break}if(live)setData(all)}catch(e){if(live)setErr(errText(e))}finally{if(live)setLoading(false)}})();return()=>{live=false}},[]);
+  return {data,err,loading};
+}
 const State = ({ err, loading }: { err: string; loading: boolean }) => (err ? <p className="err">{err}</p> : loading ? <p className="muted">Загрузка…</p> : null);
 const Table = ({ head, children }: { head: string[]; children: ReactNode }) => (
   <div className="pf-scroll"><table className="pf-table"><thead><tr>{head.map((h) => <th key={h}>{h}</th>)}</tr></thead><tbody>{children}</tbody></table></div>);
@@ -206,16 +215,16 @@ function Dashboard({ onOpen, onNavigate }: { onOpen: (id: string) => void; onNav
   const months: Row[] = d.new_by_month ?? []; const max = Math.max(1, ...months.map((m) => Number(m.count)));
   const revenueMonths: Row[] = d.revenue_by_month ?? []; const maxRevenue = Math.max(1, ...revenueMonths.map((m) => Number(m.amount_kzt)));
   const cards: [string, string | number, string][] = [
-    ['MRR', kzt(d.mrr_kzt), 'Регулярная выручка в месяц'],
-    ['ARR', kzt(d.arr_kzt), 'MRR × 12'],
-    ['Churn за месяц', `${Number(d.churn_rate_pct ?? 0).toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%`, `${d.churned_this_month ?? 0} ушедших · платящие сейчас + ушедшие`],
-    ['Trial → Paid', `${Number(d.trial_conversion_pct ?? 0).toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%`, 'Конверсия пробных подписок за 12 мес.'],
-    ['ARPU', kzt(d.arpu_kzt), 'MRR на платящую организацию'],
+    ['Доход за месяц', kzt(d.mrr_kzt), 'Регулярные платежи по подпискам'],
+    ['Доход за год', kzt(d.arr_kzt), 'Расчёт по текущим подпискам'],
+    ['Отмены за месяц', `${Number(d.churn_rate_pct ?? 0).toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%`, `Организаций отменили подписку: ${d.churned_this_month ?? 0}`],
+    ['Выбрали тариф после пробного', `${Number(d.trial_conversion_pct ?? 0).toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%`, 'Доля организаций, которые продолжили работу'],
+    ['В среднем на организацию', kzt(d.arpu_kzt), 'Средний ежемесячный платёж'],
     ['Выручка за месяц', kzt(d.revenue_month_kzt), 'Подтверждённые платежи'],
   ];
   return (<>
     <div className="pf-dashboard-heading">
-      <div><span className="pf-kicker">ОБЗОР ПЛАТФОРМЫ</span><h2>Добро пожаловать</h2><p className="muted">Состояние организаций, подписок и платежей в одном месте.</p></div>
+      <div><span className="pf-kicker">ОБЗОР ПЛАТФОРМЫ</span><h2>Рабочий день начинается здесь</h2><p className="muted">Все важные данные об организациях, оплате и обращениях собраны на одной странице.</p></div>
       <div className="pf-dashboard-actions"><button className="pf-action-secondary" onClick={() => void reload()} disabled={loading}>{loading ? 'Обновляем…' : '↻ Обновить'}</button><button className="pf-action-primary" onClick={() => onNavigate('Новая организация')}>＋ Новая организация</button></div>
     </div>
     <div className="pf-cards">{cards.map(([k, v, hint], index) => <div className={`card pf-metric pf-metric-${index}`} key={k}><span className="muted small">{k}</span><b className="big">{v}</b><span className="pf-metric-hint">{hint}</span></div>)}</div>
@@ -237,6 +246,12 @@ const newKey = () => crypto.randomUUID();
 async function runSubAction(sub: string, type: string, data: Row = {}) {
   return call('subscription_action', { subscription_id: sub, type, data, idempotency_key: newKey() });
 }
+function SubscriptionActionModal({type,subscription,initialPlan='START',initialDate='',onClose,onSubmit}:{type:string;subscription:Row;initialPlan?:string;initialDate?:string;onClose:()=>void;onSubmit:(data:Row)=>Promise<void>}){
+  const [reason,setReason]=useState('');const [plan,setPlan]=useState(initialPlan);const [date,setDate]=useState(initialDate);const [busy,setBusy]=useState(false);
+  const title=type==='suspend'?'Приостановить подписку':type==='cancel'?'Отменить подписку':type==='change_plan'?'Сменить тариф':'Изменить дату окончания';
+  const submit=async(e:FormEvent)=>{e.preventDefault();if(['suspend','cancel'].includes(type)&&reason.trim().length<3)return;if(type==='set_dates'&&!date)return;setBusy(true);try{await onSubmit(type==='suspend'||type==='cancel'?{reason:reason.trim()}:type==='change_plan'?{plan_code:plan}:{ends_at:iso(date)})}finally{setBusy(false)}};
+  return <div className="pf-modal-backdrop"><form className="pf-modal card col" role="dialog" aria-modal="true" onSubmit={e=>void submit(e)}><h2>{title}</h2><p className="muted small">{subscription.name??subscription.slug??'Организация'} · {subscription.plan_code??''}</p>{type==='change_plan'?<label className="pf-label">Тариф<select className="field" value={plan} onChange={e=>setPlan(e.target.value)}><option>START</option><option>PRO</option><option>LEGACY</option></select></label>:type==='set_dates'?<label className="pf-label">Дата окончания<input className="field" type="date" value={date} onChange={e=>setDate(e.target.value)} required/></label>:<label className="pf-label">Причина<textarea className="field" rows={3} maxLength={500} minLength={3} value={reason} onChange={e=>setReason(e.target.value)} required/></label>}<div className="row wrap"><button className="pf-action-primary" disabled={busy}>{busy?'Сохраняем…':'Подтвердить'}</button><button type="button" className="pf-action-secondary" onClick={onClose}>Отмена</button></div></form></div>
+}
 async function resumeFlow(sub: string): Promise<boolean> {
   try { await runSubAction(sub, 'resume'); return true; }
   catch (e) {
@@ -244,27 +259,36 @@ async function resumeFlow(sub: string): Promise<boolean> {
     throw e;
   }
 }
+async function suspendFlow(sub:string):Promise<void>{const reason=window.prompt('Причина приостановки (обязательно):');if(!reason?.trim())return;if(!window.confirm('Подтвердить приостановку подписки?'))return;await runSubAction(sub,'suspend',{reason:reason.trim()})}
 
 function Tenants({ onOpen }: { onOpen: (id: string) => void }) {
   const [search, setSearch] = useState(''); const [phase, setPhase] = useState(''); const [plan, setPlan] = useState(''); const [applied, setApplied] = useState({ search: '', phase: '', plan: '' });
-  const { data, err, loading, reload } = useLoad<Row[]>('tenants', { search: applied.search, phase: applied.phase, plan: applied.plan }, [applied]);
+  const [savedFilters,setSavedFilters]=useState<Record<string,{search:string;phase:string;plan:string}>>(()=>{try{return JSON.parse(localStorage.getItem('platform-tenant-filters')||'{}')}catch{return {}}});
+  const [page,setPage]=useState(0); const pageSize=50;
+  useEffect(()=>setPage(0),[applied]);
+  const { data, err, loading, reload } = useLoad<Row[]>('tenants', { search: applied.search, phase: applied.phase, plan: applied.plan, limit:pageSize+1, offset:page*pageSize }, [applied,page]);
+  const rows=(data??[]).slice(0,pageSize); const hasNext=(data?.length??0)>pageSize;
   const [msg, setMsg] = useState('');
   const act = async (fn: () => Promise<unknown>) => { setMsg(''); try { await fn(); await reload(); } catch (e) { setMsg(errText(e)); } };
+  const saveFilter=()=>{const name=window.prompt('Название сохранённого фильтра');if(!name?.trim())return;const next={...savedFilters,[name.trim()]:{search,phase,plan}};setSavedFilters(next);localStorage.setItem('platform-tenant-filters',JSON.stringify(next))};
+  const exportCsv=async()=>{try{const all:Row[]=[];for(let offset=0;offset<100000;offset+=200){const batch=await call<Row[]>('tenants',{...applied,limit:200,offset});all.push(...batch);if(batch.length<200)break}const quote=(x:unknown)=>'"'+String(x??'').replace(/[\r\n]+/g,' ').replace(/"/g,'""')+'"';const csv=['Организация,Адрес страницы,Владелец,Тариф,Статус,Окончание',...all.map(r=>[r.name,r.slug,r.owner_email,r.plan_code,r.phase,r.ends_at].map(quote).join(','))].join('\r\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));a.download='organizations.csv';a.click();URL.revokeObjectURL(a.href)}catch(e){setMsg(errText(e))}};
   return (<>
     <form className="row wrap" onSubmit={(e) => { e.preventDefault(); setApplied({ search, phase, plan }); }}>
-      <input className="field" placeholder="Название, slug, email" value={search} onChange={(e) => setSearch(e.target.value)} />
+      <input className="field" placeholder="Название, адрес страницы или почта владельца" value={search} onChange={(e) => setSearch(e.target.value)} />
       <select className="field" value={phase} onChange={(e) => setPhase(e.target.value)}><option value="">Все статусы</option>{Object.entries(PHASE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
       <select className="field" value={plan} onChange={(e) => setPlan(e.target.value)}><option value="">Все тарифы</option><option>START</option><option>PRO</option><option>LEGACY</option></select>
-      <button className="btn inline">Найти</button></form>
+      <button className="btn inline">Найти</button><button type="button" className="pf-action-secondary" onClick={saveFilter}>Сохранить условия поиска</button><button type="button" className="pf-action-secondary" onClick={()=>void exportCsv()}>Скачать таблицу Excel</button></form>
+    {Object.keys(savedFilters).length>0&&<label className="pf-label">Сохранённые фильтры<select className="field" value="" onChange={e=>{const v=savedFilters[e.target.value];if(v){setSearch(v.search);setPhase(v.phase);setPlan(v.plan);setApplied(v)}}}><option value="">Выбрать…</option>{Object.keys(savedFilters).map(n=><option key={n}>{n}</option>)}</select></label>}
     {msg && <p className="err">{msg}</p>}<State err={err} loading={loading && !data} />
-    {data && <Table head={['Организация', 'Владелец', 'Тариф', 'Статус', 'До', 'Действия']}>{data.map((r) => (
+    {data && <Table head={['Организация', 'Владелец', 'Тариф', 'Статус', 'До', 'Действия']}>{rows.map((r) => (
       <tr key={r.id}><td><button className="pf-link" onClick={() => onOpen(r.id)}>{r.name ?? r.slug}</button><br /><span className="muted small">{r.slug}</span></td>
         <td>{r.owner_email ?? '—'}</td><td>{r.plan_code ?? '—'}</td><td><Badge phase={r.phase} /></td><td>{r.ends_at ? fmtDate(r.ends_at) : 'бессрочно'}</td>
         <td className="pf-actions">
           <a href={`/s/${r.slug}/`} target="_blank" rel="noreferrer">Сайт</a>
-          {r.subscription_id && ['trial', 'active', 'grace'].includes(r.phase) && <button onClick={() => act(() => runSubAction(r.subscription_id, 'suspend', { reason: 'Приостановлено администратором' }))}>Приостановить</button>}
+          {r.owner_email && <button onClick={() => act(() => call('resend_invite',{email:r.owner_email,slug:r.slug}))}>Приглашение</button>}
           {r.subscription_id && ['suspended', 'expired'].includes(r.phase) && <button onClick={() => act(() => resumeFlow(r.subscription_id))}>Возобновить</button>}
         </td></tr>))}</Table>}
+    {data&&(rows.length>0||page>0)&&<nav className="admin-service-pagination" aria-label="Организации"><button className="admin-page-button" disabled={page===0||loading} onClick={()=>setPage(page-1)}>Назад</button><span className="muted small">Страница <b>{page+1}</b></span><button className="admin-page-button" disabled={!hasNext||loading} onClick={()=>setPage(page+1)}>Далее</button></nav>}
   </>);
 }
 
@@ -292,7 +316,7 @@ function subscriptionEventDetail(e:Row){
 
 function TenantPlanOverrides({tenantId,access,usage,onSaved}:{tenantId:string;access:Row;usage:Row;onSaved:()=>void}){
   const limitFields:[string,string][]=[['employees','Сотрудники'],['services','Услуги'],['branches','Филиалы'],['bookings_per_month','Записи в месяц']];
-  const featureFields:[string,string][]=[['telegram','Telegram'],['export','Экспорт ZIP'],['reviews','Отзывы']];
+  const featureFields:[string,string][]=[['telegram','Уведомления в Telegram'],['export','Скачивание копии данных'],['reviews','Отзывы клиентов']];
   const [limits,setLimits]=useState<Row>({}); const [unlimited,setUnlimited]=useState<Row>({}); const [features,setFeatures]=useState<Row>({}); const [reason,setReason]=useState(''); const [msg,setMsg]=useState(''); const [busy,setBusy]=useState(false);
   useEffect(()=>{const overrides=access?.override??{};const rawLimits=overrides.limits??{};setLimits(Object.fromEntries(limitFields.map(([key])=>[key,rawLimits[key]==null?'':String(rawLimits[key])])));setUnlimited(Object.fromEntries(limitFields.map(([key])=>[key,key in rawLimits&&rawLimits[key]===null])));setFeatures(Object.fromEntries(featureFields.map(([key])=>[key,typeof overrides.features?.[key]==='boolean'?String(overrides.features[key]):'inherit'])));setReason('')},[access]);
   const save=async(reset=false)=>{if(reason.trim().length<5){setMsg('Укажите причину (не менее 5 символов).');return}setBusy(true);setMsg('');try{const lim=reset?{}:Object.fromEntries(limitFields.filter(([key])=>unlimited[key]||String(limits[key]??'').trim()!=='').map(([key])=>[key,unlimited[key]?null:Number(limits[key])]));const flags=reset?{}:Object.fromEntries(featureFields.filter(([key])=>features[key]&&features[key]!=='inherit').map(([key])=>[key,features[key]==='true']));await call('tenant_limits_set',{tenant_id:tenantId,limits:lim,features:flags,reason:reason.trim()});setMsg(reset?'Исключения сброшены.':'Индивидуальные лимиты сохранены.');setReason('');onSaved()}catch(e){setMsg(errText(e))}finally{setBusy(false)}};
@@ -307,19 +331,15 @@ function TenantPlanOverrides({tenantId,access,usage,onSaved}:{tenantId:string;ac
   </section>
 }
 
-const CASE_CATEGORY: Record<string,string> = { support:'Поддержка', billing:'Биллинг', technical:'Технический вопрос', other:'Другое' };
-const CASE_STATUS: Record<string,string> = { open:'Открыто', in_progress:'В работе', resolved:'Решено' };
 function TenantSupportPanel({tenantId}:{tenantId:string}){
   const {data,err,loading,reload}=useLoad<Row>('tenant_support',{tenant_id:tenantId},[tenantId]);
-  const [note,setNote]=useState(''),[subject,setSubject]=useState(''),[category,setCategory]=useState('support'),[message,setMessage]=useState(''),[busy,setBusy]=useState(false),[msg,setMsg]=useState('');
+  const [note,setNote]=useState(''),[busy,setBusy]=useState(false),[msg,setMsg]=useState('');
   const submit=async(action:string,body:Row)=>{setBusy(true);setMsg('');try{await call(action,{tenant_id:tenantId,...body});await reload();return true}catch(e){setMsg(errText(e));return false}finally{setBusy(false)}};
-  return <section className="card col"><div><h3>Внутренние заметки и обращения</h3><p className="muted small">Видно только платформенным администраторам. Владелец организации эти записи не видит.</p></div>
+  return <section className="card col"><div><h3>Внутренние заметки</h3><p className="muted small">Заметки видны только платформенным администраторам. Тикеты находятся в отдельной вкладке «Поддержка».</p></div>
     <State err={err} loading={loading}/>
-    <div className="pf-support-grid"><div className="col"><h4>Добавить заметку</h4><textarea className="field" rows={3} maxLength={3000} value={note} onChange={e=>setNote(e.target.value)} placeholder="Внутренняя заметка для команды Servio"/><button className="btn" disabled={busy||!note.trim()} onClick={async()=>{if(await submit('tenant_note_add',{body:note.trim()}))setNote('')}}>{busy?'Сохраняем…':'Сохранить заметку'}</button>
+    <div className="col"><h4>Добавить заметку</h4><textarea className="field" rows={3} maxLength={3000} value={note} onChange={e=>setNote(e.target.value)} placeholder="Внутренняя заметка для команды Servio"/><button className="btn" disabled={busy||!note.trim()} onClick={async()=>{if(await submit('tenant_note_add',{body:note.trim()}))setNote('')}}>{busy?'Сохраняем…':'Сохранить заметку'}</button>
       <div className="pf-support-list">{(data?.notes??[]).map((item:Row)=><article className="pf-event" key={item.id}><div className="row between wrap"><b>{item.created_by_email}</b><time className="muted small">{fmtDateTime(item.created_at)}</time></div><p>{item.body}</p></article>)}{data&&!data.notes?.length&&<p className="muted small">Заметок пока нет.</p>}</div>
-    </div><div className="col"><h4>Новое обращение</h4><input className="field" maxLength={200} value={subject} onChange={e=>setSubject(e.target.value)} placeholder="Краткая тема обращения"/><select className="field" value={category} onChange={e=>setCategory(e.target.value)}>{Object.entries(CASE_CATEGORY).map(([key,label])=><option value={key} key={key}>{label}</option>)}</select><textarea className="field" rows={2} maxLength={3000} value={message} onChange={e=>setMessage(e.target.value)} placeholder="Кратко: о чём договорились или что проверили"/><button className="btn" disabled={busy||subject.trim().length<3} onClick={async()=>{if(await submit('tenant_case_create',{subject:subject.trim(),category,message:message.trim()})){setSubject('');setMessage('')}}}>Создать обращение</button>
-      <div className="pf-support-list">{(data?.cases??[]).map((item:Row)=>{const history=(data?.case_events??[]).filter((event:Row)=>event.case_id===item.id).sort((a:Row,b:Row)=>new Date(a.created_at).getTime()-new Date(b.created_at).getTime());return <article className="pf-event" key={item.id}><div className="row between wrap"><div><b>{item.subject}</b><span className="muted small"> · {CASE_CATEGORY[item.category]??'Другое'}</span></div><span className="pf-badge">{CASE_STATUS[item.status]??item.status}</span></div><p className="muted small">Создал: {item.created_by_email} · Обновлено {fmtDateTime(item.updated_at)}</p><div className="pf-case-history">{history.map((event:Row)=><div key={event.id} className="muted small"><b>{event.actor_email}</b> · {fmtDateTime(event.created_at)} · {CASE_STATUS[event.status]??event.status}{event.message?` — ${event.message}`:''}</div>)}</div><div className="row wrap"><select aria-label="Статус обращения" className="field" defaultValue={item.status} onChange={e=>void submit('tenant_case_update',{case_id:item.id,status:e.target.value})}>{Object.entries(CASE_STATUS).map(([key,label])=><option value={key} key={key}>{label}</option>)}</select></div></article>})}{data&&!data.cases?.length&&<p className="muted small">Обращений пока нет.</p>}</div>
-    </div></div>{msg&&<p className="err" role="status">{msg}</p>}
+    </div>{msg&&<p className="err" role="status">{msg}</p>}
   </section>
 }
 
@@ -330,21 +350,18 @@ function TenantCard({ id, role, onBack }: { id: string; role: string; onBack: ()
   useEffect(()=>setEventPage(0),[id]);
   const [msg, setMsg] = useState(''); const [reason,setReason]=useState(''); const [impBusy,setImpBusy]=useState(false);
   const [lifeReason,setLifeReason]=useState('');
+  const [subModal,setSubModal]=useState<{type:string;subscription:Row}|null>(null);
   if (!d) return <><button className="back" onClick={onBack}>← Назад</button><State err={err} loading={loading} /></>;
   const t = d.tenant as Row; const subs: Row[] = d.subscriptions; const cur = subs.find((s) => ['trial', 'active', 'grace', 'suspended'].includes(s.status)) ?? subs[0];
   const exportData = async () => {
     setMsg('');
-    const { data, error } = await supabase.functions.invoke('tenant-export', { body: { tenant_id: id } });
-    if (error || !(data instanceof Blob)) { setMsg('Не удалось выгрузить данные.'); return; }
-    const a = document.createElement('a'); a.href = URL.createObjectURL(data); a.download = `${t.slug}-export.zip`; a.click(); URL.revokeObjectURL(a.href);
+    try{const data=await platformFile('export',{tenant_id:id});const a = document.createElement('a'); a.href = URL.createObjectURL(data); a.download = `${t.slug}-export.zip`; a.click(); URL.revokeObjectURL(a.href)}catch{setMsg('Не удалось выгрузить данные.')}
   };
   const act = async (fn: () => Promise<unknown>) => { setMsg(''); try { await fn(); await reload(); } catch (e) { setMsg(errText(e)); } };
   const startImpersonation = async (e: FormEvent) => {
     e.preventDefault(); setMsg(''); setImpBusy(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('unauthorized');
-      const response = await fetch('/api/owner?action=impersonate_start',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json',Authorization:`Bearer ${session.access_token}`},body:JSON.stringify({tenant_id:id,reason:reason.trim()})});
+      const response = await fetch('/api/platform?action=impersonate_start',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({tenant_id:id,reason:reason.trim()})});
       const payload=await response.json().catch(()=>({}));
       if(!response.ok) throw new Error(String(payload.error??'operation_failed'));
       window.location.assign(`/s/${payload.tenant_slug}/owner`);
@@ -352,8 +369,9 @@ function TenantCard({ id, role, onBack }: { id: string; role: string; onBack: ()
   };
   return (<>
     <button className="back" onClick={onBack}>← Назад</button>
+    {subModal&&<SubscriptionActionModal type={subModal.type} subscription={subModal.subscription} initialPlan={cur?.plan_code??'START'} initialDate={cur?.ends_at?.slice(0,10)??''} onClose={()=>setSubModal(null)} onSubmit={async values=>{await act(()=>runSubAction(subModal.subscription.id,subModal.type,values));setSubModal(null)}}/>}
     <section className="card"><div className="row between wrap"><div><h2>{t.config?.name ?? t.slug}</h2><p className="muted small">{t.slug} · {t.timezone} · создана {fmtDate(t.created_at)} · доступ: {d.access_state}</p>{t.archived_at&&<p className="err small">В архиве с {fmtDate(t.archived_at)}{t.deletion_requested_at?` · удаление запрошено, хранение до ${fmtDate(new Date(new Date(t.deletion_requested_at).getTime()+30*86400000).toISOString())}`:''}</p>}</div>
-      <div className="row wrap"><a className="btn ghost inline" href={`/s/${t.slug}/`} target="_blank" rel="noreferrer">Публичная страница</a><button className="btn ghost inline" onClick={exportData}>Экспорт данных</button></div></div>
+      <div className="row wrap"><a className="btn ghost inline" href={`/s/${t.slug}/`} target="_blank" rel="noreferrer">Публичная страница</a>{t.owner_email&&<button className="btn ghost inline" onClick={()=>void act(()=>call('resend_invite',{email:t.owner_email,slug:t.slug}))}>Отправить приглашение владельцу</button>}<button className="btn ghost inline" onClick={exportData}>Экспорт данных</button></div></div>
       {msg && <p className="err">{msg}</p>}
       {role==='owner'&&<div className="col"><label className="pf-label">Причина действия с организацией<input className="field" minLength={5} maxLength={500} value={lifeReason} onChange={e=>setLifeReason(e.target.value)} placeholder="Обязательная причина (не менее 5 символов)"/></label><div className="row wrap"><button className="btn ghost" disabled={lifeReason.trim().length<5} onClick={()=>void act(()=>call('tenant_lifecycle',{tenant_id:id,lifecycle_action:t.archived_at?'restore':'archive',reason:lifeReason.trim()}))}>{t.archived_at?'Восстановить':'В архив'}</button><button className="btn danger" disabled={lifeReason.trim().length<5||!!t.deletion_requested_at} onClick={()=>{if(window.confirm('Удаление будет запрошено с 30-дневным сроком хранения. Данные сейчас не стираются. Продолжить?'))void act(()=>call('tenant_lifecycle',{tenant_id:id,lifecycle_action:'delete_request',reason:lifeReason.trim()}))}}>Запросить удаление (30 дней)</button></div></div>}
       <p className="muted small">Сотрудники: {d.counters.staff} · Услуги: {d.counters.services} · Записи за 30 дней: {d.counters.bookings_30d}</p></section>
@@ -362,12 +380,13 @@ function TenantCard({ id, role, onBack }: { id: string; role: string; onBack: ()
       {cur ? <><p><Badge phase={cur.phase} /> {cur.plan_code} · {fmtDate(cur.starts_at)} — {cur.ends_at ? fmtDate(cur.ends_at) : 'бессрочно'}{cur.grace_ends_at ? ` (grace до ${fmtDate(cur.grace_ends_at)})` : ''}</p>
         <div className="pf-actions">
           {cur.ends_at && <button onClick={() => act(() => runSubAction(cur.id, 'extend', { months: 1 }))}>Продлить на 1 мес.</button>}
-          {['trial', 'active', 'grace'].includes(cur.phase) && <button onClick={() => {const why=window.prompt('Причина приостановки (обязательно):');if(why?.trim())void act(() => runSubAction(cur.id, 'suspend', { reason: why.trim() }))}}>Приостановить</button>}
+          {['trial', 'active', 'grace'].includes(cur.phase) && <button onClick={() => setSubModal({type:'suspend',subscription:cur})}>Приостановить</button>}
           {['suspended', 'expired'].includes(cur.phase) && <button onClick={() => act(() => resumeFlow(cur.id))}>Возобновить</button>}
-          <button onClick={() => { const code = window.prompt('Код тарифа (START / PRO):'); if (code) void act(() => runSubAction(cur.id, 'change_plan', { plan_code: code.trim().toUpperCase() })); }}>Сменить тариф</button>
-          {['trial','active','grace','suspended'].includes(cur.status)&&<button className="danger" onClick={()=>{const why=window.prompt('Причина отмены подписки (обязательно):');if(why?.trim())void act(()=>runSubAction(cur.id,'cancel',{reason:why.trim()}))}}>Отменить подписку</button>}
+          <button onClick={() => setSubModal({type:'change_plan',subscription:cur})}>Сменить тариф</button>
+          {['trial','active','grace','suspended'].includes(cur.status)&&<button className="danger" onClick={()=>setSubModal({type:'cancel',subscription:cur})}>Отменить подписку</button>}
         </div></> : <p className="muted">Подписки нет.</p>}</section>
     {role==='owner'&&<TenantPlanOverrides tenantId={id} access={d.plan_access??{}} usage={d.plan_usage??{}} onSaved={()=>void reload()}/>}
+    {role==='owner'&&<TenantFeatureFlags tenantId={id}/>}
     {['owner','support'].includes(role)&&<TenantSupportPanel tenantId={id}/>}
     <section className="card"><h3>Владельцы и сотрудники</h3><Table head={['Email', 'Роль', 'Последний вход']}>{(d.members as Row[]).map((m) => <tr key={m.user_id}><td>{m.email}</td><td>{m.role}</td><td>{fmtDateTime(m.last_sign_in_at)}</td></tr>)}</Table></section>
     <section className="card"><h3>История подписок</h3><Table head={['Тариф', 'Статус', 'Начало', 'Окончание']}>{subs.map((s) => <tr key={s.id}><td>{s.plan_code}</td><td><Badge phase={s.phase} /></td><td>{fmtDate(s.starts_at)}</td><td>{s.ends_at ? fmtDate(s.ends_at) : '—'}</td></tr>)}</Table></section>
@@ -395,14 +414,14 @@ function CreateTenant({ onCreated }: { onCreated: (id: string) => void }) {
   const input = (label: string, k: string, type = 'text', ph = '') => <label className="pf-label">{label}<input className="field" type={type} placeholder={ph} value={f[k]} onChange={(e) => set(k, e.target.value)} required={['name', 'slug', 'owner_email'].includes(k)} /></label>;
   return (
     <form className="card col pf-form" onSubmit={submit}><h2>Новая организация</h2>
-      {input('Название', 'name')}{input('Slug (адрес /s/slug)', 'slug', 'text', 'my-studio')}{input('Тип бизнеса', 'business_type')}
-      {input('Имя владельца', 'owner_name')}{input('Email владельца', 'owner_email', 'email')}{input('Телефон', 'phone', 'tel')}{input('БИН/ИИН (для защиты trial)', 'bin_iin')}{input('Адрес', 'address')}
+      {input('Название студии или компании', 'name')}{input('Адрес страницы', 'slug', 'text', 'my-studio')}{input('Чем занимается организация', 'business_type')}
+      {input('Имя владельца', 'owner_name')}{input('Почта владельца', 'owner_email', 'email')}{input('Телефон', 'phone', 'tel')}{input('БИН/ИИН', 'bin_iin')}{input('Адрес организации', 'address')}
       {input('Часовой пояс', 'timezone')}{input('Валюта', 'currency')}
       <label className="pf-label">Тариф<select className="field" value={f.plan_code} onChange={(e) => set('plan_code', e.target.value)}><option>START</option><option>PRO</option></select></label>
       <label className="pf-check"><input type="checkbox" checked={f.trial} onChange={(e) => set('trial', e.target.checked)} /> Пробный период (длительность из настроек)</label>
       {input('Дата старта подписки', 'start', 'date')}
       {!f.trial && input('Длительность, месяцев', 'months', 'number')}
-      <label className="pf-label">Услуги (по строке: название; цена; минуты). Можно оставить пустым<textarea className="field" rows={4} placeholder={'Мойка; 3500; 60'} value={f.services} onChange={(e) => set('services', e.target.value)} /></label>
+      <label className="pf-label">Услуги организации (каждая с новой строки: название; цена; длительность в минутах). Поле можно оставить пустым<textarea className="field" rows={4} placeholder={'Мойка; 3500; 60'} value={f.services} onChange={(e) => set('services', e.target.value)} /></label>
       {err && <p className="err">{err}</p>}{ok && <p>{ok}</p>}
       <button className="btn" disabled={busy}>{busy ? 'Создаём…' : 'Создать'}</button></form>);
 }
@@ -410,19 +429,21 @@ function CreateTenant({ onCreated }: { onCreated: (id: string) => void }) {
 /* ----------------------------------------------------------------------------------- подписки */
 function Subscriptions({ onOpen }: { onOpen: (id: string) => void }) {
   const [phase, setPhase] = useState('');
+  const [subModal,setSubModal]=useState<{type:string;subscription:Row}|null>(null);
   const { data, err, loading, reload } = useLoad<Row[]>('subscriptions', { phase }, [phase]);
   const [msg, setMsg] = useState('');
   const act = async (fn: () => Promise<unknown>) => { setMsg(''); try { await fn(); await reload(); } catch (e) { setMsg(errText(e)); } };
   return (<>
+    {subModal&&<SubscriptionActionModal type={subModal.type} subscription={subModal.subscription} initialPlan={subModal.subscription.plan_code} initialDate={subModal.subscription.ends_at?.slice(0,10)??''} onClose={()=>setSubModal(null)} onSubmit={async values=>{await act(()=>runSubAction(subModal.subscription.id,subModal.type,values));setSubModal(null)}}/>}
     <select className="field" value={phase} onChange={(e) => setPhase(e.target.value)}><option value="">Все статусы</option>{Object.entries(PHASE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
     {msg && <p className="err">{msg}</p>}<State err={err} loading={loading && !data} />
     {data && <Table head={['Организация', 'Тариф', 'Цена по подписке', 'Статус', 'Начало', 'Окончание', 'Действия']}>{data.map((s) => (
       <tr key={s.id}><td><button className="pf-link" onClick={() => onOpen(s.tenant_id)}>{s.name ?? s.slug}</button></td><td>{s.plan_code}</td><td>{kzt(s.price_kzt)} / {s.price_period_months} мес.</td><td><Badge phase={s.phase} /></td><td>{fmtDate(s.starts_at)}</td><td>{s.ends_at ? fmtDate(s.ends_at) : 'бессрочно'}</td>
         <td className="pf-actions">
           {s.ends_at && <button onClick={() => act(() => runSubAction(s.id, 'extend', { months: 1 }))}>+1 мес.</button>}
-          <button onClick={() => { const c = window.prompt('Код тарифа (START / PRO):'); if (c) void act(() => runSubAction(s.id, 'change_plan', { plan_code: c.trim().toUpperCase() })); }}>Тариф</button>
-          <button onClick={() => { const d = window.prompt('Новая дата окончания (ГГГГ-ММ-ДД):', s.ends_at?.slice(0, 10)); if (d) void act(() => runSubAction(s.id, 'set_dates', { ends_at: iso(d) })); }}>Даты</button>
-          {['trial', 'active', 'grace'].includes(s.phase) && <button onClick={() => act(() => runSubAction(s.id, 'suspend', { reason: 'Приостановлено администратором' }))}>Приостановить</button>}
+          <button onClick={() => setSubModal({type:'change_plan',subscription:s})}>Тариф</button>
+          <button onClick={() => setSubModal({type:'set_dates',subscription:s})}>Даты</button>
+          {['trial', 'active', 'grace'].includes(s.phase) && <button onClick={() => setSubModal({type:'suspend',subscription:s})}>Приостановить</button>}
           {['suspended', 'expired'].includes(s.phase) && <button onClick={() => act(() => resumeFlow(s.id))}>Возобновить</button>}
         </td></tr>))}</Table>}</>);
 }
@@ -437,22 +458,18 @@ function Plans() {
     {data?.map((p) => <PlanRow key={p.id} p={p} onSave={(patch) => save(p, patch)} />)}</>);
 }
 function PlanRow({ p, onSave }: { p: Row; onSave: (patch: Row) => void }) {
-  const [name, setName] = useState<string>(p.name); const [price, setPrice] = useState<string>(String(p.price_kzt)); const [desc, setDesc] = useState<string>(p.description ?? '');
+  const [name, setName] = useState<string>(p.name); const [price, setPrice] = useState<string>(String(p.price_kzt)); const [desc, setDesc] = useState<string>(p.description ?? ''); const [editing,setEditing]=useState(false); const [busy,setBusy]=useState(false);
   const [features, setFeatures] = useState<string>((p.features as string[]).join(', '));
   const [limits,setLimits]=useState<Row>(p.limits??{}); const [featureAccess,setFeatureAccess]=useState<Row>(p.feature_access??{telegram:true,export:true,reviews:true});
   const setLimit=(key:string,value:string)=>setLimits((prev:Row)=>({...prev,[key]:value===''?null:Number(value)}));
   const limitFields:[string,string][]=[['employees','Сотрудники'],['services','Услуги'],['branches','Филиалы'],['bookings_per_month','Записи в месяц']];
   const accessFields:[string,string][]=[['telegram','Telegram'],['export','Экспорт ZIP'],['reviews','Отзывы']];
-  return (
-    <section className="card col"><div className="row between"><b>{p.code}</b><label className="pf-check"><input type="checkbox" checked={p.is_active} onChange={(e) => onSave({ is_active: e.target.checked })} /> Активен</label></div>
-      <input className="field" value={name} onChange={(e) => setName(e.target.value)} aria-label="Название" />
-      <input className="field" type="number" min={0} value={price} onChange={(e) => setPrice(e.target.value)} aria-label="Цена, ₸" />
-      <textarea className="field" rows={2} value={desc} onChange={(e) => setDesc(e.target.value)} aria-label="Описание" />
-      <input className="field" value={features} onChange={(e) => setFeatures(e.target.value)} aria-label="Возможности через запятую" />
-      <b>Лимиты тарифа</b><p className="muted small">Пустое значение означает «без ограничений». Для тарифа START и PRO ограничения проверяются при добавлении.</p>
-      <div className="pf-plan-limits">{limitFields.map(([key,label])=><label key={key} className="pf-label">{label}<input className="field" type="number" min={1} step={1} value={limits[key]??''} onChange={e=>setLimit(key,e.target.value)} placeholder="Без ограничений"/></label>)}</div>
-      <b>Доступ к функциям</b><div className="row wrap">{accessFields.map(([key,label])=><label key={key} className="pf-check"><input type="checkbox" checked={featureAccess[key]!==false} onChange={e=>setFeatureAccess((prev:Row)=>({...prev,[key]:e.target.checked}))}/>{label}</label>)}</div>
-      <button className="btn inline" onClick={() => onSave({ name, price_kzt: Number(price), description: desc, features: features.split(',').map((x) => x.trim()).filter(Boolean), limits:Object.fromEntries(limitFields.map(([key])=>[key,limits[key]===''?null:(limits[key]===undefined?(p.limits?.[key]??null):limits[key])])),feature_access:featureAccess })}>Сохранить</button></section>);
+  const patch=()=>({name:name.trim(),price_kzt:Number(price),description:desc.trim(),features:features.split(',').map((x)=>x.trim()).filter(Boolean),limits:Object.fromEntries(limitFields.map(([key])=>[key,limits[key]===''?null:(limits[key]===undefined?(p.limits?.[key]??null):Number(limits[key]))])),feature_access:featureAccess});
+  const submit=async(e:FormEvent)=>{e.preventDefault();if(!name.trim()||!Number.isFinite(Number(price))||Number(price)<0||!Number.isInteger(Number(price)))return;setBusy(true);try{await onSave(patch());setEditing(false)}finally{setBusy(false)}};
+  return <>
+    <section className="card col"><div className="row between wrap"><div><b>{p.code} · {name}</b><p className="muted small">{Number(price).toLocaleString('ru-RU')} ₸ / {p.period_months} мес. · {p.is_active?'Активен':'Выключен'}</p></div><div className="row wrap"><label className="pf-check"><input type="checkbox" checked={p.is_active} onChange={(e) => onSave({ is_active: e.target.checked })} /> Активен</label><button className="btn inline" onClick={()=>setEditing(true)}>Изменить тариф</button></div></div></section>
+    {editing&&<div className="pf-modal-backdrop"><form className="pf-modal card col" role="dialog" aria-modal="true" aria-labelledby={`plan-title-${p.id}`} onSubmit={e=>void submit(e)}><h2 id={`plan-title-${p.id}`}>Изменить тариф {p.code}</h2><label className="pf-label">Название<input className="field" required maxLength={100} value={name} onChange={e=>setName(e.target.value)}/></label><label className="pf-label">Цена, ₸ за период<input className="field" type="number" min={0} step={1} required value={price} onChange={e=>setPrice(e.target.value)}/></label><label className="pf-label">Описание<textarea className="field" rows={2} maxLength={1000} value={desc} onChange={e=>setDesc(e.target.value)}/></label><label className="pf-label">Возможности через запятую<input className="field" maxLength={1000} value={features} onChange={e=>setFeatures(e.target.value)}/></label><b>Лимиты тарифа</b><p className="muted small">Пустое значение означает «без ограничений».</p><div className="pf-plan-limits">{limitFields.map(([key,label])=><label key={key} className="pf-label">{label}<input className="field" type="number" min={1} step={1} value={limits[key]??''} onChange={e=>setLimit(key,e.target.value)} placeholder="Без ограничений"/></label>)}</div><b>Доступ к функциям</b><div className="row wrap">{accessFields.map(([key,label])=><label key={key} className="pf-check"><input type="checkbox" checked={featureAccess[key]!==false} onChange={e=>setFeatureAccess((prev:Row)=>({...prev,[key]:e.target.checked}))}/>{label}</label>)}</div><div className="row wrap"><button className="pf-action-primary" disabled={busy||!name.trim()||!Number.isInteger(Number(price))||Number(price)<0}>{busy?'Сохраняем…':'Сохранить тариф'}</button><button type="button" className="pf-action-secondary" disabled={busy} onClick={()=>setEditing(false)}>Отмена</button></div></form></div>}
+  </>;
 }
 
 function BillingDocuments(){
@@ -468,8 +485,11 @@ function BillingDocuments(){
 
 /* ----------------------------------------------------------------------------------- платежи */
 function Payments() {
-  const { data, err, loading, reload } = useLoad<Row[]>('payments');
-  const tenants = useLoad<Row[]>('tenants', { limit: 200 });
+  const [page,setPage]=useState(0); const [status,setStatus]=useState('');const pageSize=50;
+  useEffect(()=>setPage(0),[status]);
+  const { data, err, loading, reload } = useLoad<Row[]>('payments',{status:status||undefined,limit:pageSize+1,offset:page*pageSize},[page,status]);
+  const rows=(data??[]).slice(0,pageSize); const hasNext=(data?.length??0)>pageSize;
+  const tenants = useAllTenants();
   const [msg, setMsg] = useState('');
   const today = new Date().toISOString().slice(0, 10);
   const [f, setF] = useState<Row>({ tenant_id: '', amount_kzt: '', period_start: today, period_end: '', method: 'kaspi', received_at: today, note: '' });
@@ -482,6 +502,7 @@ function Payments() {
     } catch (e2) { setMsg(errText(e2)); } finally { setBusy(false); }
   };
   const act = async (fn: () => Promise<unknown>) => { setMsg(''); try { await fn(); await reload(); } catch (e) { setMsg(errText(e)); } };
+  const exportCsv=async()=>{try{const all:Row[]=[];for(let offset=0;offset<100000;offset+=200){const batch=await call<Row[]>('payments',{status:status||undefined,limit:200,offset});all.push(...batch);if(batch.length<200)break}const quote=(x:unknown)=>'"'+String(x??'').replace(/[\r\n]+/g,' ').replace(/"/g,'""')+'"';const csv=['Дата,Организация,Slug,Сумма KZT,Период с,Период по,Метод,Статус',...all.map(p=>[p.received_at,p.name,p.slug,p.amount_kzt,p.period_start,p.period_end,p.method,p.status].map(quote).join(','))].join('\r\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));a.download='payments.csv';a.click();URL.revokeObjectURL(a.href)}catch(e){setMsg(errText(e))}};
   return (<>
     <form className="card col pf-form" onSubmit={create}><h2>Новый платёж</h2>
       <select className="field" value={f.tenant_id} onChange={(e) => setF({ ...f, tenant_id: e.target.value })} required><option value="">Организация…</option>{tenants.data?.map((t) => <option key={t.id} value={t.id}>{t.name ?? t.slug}</option>)}</select>
@@ -491,21 +512,37 @@ function Payments() {
       <select className="field" value={f.method} onChange={(e) => setF({ ...f, method: e.target.value })}>{Object.entries(METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
       <label className="pf-label">Дата получения<input className="field" type="date" value={f.received_at} onChange={(e) => setF({ ...f, received_at: e.target.value })} required /></label>
       <button className="btn" disabled={busy}>Создать (статус «Ожидает»)</button></form>
+    <div className="row wrap"><select className="field" aria-label="Статус платежа" value={status} onChange={e=>setStatus(e.target.value)}><option value="">Все платежи</option><option value="pending">Ожидает</option><option value="paid">Оплачен</option><option value="failed">Не прошёл</option><option value="refunded">Возврат</option></select><button className="pf-action-secondary" onClick={()=>void exportCsv()}>Скачать таблицу платежей</button></div>
     {msg && <p className="err">{msg}</p>}<State err={err} loading={loading && !data} />
-    {data && <Table head={['Дата', 'Организация', 'Сумма', 'Период', 'Способ', 'Статус', 'Действия']}>{data.map((p) => (
+    {data && <Table head={['Дата', 'Организация', 'Сумма', 'Период', 'Способ', 'Статус', 'Действия']}>{rows.map((p) => (
       <tr key={p.id}><td>{fmtDate(p.received_at)}</td><td>{p.name ?? p.slug}</td><td>{kzt(p.amount_kzt)}</td><td>{fmtDate(p.period_start)} — {fmtDate(p.period_end)}</td><td>{METHODS[p.method] ?? p.method}</td>
         <td><Badge phase={p.status} />{p.refund_reason && <div className="muted small">{p.refund_reason}</div>}</td>
         <td className="pf-actions">
           {p.status === 'pending' && <button onClick={() => { if (window.confirm(`Подтвердить получение ${kzt(p.amount_kzt)}?`)) void act(() => call('payment_confirm', { payment_id: p.id })); }}>Подтвердить</button>}
           {p.status === 'pending' && <button onClick={() => act(() => call('payment_fail', { payment_id: p.id }))}>Не прошёл</button>}
-          {p.status === 'paid' && <button onClick={() => { const r = window.prompt('Причина возврата:'); if (r) void act(() => call('payment_refund', { payment_id: p.id, reason: r })); }}>Возврат</button>}
-        </td></tr>))}</Table>}</>);
+          {p.status === 'paid' && <button onClick={() => { const r = window.prompt('Причина возврата (обязательно):'); if (r?.trim() && window.confirm('Подтвердить возврат ' + kzt(p.amount_kzt) + '?')) void act(() => call('payment_refund', { payment_id: p.id, reason: r.trim() })); }}>Возврат</button>}
+        </td></tr>))}</Table>}{data&&(rows.length>0||page>0)&&<nav className='admin-service-pagination' aria-label='Платежи'><button className='admin-page-button' disabled={page===0||loading} onClick={()=>setPage(page-1)}>Назад</button><span className='muted small'>Страница <b>{page+1}</b></span><button className='admin-page-button' disabled={!hasNext||loading} onClick={()=>setPage(page+1)}>Далее</button></nav>}</>);
 }
 
+function TenantFeatureFlags({tenantId}:{tenantId:string}){
+  const {data,err,loading,reload}=useLoad<Row[]>('tenant_flags_get',{tenant_id:tenantId},[tenantId]);
+  const [key,setKey]=useState('');const [enabled,setEnabled]=useState(true);const [msg,setMsg]=useState('');
+  const save=async(flag_key:string,value:boolean)=>{setMsg('');try{await call('tenant_flags_set',{tenant_id:tenantId,flag_key,enabled:value});await reload()}catch(e){setMsg(errText(e))}};
+  return <section className="card col"><h3>Дополнительные возможности</h3><p className="muted small">Можно включить пробные возможности отдельно для этой организации.</p><State err={err} loading={loading&&!data}/>{data?.map(f=><div className="row between wrap" key={f.flag_key}><code>{f.flag_key}</code><label className="pf-check"><input type="checkbox" checked={!!f.enabled} onChange={e=>void save(f.flag_key,e.target.checked)}/> Включена</label></div>)}<form className="row wrap" onSubmit={e=>{e.preventDefault();void save(key,enabled).then(()=>setKey(''))}}><input className="field" value={key} onChange={e=>setKey(e.target.value)} placeholder="Название возможности" pattern="[a-z][a-z0-9_]{1,63}" required/><label className="pf-check"><input type="checkbox" checked={enabled} onChange={e=>setEnabled(e.target.checked)}/> Включить</label><button className="btn" disabled={!key}>Сохранить</button></form>{msg&&<p className="err">{msg}</p>}</section>
+}
+function PlatformServiceAdmin(){
+  const announcements=useLoad<Row[]>('announcements');
+  const tenants=useAllTenants();
+  const [title,setTitle]=useState('');const [body,setBody]=useState('');const [audience,setAudience]=useState('all');const [tenantIds,setTenantIds]=useState<string[]>([]);const [startsAt,setStartsAt]=useState('');const [endsAt,setEndsAt]=useState('');const [msg,setMsg]=useState('');
+  const saveAnnouncement=async(e:FormEvent)=>{e.preventDefault();setMsg('');try{await call('announcement_save',{announcement:{title,body,audience,tenant_ids:tenantIds,starts_at:startsAt?new Date(startsAt).toISOString():new Date().toISOString(),ends_at:endsAt?new Date(endsAt).toISOString():null,is_active:true}});setTitle('');setBody('');setMsg('Объявление опубликовано.');await announcements.reload()}catch(e){setMsg(errText(e))}};
+  return <div className="col"><section className="card col"><div className="row between wrap"><div><h2>Автоматический статус</h2><p className="muted small">Сайт, API, база данных, авторизация и серверные функции проверяются автоматически каждые 30 секунд. Изменить эти статусы вручную нельзя.</p></div><a className="pf-action-secondary" href="/status" target="_blank" rel="noreferrer">Открыть страницу статуса</a></div></section>
+  <section className="card col"><h2>Объявления</h2><p className="muted small">Сообщите организациям о важных изменениях или плановых работах.</p><form className="col" onSubmit={saveAnnouncement}><input className="field" minLength={3} maxLength={180} value={title} onChange={e=>setTitle(e.target.value)} placeholder="Заголовок" required/><textarea className="field" rows={4} maxLength={5000} value={body} onChange={e=>setBody(e.target.value)} placeholder="Текст объявления" required/><select className="field" value={audience} onChange={e=>setAudience(e.target.value)}><option value="all">Всем организациям</option><option value="selected">Выбранным организациям</option></select>{audience==='selected'&&<select className="field" multiple size={6} value={tenantIds} onChange={e=>setTenantIds(Array.from(e.target.selectedOptions,o=>o.value))}>{tenants.data?.map(t=><option key={t.id} value={t.id}>{t.name??t.slug}</option>)}</select>}<div className="row wrap"><label className="pf-label">Начало<input className="field" type="datetime-local" value={startsAt} onChange={e=>setStartsAt(e.target.value)}/></label><label className="pf-label">Окончание<input className="field" type="datetime-local" value={endsAt} onChange={e=>setEndsAt(e.target.value)}/></label></div><button className="btn" disabled={audience==='selected'&&!tenantIds.length}>Опубликовать</button></form>{msg&&<p className="muted small" role="status">{msg}</p>}<State err={announcements.err} loading={announcements.loading&&!announcements.data}/>{announcements.data?.map(a=><article className="pf-event" key={a.id}><div className="row between wrap"><b>{a.title}</b><span className="pf-badge">{a.is_active?'Активно':'Выключено'}</span></div><p>{a.body}</p><p className="muted small">{a.audience==='all'?'Все организации':'Выбрано: '+(a.tenant_ids??[]).length} · {fmtDateTime(a.starts_at)}{a.ends_at?' — '+fmtDateTime(a.ends_at):''}</p></article>)}</section></div>
+}
 /* ----------------------------------------------------------------------------------- журнал, настройки */
 const ADMIN_ROLE: Record<string, string> = { owner: 'Владелец', support: 'Поддержка', finance: 'Финансы', read_only: 'Только чтение' };
 function Admins() {
   const { data, err, loading, reload } = useLoad<Row[]>('admins');
+  const logins=useLoad<Row[]>('admin_logins');
   const [email, setEmail] = useState(''); const [role, setRole] = useState('support'); const [msg, setMsg] = useState(''); const [busy, setBusy] = useState(false);
   const act = async (action: string, body: Row) => {
     setBusy(true); setMsg('');
@@ -515,7 +552,7 @@ function Admins() {
   };
   const add = async (e: FormEvent) => { e.preventDefault(); const result = await act('admin_add', { email: email.trim(), role }); if (result) { setEmail(''); setMsg(result.invite_sent ? 'Администратор добавлен, письмо для входа отправлено.' : result.created ? 'Администратор добавлен, но письмо не отправлено. Проверьте настройки почты.' : 'Существующий аккаунт добавлен как администратор.'); } };
   return <>
-    <div className="pf-dashboard-heading"><div><span className="pf-kicker">ДОСТУП К ПЛАТФОРМЕ</span><h2>Администраторы</h2><p className="muted">Назначайте сотрудникам минимально необходимую роль. Для нового аккаунта отправим письмо для входа.</p></div></div>
+    <div className="pf-dashboard-heading"><div><span className="pf-kicker">ДОСТУП К ПЛАТФОРМЕ</span><h2>Команда</h2><p className="muted">Добавляйте коллег и выбирайте, какие разделы будут им доступны.</p></div></div>
     <form className="card row wrap" onSubmit={add}><input className="field" type="email" placeholder="Email сотрудника" value={email} onChange={(e)=>setEmail(e.target.value)} required />
       <select className="field" value={role} onChange={(e)=>setRole(e.target.value)}>{Object.entries(ADMIN_ROLE).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select>
       <button className="pf-action-primary" disabled={busy}>Добавить администратора</button></form>
@@ -523,8 +560,9 @@ function Admins() {
     {data && <Table head={['Администратор','Роль','Статус','Добавлен','Действия']}>{data.map((a)=><tr key={a.user_id}>
       <td>{a.email}</td><td><select className="field" value={a.role} disabled={busy || !a.is_active} onChange={(e)=>void act('admin_update',{user_id:a.user_id,role:e.target.value})}>{Object.entries(ADMIN_ROLE).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></td>
       <td><Badge phase={a.is_active?'active':'suspended'} /></td><td>{fmtDate(a.created_at)}</td>
-      <td className="pf-actions">{a.is_active && <><button className="pf-action-secondary" disabled={busy} onClick={()=>{if(window.confirm(`Сбросить MFA для ${a.email}?`))void act('admin_reset_mfa',{user_id:a.user_id})}}>Сбросить MFA</button><button className="pf-action-secondary" disabled={busy} onClick={()=>{if(window.confirm(`Отключить администратора ${a.email}?`))void act('admin_disable',{user_id:a.user_id})}}>Отключить</button></>}</td>
+      <td className="pf-actions">{a.is_active && <><button className="pf-action-secondary" disabled={busy} onClick={()=>{if(window.confirm(`Сбросить дополнительную проверку входа для ${a.email}?`))void act('admin_reset_mfa',{user_id:a.user_id})}}>Сбросить проверку входа</button><button className="pf-action-secondary" disabled={busy} onClick={()=>{if(window.confirm(`Отключить доступ для ${a.email}?`))void act('admin_disable',{user_id:a.user_id})}}>Отключить</button></>}</td>
     </tr>)}</Table>}
+    <section className="card col"><h3>Последние входы в аккаунты команды</h3><State err={logins.err} loading={logins.loading&&!logins.data}/>{logins.data&&<Table head={['Время','Администратор','Адрес сети','Устройство']}>{logins.data.map(item=><tr key={item.id}><td>{fmtDateTime(item.signed_in_at)}</td><td>{item.email}</td><td>{item.ip_address??'—'}</td><td>{item.user_agent||'—'}</td></tr>)}</Table>}</section>
   </>;
 }
 
@@ -571,6 +609,42 @@ function platformAuditDetail(action:string,payload:Row){
   if(action==='owner.resend_invite')return `Приглашение отправлено на ${String(payload.email??'адрес владельца')}`;
   if(action==='impersonation.end'||action==='impersonation.expired')return 'Служебный сеанс завершён';
   return 'Изменения сохранены';
+}
+
+const TICKET_STATUS:Record<string,string>={open:'Открыт',in_progress:'В работе',resolved:'Решён'};
+const TICKET_TYPE:Record<string,string>={support:'Поддержка',billing:'Оплата и подписка',technical:'Техническая проблема',access:'Вход и доступ',booking:'Записи и расписание',feature:'Функция сервиса',other:'Другое'};
+const TICKET_SEVERITY:Record<string,string>={low:'Низкая',normal:'Обычная',high:'Высокая',urgent:'Критичная'};
+function SupportQueue(){
+  const [status,setStatus]=useState(''),[category,setCategory]=useState(''),[severity,setSeverity]=useState(''),[searchInput,setSearchInput]=useState(''),[search,setSearch]=useState(''),[page,setPage]=useState(0),[ticket,setTicket]=useState<Row|null>(null),[reply,setReply]=useState(''),[msg,setMsg]=useState(''),[busy,setBusy]=useState(false);
+  const q=useLoad<Row>('support_tickets',{status,category,severity,search,limit:25,offset:page*25},[status,category,severity,search,page]);
+  const open=async(item:Row)=>{setMsg('');setBusy(true);try{setTicket(await call<Row>('support_ticket_detail',{ticket_id:item.id}));setReply('')}catch(e){setMsg(errText(e))}finally{setBusy(false)}};
+  const refresh=async()=>{await q.reload();if(ticket){try{setTicket(await call<Row>('support_ticket_detail',{ticket_id:ticket.id}))}catch(e){setMsg(errText(e))}}};
+  const update=async(nextStatus:string,message='')=>{if(!ticket)return;setBusy(true);setMsg('');try{await call('support_ticket_update',{ticket_id:ticket.id,status:nextStatus,message});setReply('');await refresh()}catch(e){setMsg(errText(e))}finally{setBusy(false)}};
+  const rows:Row[]=q.data?.rows??[],count=Number(q.data?.count??0),pages=Math.max(1,Math.ceil(count/25));
+  if(ticket)return <div className="col"><button className="back" onClick={()=>{setTicket(null);void q.reload()}}>← К списку обращений</button><div className="admin-subheading"><div><h2>{ticket.subject}</h2><p className="muted small">{ticket.tenant?.name} · /{ticket.tenant?.slug} · создано {fmtDateTime(ticket.created_at)}</p></div><span className={`pf-badge pf-${ticket.severity}`}>{TICKET_SEVERITY[ticket.severity]??ticket.severity}</span></div>
+    <section className="card col"><div className="row between wrap"><div><b>{TICKET_TYPE[ticket.category]??'Другое'}{ticket.custom_type?` · ${ticket.custom_type}`:''}</b><p className="muted small">От: {ticket.created_by_email}</p></div><label className="muted small">Статус<select className="field" value={ticket.status} disabled={busy} onChange={e=>void update(e.target.value)}>{Object.entries(TICKET_STATUS).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label></div>
+    <div className="support-admin-thread" aria-label="Переписка по обращению">{(ticket.events??[]).map((event:Row)=><article className={`support-admin-message ${event.is_support?'from-support':'from-organization'}`} key={event.id}><div className="support-admin-message-meta"><b>{event.is_support?'Поддержка Servio':event.actor_email}</b><time>{fmtDateTime(event.created_at)}</time></div><p>{event.message??(event.event_type==='created'?'Обращение создано.':'Статус изменён: '+(TICKET_STATUS[event.status]??event.status))}</p></article>)}</div>
+    <form className="col" onSubmit={e=>{e.preventDefault();void update(ticket.status,reply.trim())}}><label className="muted small">Ответ организации<textarea className="field" rows={4} maxLength={3000} minLength={1} value={reply} onChange={e=>setReply(e.target.value)} placeholder="Напишите ответ или задайте уточняющий вопрос" required/></label><button className="btn" disabled={busy||!reply.trim()}>Отправить ответ</button></form></section>{msg&&<p className="err" role="alert">{msg}</p>}</div>;
+  return <div className="col"><div className="admin-subheading"><div><h2>Обращения организаций</h2><p className="muted small">Здесь собраны просьбы о помощи. Найдите нужное обращение по теме, типу или срочности.</p></div><button className="btn ghost mini" onClick={()=>void q.reload()}>Обновить</button></div>
+    <form className="support-queue-filters" onSubmit={e=>{e.preventDefault();setPage(0);setSearch(searchInput.trim())}}><input className="field" value={searchInput} onChange={e=>setSearchInput(e.target.value)} placeholder="Поиск по теме или типу"/><select className="field" value={status} onChange={e=>{setPage(0);setStatus(e.target.value)}}><option value="">Все статусы</option>{Object.entries(TICKET_STATUS).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select><select className="field" value={category} onChange={e=>{setPage(0);setCategory(e.target.value)}}><option value="">Все типы</option>{Object.entries(TICKET_TYPE).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select><select className="field" value={severity} onChange={e=>{setPage(0);setSeverity(e.target.value)}}><option value="">Любая срочность</option>{Object.entries(TICKET_SEVERITY).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select><button className="btn">Найти</button><button className="btn ghost" type="button" onClick={()=>{setSearchInput('');setSearch('');setStatus('');setCategory('');setSeverity('');setPage(0)}}>Сбросить</button></form>
+    <State err={q.err} loading={q.loading}/>{!q.loading&&!q.err&&!rows.length&&<p className="muted">По выбранным условиям обращений нет.</p>}
+    <div className="support-queue-list">{rows.map(item=><article className="card support-queue-item" key={item.id}><div className="row between wrap"><div><button className="pf-link" onClick={()=>void open(item)}>{item.subject}</button><p className="muted small">{item.tenant?.name??'Организация'} · {item.tenant?.slug??'—'} · {TICKET_TYPE[item.category]??item.category}{item.custom_type?` · ${item.custom_type}`:''}</p></div><div className="row wrap"><span className={`pf-badge pf-${item.severity}`}>{TICKET_SEVERITY[item.severity]??item.severity}</span><span className={`pf-badge pf-${item.status}`}>{TICKET_STATUS[item.status]??item.status}</span></div></div><div className="row between wrap"><span className="muted small">{item.created_by_email} · обновлено {fmtDateTime(item.updated_at)}</span><button className="btn ghost mini" disabled={busy} onClick={()=>void open(item)}>Открыть обращение</button></div></article>)}</div>
+    <div className="row between wrap"><span className="muted small">{count} тикетов · страница {page+1} из {pages}</span><div className="row"><button className="btn ghost mini" disabled={page===0||q.loading} onClick={()=>setPage(p=>p-1)}>Назад</button><button className="btn ghost mini" disabled={page+1>=pages||q.loading} onClick={()=>setPage(p=>p+1)}>Дальше</button></div></div>{msg&&<p className="err" role="alert">{msg}</p>}
+  </div>
+}
+
+const LEAD_STATUS:Record<string,string>={new:'Новая',contacted:'Связались',converted:'Подключён',closed:'Закрыта'};
+function BusinessLeads(){
+  const [status,setStatus]=useState(''),[page,setPage]=useState(0),[msg,setMsg]=useState('');
+  const q=useLoad<Row>('business_leads',{status,limit:25,offset:page*25},[status,page]);
+  const rows:Row[]=q.data?.rows??[],count=Number(q.data?.count??0),pages=Math.max(1,Math.ceil(count/25));
+  const change=async(id:string,next:string)=>{setMsg('');try{await call('business_lead_update',{lead_id:id,status:next});await q.reload()}catch(e){setMsg(errText(e))}};
+  return <div className="col"><div className="admin-subheading"><div><h2>Заявки с сайта</h2><p className="muted small">Запросы на подключение и демонстрацию Servio. Свяжитесь с человеком и обновите состояние заявки.</p></div><button className="btn ghost mini" onClick={()=>void q.reload()} disabled={q.loading}>Обновить</button></div>
+    <div className="support-queue-filters"><select className="field" value={status} onChange={e=>{setStatus(e.target.value);setPage(0)}}><option value="">Все заявки</option>{Object.entries(LEAD_STATUS).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></div>
+    <State err={q.err} loading={q.loading}/>{!q.loading&&!q.err&&!rows.length&&<p className="muted">Заявок пока нет.</p>}
+    <div className="support-queue-list">{rows.map(lead=><article className="card support-queue-item" key={lead.id}><div className="row between wrap"><div><b>{lead.name}</b><p className="muted small">{lead.business_type} · {lead.request_type==='demo'?'Демонстрация':'Подключение'}{lead.plan?` · тариф ${lead.plan}`:''}</p></div><span className={`pf-badge pf-${lead.status}`}>{LEAD_STATUS[lead.status]??lead.status}</span></div><div className="row between wrap"><a href={`tel:${String(lead.phone).replace(/[^+\d]/g,'')}`}>{lead.phone}</a><time className="muted small">Поступила {fmtDateTime(lead.created_at)}</time></div>{lead.comment&&<p className="muted small">{lead.comment}</p>}<label className="muted small">Состояние заявки<select className="field" value={lead.status} onChange={e=>void change(String(lead.id),e.target.value)}>{Object.entries(LEAD_STATUS).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label></article>)}</div>
+    <div className="row between wrap"><span className="muted small">{count} заявок · страница {page+1} из {pages}</span><div className="row"><button className="btn ghost mini" disabled={page===0||q.loading} onClick={()=>setPage(p=>p-1)}>Назад</button><button className="btn ghost mini" disabled={page+1>=pages||q.loading} onClick={()=>setPage(p=>p+1)}>Далее</button></div></div>{msg&&<p className="err" role="alert">{msg}</p>}
+  </div>
 }
 
 function PlatformNotifications() {

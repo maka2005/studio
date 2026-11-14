@@ -15,14 +15,15 @@ import { LoadingScreen } from '../components/LoadingScreen'
 import { SERVICE_CATEGORIES, serviceCategories } from '../lib/serviceCatalog'
 import './owner-login.css'
 import './owner-media.css'
+import './owner-admin.css'
 
-const TABS = ['Записи', 'Отчёты', 'Сотрудники', 'Личный кабинет', 'Центр уведомлений', 'Мой доступ', 'Команда и посты', 'История', 'Ожидание', 'Промокоды', 'Отзывы', 'Услуги', 'Студия', 'Фото', 'Уведомления', 'Документы'] as const
+const TABS = ['Записи', 'Отчёты', 'Сотрудники', 'Личный кабинет', 'Центр уведомлений', 'Поддержка', 'Мой доступ', 'Команда и посты', 'История', 'Ожидание', 'Промокоды', 'Отзывы', 'Услуги', 'Студия', 'Фото', 'Уведомления', 'Документы'] as const
 
 // Группы разделов кабинета. Идентификаторы вкладок не меняются, меняются только подписи и группировка.
 const TAB_GROUPS: { name: string; tabs: (typeof TABS)[number][] }[] = [
   { name: 'Сегодня', tabs: ['Записи', 'Ожидание'] },
   { name: 'Клиенты', tabs: ['История', 'Отзывы', 'Промокоды', 'Уведомления'] },
-  { name: 'Мой кабинет', tabs: ['Личный кабинет', 'Центр уведомлений'] },
+  { name: 'Мой кабинет', tabs: ['Личный кабинет', 'Центр уведомлений', 'Поддержка'] },
   { name: 'Услуги и студия', tabs: ['Услуги', 'Студия', 'Фото', 'Документы'] },
   { name: 'Команда', tabs: ['Сотрудники', 'Команда и посты', 'Мой доступ'] },
   { name: 'Отчёты', tabs: ['Отчёты'] },
@@ -53,9 +54,16 @@ export function Owner() {
     return () => window.removeEventListener('owner-session-changed', refresh)
   }, [qc])
   const logout = async () => {
-    await ownerRequest('logout')
-    qc.removeQueries({ queryKey: ['owner'] })
-  } // приватный кэш очищается при выходе
+    try {
+      await ownerRequest('logout')
+    } catch {
+      // Перезагружаем кабинет и при временной ошибке ответа; серверная сессия
+      // будет проверена заново на странице входа.
+    } finally {
+      qc.removeQueries({ queryKey: ['owner'] })
+      window.location.assign(`/s/${encodeURIComponent(b.slug)}/owner`)
+    }
+  } // Завершаем сессию и возвращаем пользователя к форме входа.
   if (sess.isPending) return <LoadingScreen label="Открываем кабинет…" />
   if (!sess.data?.user) return <Login />
   if (sess.data.user.user_metadata?.must_change_password === true) return <SetInitialPassword />
@@ -162,15 +170,19 @@ function Login() {
 function Cabinet({ b, onLogout, impersonation }: { b: Business; onLogout: () => void; impersonation?:{reason:string;expires_at:string;tenant_slug:string} }) {
   const qc=useQueryClient()
   const [tab, setTab] = useState<(typeof TABS)[number]>('Записи')
+  const [dismissedAnnouncements,setDismissedAnnouncements]=useState<string[]>(()=>{try{const value=localStorage.getItem(`servio-hidden-announcements:${b.slug}`);const parsed=value?JSON.parse(value):[];return Array.isArray(parsed)?parsed.filter((id):id is string=>typeof id==='string'):[]}catch{return[]}})
   const [expandedGroups,setExpandedGroups]=useState<Record<string,boolean>>({})
+  const [mobileMenuOpen,setMobileMenuOpen]=useState(false)
   const priceNotices=useQuery({queryKey:['owner','price-changes',b.slug],queryFn:()=>owner.pendingPriceChanges(b.slug),refetchInterval:60_000,enabled:true})
   const me = useQuery({ queryKey: ['owner', 'me', b.slug], queryFn: () => owner.me(b.slug) })
   const access = useQuery({ queryKey: ['owner', 'access', b.slug], queryFn: () => owner.access(b.slug), enabled: !!me.data })
+  const platformAnnouncements=useQuery({queryKey:['owner','platform-announcements',b.slug],queryFn:()=>owner.platformAnnouncements(b.slug),enabled:access.data==='owner'||access.data==='manager',refetchInterval:60_000,retry:false})
+  const platformFlags=useQuery({queryKey:['owner','platform-flags',b.slug],queryFn:()=>owner.platformFeatureFlags(b.slug),enabled:access.data==='owner'||access.data==='manager',retry:false})
   const billingNotices=useQuery({queryKey:['owner','billing-notifications',b.slug],queryFn:()=>owner.billingNotifications(b.slug,50,0),enabled:access.data==='owner'||access.data==='manager',retry:false,refetchInterval:30_000,refetchOnWindowFocus:true})
   const planUsage=useQuery({queryKey:['owner','plan-usage',b.slug],queryFn:()=>owner.planUsage(b.slug),enabled:access.data==='owner'||access.data==='manager',retry:false,refetchOnWindowFocus:true})
   const archiveStatus=useQuery({queryKey:['owner','archive-status',b.slug],queryFn:()=>owner.archiveStatus(b.slug),enabled:access.data==='owner',retry:false})
   const role=access.data
-  const roleTabs=(role==='staff'?['Записи','Мой доступ']:role==='manager'?TABS.filter((t)=>!['Студия','Фото','Уведомления','Документы'].includes(t)):TABS) as readonly (typeof TABS)[number][]
+  const roleTabs=(role==='staff'?['Записи','Поддержка','Мой доступ']:role==='manager'?TABS.filter((t)=>!['Студия','Фото','Уведомления','Документы'].includes(t)):TABS) as readonly (typeof TABS)[number][]
   const visibleTabs=roleTabs.filter(t=>!(t==='Отзывы'&&planUsage.data?.features.reviews===false))
   const groupList=TAB_GROUPS.map(g=>({name:g.name,tabs:g.tabs.filter((t)=>visibleTabs.includes(t)) as (typeof TABS)[number][]})).filter(g=>g.tabs.length>0)
   const activeGroup=groupList.find(g=>g.tabs.includes(tab))
@@ -203,6 +215,7 @@ function Cabinet({ b, onLogout, impersonation }: { b: Business; onLogout: () => 
     qc.removeQueries({ queryKey: ['owner'] });
     window.location.assign('/platform/admin');
   };
+  const dismissAnnouncement=(id:string)=>setDismissedAnnouncements(current=>{const next=[...new Set([...current,id])];try{localStorage.setItem(`servio-hidden-announcements:${b.slug}`,JSON.stringify(next))}catch{}return next});
   return (
     <section className="pad admin-shell">
       {archiveStatus.data?.archived&&<aside className="owner-subscription-alert card" role="alert"><b>Организация находится в архиве</b><p>Доступ к управлению и онлайн-записи приостановлен. Данные сохранены. Перед закрытием скачайте копию данных или свяжитесь с поддержкой Servio для восстановления доступа.{archiveStatus.data.deletion_requested_at&&' Также зарегистрирован запрос на удаление данных.'}</p>{role==='owner'&&<ExportButton slug={b.slug}/>}</aside>}
@@ -214,15 +227,25 @@ function Cabinet({ b, onLogout, impersonation }: { b: Business; onLogout: () => 
       </aside>}
       <div className="admin-heading">
         <div>
-          <p className="admin-eyebrow">ПАНЕЛЬ УПРАВЛЕНИЯ</p>
+          <p className="admin-eyebrow">РАБОЧЕЕ ПРОСТРАНСТВО</p>
           <h1>Кабинет студии</h1>
-          <p className="muted">Расписание, клиенты и настройки в одном месте</p>
+          <p className="muted">Записи, клиенты и дела студии — в одном месте.</p>
         </div>
         <button className="btn ghost mini admin-logout" onClick={onLogout}>
           Выйти
         </button>
       </div>
+      {platformAnnouncements.data?.filter(a=>!dismissedAnnouncements.includes(a.id)).map(a=><aside className="owner-subscription-alert card owner-platform-announcement" key={a.id}><div><b>{a.title}</b><p>{a.body}</p></div><button className="owner-announcement-dismiss" type="button" aria-label={`Скрыть уведомление: ${a.title}`} onClick={()=>dismissAnnouncement(a.id)}>Скрыть</button></aside>)}
+      {Object.entries(platformFlags.data??{}).some(([,enabled])=>enabled)&&<aside className="owner-account-card card"><b>Для вашей студии доступны новые возможности</b><p className="muted small">{Object.entries(platformFlags.data??{}).filter(([,enabled])=>enabled).map(([key])=>key).join(' · ')}</p></aside>}
       <div className="admin-layout">
+        <div className="admin-mobile-navigation">
+          <button className="admin-mobile-trigger" type="button" aria-expanded={mobileMenuOpen} aria-controls="owner-mobile-menu" onClick={()=>setMobileMenuOpen(open=>!open)}>
+            <span className="admin-mobile-trigger-icon" aria-hidden="true">☰</span><span><small>РАЗДЕЛ КАБИНЕТА</small><b>{TAB_LABELS[tab] ?? tab}</b></span><span className="admin-mobile-trigger-action">{mobileMenuOpen?'Свернуть':'Меню'}</span>
+          </button>
+          {mobileMenuOpen&&<nav className="admin-mobile-panel" id="owner-mobile-menu" aria-label="Разделы кабинета">
+            {groupList.map(g=><section className="admin-mobile-group" key={g.name}><h2>{g.name}</h2><div>{g.tabs.map(t=><button key={t} type="button" className={`admin-mobile-tab${tab===t?' is-current':''}`} aria-current={tab===t?'page':undefined} onClick={()=>{setTab(t);setMobileMenuOpen(false)}}>{TAB_LABELS[t]??t}{t==='Центр уведомлений'&&(priceNotices.data?.some(x=>!x.is_read)||billingNotices.data?.some(x=>!x.is_read))&&<i className="admin-unread-dot" aria-label="Есть непрочитанные уведомления"/>}</button>)}</div></section>)}
+          </nav>}
+        </div>
         <nav className="admin-side" aria-label="Разделы кабинета">
           {groupList.map((g) => {
             const isActive = activeGroup?.name === g.name;
@@ -233,7 +256,14 @@ function Cabinet({ b, onLogout, impersonation }: { b: Business; onLogout: () => 
                   type="button"
                   className="admin-group-title"
                   aria-expanded={isExpanded}
-                  onClick={() => setExpandedGroups(prev=>({...prev,[g.name]:!isExpanded}))}
+                  onClick={() => {
+                    if (g.tabs.length === 1) {
+                      setTab(g.tabs[0]!);
+                      return;
+                    }
+                    setExpandedGroups(prev=>({...prev,[g.name]:!isExpanded}));
+                  }}
+                  aria-current={g.tabs.length === 1 && tab === g.tabs[0] ? 'page' : undefined}
                 >
                   <span>{g.name}</span>
                   <span className="admin-group-chevron" aria-hidden="true">›</span>
@@ -264,6 +294,7 @@ function Cabinet({ b, onLogout, impersonation }: { b: Business; onLogout: () => 
       {tab === 'Мой доступ' && <MyAccess b={b} />}
       {tab === 'Личный кабинет' && <OwnerAccount slug={b.slug} canExport={role==='owner'} canRespond={role==='owner'} latestSuspension={billingNotices.data?.find(e=>e.event_type==='suspended')} />}
       {tab === 'Центр уведомлений' && <OwnerNotificationCenter slug={b.slug} canRespond={role === 'owner'} />}
+      {tab === 'Поддержка' && <OwnerSupportTickets slug={b.slug} />}
       {tab === 'Отчёты' && <Reports b={b} />}
       {tab === 'Команда и посты' && <TeamResources b={b} />}
       {tab === 'История' && <AuditHistory b={b} />}
@@ -292,7 +323,7 @@ function ExportButton({ slug }: { slug: string }) {
   }
   return (
     <div className="row" style={{ gap: 8, alignItems: 'center' }}>
-      <button className="btn ghost mini" onClick={run} disabled={busy}>{busy ? 'Готовим файл…' : 'Выгрузить данные (ZIP)'}</button>
+      <button className="btn ghost mini" onClick={run} disabled={busy}>{busy ? 'Готовим копию…' : 'Скачать копию данных'}</button>
       {err && <span className="err small" role="alert">{err}</span>}
     </div>
   )
@@ -329,7 +360,7 @@ function SubscriptionBanner({ slug, canRespond, latestSuspension }: { slug: stri
         <p className="muted">Всё продолжает работать до {date(s.grace_ends_at)}. После этой даты онлайн-запись и уведомления будут отключены. Оплатите продление, чтобы этого избежать.</p>
       </div></>
     )
-  return <>{proposals.isError && <p className="err small">Не удалось проверить новые условия подписки. Обновите кабинет.</p>}{priceNotice}{s.phase !== 'none' && <div className="card owner-subscription-summary"><b>Подписка · {s.plan_name ?? s.plan_code}</b><span>Окончание: {s.ends_at ? date(s.ends_at) : 'без срока'}</span><span>Осталось: {s.days_left == null ? '—' : `${Math.max(0,s.days_left)} дн.`}</span><span>К оплате за период: {(s.price_kzt ?? 0).toLocaleString('ru-RU')} ₸ / {s.price_period_months ?? 1} мес.</span></div>}</>
+  return <>{proposals.isError && <p className="err small">Не удалось проверить новые условия подписки. Обновите кабинет.</p>}{priceNotice}{s.phase !== 'none' && <div className="card owner-subscription-summary"><div className="owner-subscription-heading"><b>Подписка · {s.plan_name ?? s.plan_code}</b><span className={`pf-badge pf-${s.phase}`}>{s.phase==='active'?'Активна':s.phase==='trial'?'Пробный период':s.phase==='grace'?'Льготный период':'Статус уточняется'}</span></div><div className="owner-subscription-details"><div><span>Окончание</span><b>{s.ends_at ? date(s.ends_at) : 'Без срока'}</b></div><div><span>Осталось</span><b>{s.days_left == null ? '—' : `${Math.max(0,s.days_left)} дней`}</b></div><div><span>К оплате за период</span><b>{(s.price_kzt ?? 0).toLocaleString('ru-RU')} ₸ / {s.price_period_months ?? 1} мес.</b></div></div></div>}</>
 }
 
 function TeamAccess({ b, canManageManagers = true }: { b: Business; canManageManagers?: boolean }) {
@@ -389,6 +420,35 @@ function OwnerNotificationCenter({slug,canRespond}:{slug:string;canRespond:boole
   </div>
 }
 
+type SupportTicket={id:string;subject:string;category:string;custom_type?:string|null;severity:string;status:string;created_at:string;updated_at:string;created_by_email:string};
+type SupportEvent={id:string;case_id:string;event_type:string;message?:string|null;status:string;actor_email:string;is_support:boolean;created_at:string};
+const SUPPORT_TYPE:Record<string,string>={support:'Поддержка',technical:'Техническая проблема',billing:'Оплата и подписка',access:'Вход и доступ',booking:'Записи и расписание',feature:'Функция сервиса',other:'Другое'};
+const SUPPORT_LEVEL:Record<string,string>={low:'Низкая',normal:'Обычная',high:'Высокая',urgent:'Критичная'};
+const SUPPORT_STATE:Record<string,string>={open:'Открыт',in_progress:'В работе',resolved:'Решён'};
+function OwnerSupportTickets({slug}:{slug:string}){
+  const qc=useQueryClient();const [page,setPage]=useState(0),[subject,setSubject]=useState(''),[category,setCategory]=useState('technical'),[customType,setCustomType]=useState(''),[severity,setSeverity]=useState('normal'),[message,setMessage]=useState(''),[reply,setReply]=useState<Record<string,string>>({}),[notice,setNotice]=useState('');
+  const pageSize=10;
+  const q=useQuery({queryKey:['owner','support',slug,page],queryFn:()=>ownerRequest<{tickets:SupportTicket[];events:SupportEvent[];count:number;limit:number;offset:number}>('support',{slug,action:'list',limit:pageSize,offset:page*pageSize}),refetchInterval:30_000,refetchOnWindowFocus:true});
+  const submit=async(e:React.FormEvent)=>{e.preventDefault();setNotice('');try{await ownerRequest('support',{slug,action:'create',subject,category,custom_type:customType,severity,message});setSubject('');setCategory('technical');setCustomType('');setSeverity('normal');setMessage('');setPage(0);setNotice('Обращение отправлено. Команда поддержки ответит здесь.');await qc.invalidateQueries({queryKey:['owner','support',slug]})}catch{setNotice('Не удалось отправить обращение. Проверьте поля и попробуйте ещё раз.')}};
+  const sendReply=async(e:React.FormEvent,id:string)=>{e.preventDefault();const text=(reply[id]??'').trim();if(!text)return;try{await ownerRequest('support',{slug,action:'reply',ticket_id:id,message:text});setReply(v=>({...v,[id]:''}));setNotice('Сообщение отправлено.');await qc.invalidateQueries({queryKey:['owner','support',slug]})}catch{setNotice('Не удалось отправить сообщение. Повторите позже.')}};
+  const tickets=q.data?.tickets??[],events=q.data?.events??[],count=q.data?.count??0,pages=Math.max(1,Math.ceil(count/pageSize));
+  return <div className="col"><div className="admin-subheading"><div><h2>Поддержка</h2><p className="muted small">Создайте тикет, укажите тип и срочность. Ответ поддержки появится в переписке.</p></div></div>
+    <form className="card col owner-support-form" onSubmit={e=>void submit(e)}><h3>Новое обращение</h3><label className="muted small">Кратко опишите проблему<input className="field" minLength={3} maxLength={200} required value={subject} onChange={e=>setSubject(e.target.value)} placeholder="Например: не открывается расписание"/></label>
+      <div className="owner-support-fields"><label className="muted small">Тип проблемы<select className="field" value={category} onChange={e=>setCategory(e.target.value)}>{Object.entries(SUPPORT_TYPE).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label><label className="muted small">Срочность<select className="field" value={severity} onChange={e=>setSeverity(e.target.value)}>{Object.entries(SUPPORT_LEVEL).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label></div>
+      {category==='other'&&<label className="muted small">Укажите свой тип проблемы<input className="field" minLength={3} maxLength={120} required value={customType} onChange={e=>setCustomType(e.target.value)} placeholder="Напишите, с чем нужна помощь"/></label>}
+      <label className="muted small">Расскажите подробнее<textarea className="field" rows={4} minLength={5} maxLength={3000} required value={message} onChange={e=>setMessage(e.target.value)} placeholder="Опишите, что случилось и чем мы можем помочь. Не указывайте данные банковских карт и пароли."/></label><button className="btn" disabled={subject.trim().length<3||message.trim().length<5||(category==='other'&&customType.trim().length<3)}>Отправить обращение</button>
+    </form>{notice&&<p className="muted small" role="status">{notice}</p>}
+    <section className="col"><div className="owner-support-list-heading"><h3>Мои обращения</h3>{count>0&&<span className="muted small">{count} {count===1?'обращение':'обращений'}</span>}</div>
+      {q.isPending?<p className="muted">Загружаем обращения…</p>:q.isError?<p className="err">Не удалось загрузить обращения. <button className="link" onClick={()=>void q.refetch()}>Попробовать снова</button></p>:!tickets.length?<section className="card"><p className="muted">Обращений пока нет. Если нужна помощь — напишите нам выше.</p></section>:<div className="owner-support-ticket-list">{tickets.map((ticket,index)=>{const thread=events.filter(event=>event.case_id===ticket.id);return <details className="card owner-support-ticket" key={ticket.id} open={index===0}>
+        <summary className="owner-support-ticket-summary"><div className="owner-support-ticket-title"><b>{ticket.subject}</b><span className={`pf-badge pf-${ticket.status}`}>{SUPPORT_STATE[ticket.status]??ticket.status}</span></div><div className="owner-support-ticket-meta"><span>{SUPPORT_TYPE[ticket.category]??'Другое'}{ticket.custom_type&&ticket.category==='other'?` · ${ticket.custom_type}`:''}</span><span className={`owner-support-priority priority-${ticket.severity}`}>Срочность: {SUPPORT_LEVEL[ticket.severity]??ticket.severity}</span><span>Обновлён {new Date(ticket.updated_at).toLocaleString('ru-RU',{dateStyle:'medium',timeStyle:'short'})}</span></div>
+      </summary><div className="owner-support-ticket-content"><div className="owner-support-thread" aria-label="Переписка по обращению">{thread.map(event=><article className={`owner-support-message ${event.is_support?'from-support':'from-organization'}`} key={event.id}><div className="owner-support-message-meta"><b>{event.is_support?'Поддержка Servio':'Организация'}</b><time>{new Date(event.created_at).toLocaleString('ru-RU',{dateStyle:'medium',timeStyle:'short'})}</time></div><p>{event.message??(event.event_type==='created'?'Тикет создан.':'Статус изменён: '+(SUPPORT_STATE[event.status]??event.status))}</p></article>)}</div>
+      <form className="owner-support-reply" onSubmit={e=>void sendReply(e,ticket.id)}><textarea className="field" rows={2} maxLength={3000} value={reply[ticket.id]??''} onChange={e=>setReply(v=>({...v,[ticket.id]:e.target.value}))} placeholder="Напишите сообщение…" aria-label={`Ответ по тикету «${ticket.subject}»`}/><button className="btn mini" disabled={!reply[ticket.id]?.trim()}>Отправить</button></form></div>
+      </details>})}</div>}
+      {!q.isPending&&!q.isError&&count>pageSize&&<nav className="owner-support-pagination" aria-label="Страницы обращений"><span className="muted small">Страница {page+1} из {pages}</span><div className="row"><button className="btn ghost mini" disabled={page===0||q.isFetching} onClick={()=>setPage(p=>p-1)}>Назад</button><button className="btn ghost mini" disabled={page+1>=pages||q.isFetching} onClick={()=>setPage(p=>p+1)}>Дальше</button></div></nav>}
+    </section>
+  </div>
+}
+
 function billingEventTitle(type:string){return ({suspended:'Подписка приостановлена',resumed:'Подписка возобновлена',expired:'Срок подписки закончился',grace_started:'Начался льготный период',extended:'Срок подписки продлён',plan_changed:'Изменён тариф',dates_changed:'Изменены даты подписки',cancelled:'Подписка отменена',payment_failed:'Не удалось подтвердить платёж',price_change_accepted:'Новая цена принята',price_change_declined:'Новая цена отклонена'} as Record<string,string>)[type]??'Изменение подписки'}
 function billingEventDetail(e:OwnerBillingNotification){const p=e.payload??{};const reason=String(p.reason??'').trim();if(e.event_type==='suspended')return `${reason?`Причина: ${reason}. `:''}Онлайн-запись временно отключена. Данные организации сохранены. Чтобы восстановить работу, свяжитесь с поддержкой Servio.`;if(e.event_type==='payment_failed')return `${reason?`Причина: ${reason}. `:''}Платёж не прошёл. Проверьте перевод или обратитесь в поддержку Servio для сверки.`;if(e.event_type==='grace_started')return 'Подписка ожидает продления. Продлите её до окончания льготного периода, чтобы сервис продолжил работу.';if(e.event_type==='resumed')return 'Доступ к функциям подписки восстановлен.';if(e.event_type==='expired'||e.event_type==='cancelled')return 'Данные организации сохранены. Для возобновления обслуживания свяжитесь с поддержкой Servio.';if(e.event_type==='extended')return 'Период действия подписки продлён.';if(e.event_type==='plan_changed')return 'В подписке организации изменён тариф.';if(e.event_type==='dates_changed')return 'Обновлён срок действия подписки.';if(e.event_type==='price_change_accepted')return 'Владелец организации принял предложенные условия тарифа.';if(e.event_type==='price_change_declined')return 'Предложенные условия тарифа отклонены.';return 'Появилось обновление по подписке. Подробности можно уточнить у поддержки Servio.'}
 
@@ -422,16 +482,16 @@ function Reports({ b }: { b: Business }) {
     ['Дата и время','Услуга','Клиент','Телефон','Автомобиль','Мастер / пост','Статус','Стоимость','Получено'],
     ...(bookings.data??[]).map(x=>[fmtT(b,x.starts_at,'yyyy-MM-dd HH:mm'),x.service_name,x.customer_name,x.customer_phone,x.car,x.resource_name,({booked:'Записан',arrived:'Прибыл',done:'Завершён',cancelled:'Отменён'} as Record<string,string>)[x.status]??x.status,x.price_cents/100,x.paid_cents/100])
   ]);
-  return <div className="col"><div className="admin-subheading"><div><h2>Отчёты за 30 дней</h2><p className="muted small">Выручка, загрузка постов и источники обращений.</p></div><div className="row wrap"><button className="btn ghost mini" disabled={!reportReady} onClick={exportReport}>Скачать отчёт для Excel</button><button className="btn ghost mini" disabled={bookings.isPending||bookings.isError} onClick={exportBookings}>Скачать записи</button></div></div>
+  return <div className="col"><div className="admin-subheading"><div><h2>Итоги за последние 30 дней</h2><p className="muted small">Оплаты, записи, занятость расписания и услуги, которые выбирают чаще.</p></div><div className="row wrap"><button className="btn ghost mini" disabled={!reportReady} onClick={exportReport}>Скачать сводку</button><button className="btn ghost mini" disabled={bookings.isPending||bookings.isError} onClick={exportBookings}>Скачать список записей</button></div></div>
     {kpis.data&&<div className="stats admin-stats"><div className="card admin-stat"><span className="muted small">Получено</span><b>{money(kpis.data.received_cents/100,b.currency)}</b></div><div className="card admin-stat"><span className="muted small">Записей</span><b>{kpis.data.booked}</b></div><div className="card admin-stat"><span className="muted small">Визитов</span><b>{kpis.data.visits}</b></div><div className="card admin-stat"><span className="muted small">Загрузка постов</span><b>{bookings.isPending||resources.isPending?'…':`${occupancy}%`}</b></div></div>}
-    <p className="muted small">Загрузка — оценка занятых минут к рабочим минутам всех постов по недельному графику.</p>
+    <p className="muted small">Занятость показывает, какую часть рабочего времени мастера были записаны клиенты.</p>
     <div className="admin-subheading"><div><h2>Популярные услуги</h2><p className="muted small">За последние 30 дней, по числу записей.</p></div></div>
-    {bookings.isPending?<p className="muted">Считаем популярность услуг…</p>:bookings.isError?<p className="err">Не удалось загрузить популярность услуг. <button className="link" onClick={()=>void bookings.refetch()}>Повторить</button></p>:popularServices.length===0?<p className="muted">Записей за этот период пока нет.</p>:<div className="admin-report-services"><div className="admin-report-service-head"><span>Услуга</span><span>Записи</span><span>Визиты</span><span>Получено</span></div>{popularServices.map((s,i)=><div className="admin-report-service" key={s.id}><span className="admin-report-service-name"><i>{i+1}</i><b>{s.name}</b></span><span>{s.bookings}</span><span>{s.done}</span><b>{money(s.received/100,b.currency)}</b></div>)}</div>}
+    {bookings.isPending?<p className="muted">Собираем данные по услугам…</p>:bookings.isError?<p className="err">Не удалось загрузить список услуг. <button className="link" onClick={()=>void bookings.refetch()}>Попробовать снова</button></p>:popularServices.length===0?<p className="muted">Записей за этот период пока нет.</p>:<div className="admin-report-services"><div className="admin-report-service-head"><span>Услуга</span><span>Записи</span><span>Визиты</span><span>Оплачено</span></div>{popularServices.map((s,i)=><div className="admin-report-service" key={s.id}><span className="admin-report-service-name"><i>{i+1}</i><b>{s.name}</b></span><span>{s.bookings}</span><span>{s.done}</span><b>{money(s.received/100,b.currency)}</b></div>)}</div>}
     <div className="admin-subheading"><div><h2>Средний чек и повторные визиты</h2><p className="muted small">По завершённым визитам за последние 30 дней.</p></div></div>
     {repeat.isPending?<p className="muted">Считаем визиты клиентов…</p>:repeat.isError?<p className="err">Не удалось загрузить повторные визиты. <button className="link" onClick={()=>void repeat.refetch()}>Повторить</button></p>:<><div className="stats admin-stats"><div className="card admin-stat"><span className="muted small">Средний чек</span><b>{repeat.data.completed_visits?money(repeat.data.average_check_cents/100,b.currency):'—'}</b></div><div className="card admin-stat"><span className="muted small">Клиентов с визитами</span><b>{repeat.data.unique_clients}</b></div><div className="card admin-stat"><span className="muted small">Вернулись снова</span><b>{repeat.data.returning_clients}{repeat.data.unique_clients?` · ${returningRate}%`:''}</b></div><div className="card admin-stat"><span className="muted small">Повторных визитов</span><b>{repeat.data.returning_visits}</b></div></div><p className="muted small">Средний чек рассчитан по цене завершённого визита с учётом скидки. Повторный визит — завершённая запись клиента, у которого уже был завершённый визит раньше.</p></>}
-    <div className="admin-subheading"><div><h2>Источники записей</h2><p className="muted small">UTM-метки и домены переходов.</p></div></div>
-    {stats.isPending ? <p className="muted">Загрузка отчёта…</p> : stats.isError ? <p className="err">Не удалось загрузить отчёт. <button className="link" onClick={() => void stats.refetch()}>Повторить</button></p> : (stats.data ?? []).length === 0 ? <p className="muted">Записей за этот период пока нет.</p> : <div className="card col">{stats.data!.map((x) => <div className="kv" key={x.source}><span>{x.source === 'direct' ? 'Прямые переходы' : x.source} · {x.visits} записей</span><b>{money(x.received_cents / 100,b.currency)}</b></div>)}</div>}
-    <p className="muted small">Источник сохраняется при записи: UTM-метка или домен перехода. Личные данные и полный URL не записываются.</p>
+    <div className="admin-subheading"><div><h2>Откуда приходят клиенты</h2><p className="muted small">Показываем переходы на сайт студии и записи по ним.</p></div></div>
+    {stats.isPending ? <p className="muted">Собираем данные…</p> : stats.isError ? <p className="err">Не удалось загрузить данные. <button className="link" onClick={() => void stats.refetch()}>Попробовать снова</button></p> : (stats.data ?? []).length === 0 ? <p className="muted">Записей за этот период пока нет.</p> : <div className="card col">{stats.data!.map((x) => <div className="kv" key={x.source}><span>{x.source === 'direct' ? 'Прямые переходы' : x.source} · записей: {x.visits}</span><b>{money(x.received_cents / 100,b.currency)}</b></div>)}</div>}
+    <p className="muted small">Считаем источник перехода на сайт. Личные данные клиентов не включаются в этот отчёт.</p>
   </div>;
 }
 

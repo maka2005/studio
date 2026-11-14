@@ -67,6 +67,22 @@ Deno.serve(async (req) => {
   const action = str(body.action, 40);
   if (!action) return json(req, { error: 'bad_request' }, 400);
 
+  if (action === 'public_lead_submit') {
+    const source=req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()||req.headers.get('cf-connecting-ip')||'unknown';
+    const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(source));
+    const ipKey=Array.from(new Uint8Array(digest)).map(x=>x.toString(16).padStart(2,'0')).join('');
+    const admin=createClient(url,service,{auth:{persistSession:false,autoRefreshToken:false}});
+    const limit=await admin.rpc('consume_platform_rate',{p_scope:'platform_lead',p_key:`ip:${ipKey}`,p_limit:5,p_window:3600});
+    if(limit.error)return json(req,{error:'temporarily_unavailable'},503);
+    if(limit.data!==true)return json(req,{error:'rate_limited'},429);
+    const lead=obj(body.lead),name=str(lead.name,120),phone=str(lead.phone,32),businessType=str(lead.businessType,80);
+    const requestType=lead.requestType==='demo'?'demo':'connect',plan=str(lead.plan,40),comment=str(lead.comment,2000);
+    if(name.length<2||phone.replace(/\D/g,'').length<10||businessType.length<2||!['demo','connect'].includes(requestType))return json(req,{error:'bad_request'},400);
+    const {error}=await admin.from('platform_business_leads').insert({name,phone,business_type:businessType,request_type:requestType,plan,comment});
+    if(error){console.error('public lead save failed:',error.message);return json(req,{error:'temporarily_unavailable'},503)}
+    return json(req,{ok:true});
+  }
+
   // --- 1. аутентификация
   const token = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '');
   if (!token) return json(req, { error: 'unauthorized' }, 401);
@@ -107,9 +123,9 @@ Deno.serve(async (req) => {
   if (action === 'whoami') return json(req, { ok: true, email: user.email, role, aal: aalOf(token), mfa_required: mfaNeeded });
   if (mfaNeeded) return json(req, { error: 'mfa_required' }, 403);
 
-  const readActions = new Set(['whoami','dashboard','tenants','tenant','tenant_events','subscriptions','plans','payments','audit','notifications','settings','admins','billing_documents']);
-  const financeActions = new Set(['payments','payment_create','payment_confirm','payment_refund','payment_fail','subscriptions','dashboard','audit','notifications','tenants','tenant','tenant_events','plans','billing_documents','billing_document_save']);
-  const supportActions = new Set(['tenants','tenant','tenant_events','tenant_support','tenant_note_add','tenant_case_create','tenant_case_update','resend_invite','impersonation_start','impersonation_check','impersonation_end','impersonation_log']);
+  const readActions = new Set(['whoami','admin_login_event','dashboard','tenants','tenant','tenant_events','subscriptions','plans','payments','audit','notifications','settings','admins','billing_documents']);
+  const financeActions = new Set(['whoami','admin_login_event','payments','payment_create','payment_confirm','payment_refund','payment_fail','subscriptions','dashboard','audit','notifications','tenants','tenant','tenant_events','plans','billing_documents','billing_document_save']);
+  const supportActions = new Set(['whoami','admin_login_event','tenants','tenant','tenant_events','tenant_support','tenant_note_add','tenant_case_create','tenant_case_update','support_tickets','support_ticket_detail','support_ticket_update','business_leads','business_lead_update','resend_invite','impersonation_start','impersonation_check','impersonation_end','impersonation_log']);
   const allowedByRole = role === 'owner' ? null : role === 'read_only' ? readActions : role === 'finance' ? financeActions : supportActions;
   if (!['owner','support','finance','read_only'].includes(role) || (allowedByRole && !allowedByRole.has(action)))
     return json(req, { error: 'forbidden' }, 403);
@@ -125,6 +141,96 @@ Deno.serve(async (req) => {
   const uuidOf = (v: unknown) => { const s = str(v, 40); return UUID.test(s) ? s : null; };
 
   try {
+    if(action==='business_leads'){
+      if(!['owner','support'].includes(role))return json(req,{error:'forbidden'},403);
+      const status=str(body.status,20),limit=Math.max(1,Math.min(50,Number(body.limit)||25)),offset=Math.max(0,Number(body.offset)||0);
+      let query=admin.from('platform_business_leads').select('*',{count:'exact'}).order('created_at',{ascending:false}).range(offset,offset+limit-1);
+      if(['new','contacted','converted','closed'].includes(status))query=query.eq('status',status);
+      const {data,error,count}=await query;if(error)throw error;
+      return json(req,{data:{rows:data??[],count:count??0,limit,offset}});
+    }
+    if(action==='business_lead_update'){
+      if(!['owner','support'].includes(role))return json(req,{error:'forbidden'},403);
+      const id=uuidOf(body.lead_id),status=str(body.status,20);
+      if(!id||!['new','contacted','converted','closed'].includes(status))return json(req,{error:'bad_request'},400);
+      const {error}=await admin.from('platform_business_leads').update({status,updated_at:new Date().toISOString(),updated_by:actor}).eq('id',id);
+      if(error)throw error;
+      await admin.rpc('platform_log',{p_actor:actor,p_action:'business_lead.update',p_tenant:null,p_payload:{lead_id:id,status}});
+      return json(req,{data:{ok:true}});
+    }
+    if (action === 'support_tickets') {
+      if (!['owner','support'].includes(role)) return json(req,{error:'forbidden'},403);
+      const status=str(body.status,20),category=str(body.category,30),severity=str(body.severity,20),search=str(body.search,100);
+      const limit=Math.max(1,Math.min(50,Number(body.limit)||25)),offset=Math.max(0,Number(body.offset)||0);
+      const {data,error}=await admin.rpc('platform_support_queue',{p_actor:actor,p_status:['open','in_progress','resolved'].includes(status)?status:null,p_category:['support','billing','technical','access','booking','feature','other'].includes(category)?category:null,p_severity:['low','normal','high','urgent'].includes(severity)?severity:null,p_search:search||null,p_limit:limit,p_offset:offset});
+      if(error)throw error;
+      return json(req,{data:data??{rows:[],count:0,limit,offset}});
+    }
+    if (action === 'support_ticket_detail') {
+      if (!['owner','support'].includes(role)) return json(req,{error:'forbidden'},403);
+      const ticketId=uuidOf(body.ticket_id);if(!ticketId)return json(req,{error:'bad_request'},400);
+      const {data:ticket,error}=await admin.rpc('platform_support_ticket_detail',{p_actor:actor,p_ticket:ticketId});
+      if(error)throw error;if(!ticket)return json(req,{error:'not_found'},404);
+      return json(req,{data:ticket});
+    }
+    if (action === 'support_ticket_update') {
+      if (!['owner','support'].includes(role)) return json(req,{error:'forbidden'},403);
+      const ticketId=uuidOf(body.ticket_id),status=str(body.status,20),message=str(body.message,3000);
+      if(!ticketId||!['open','in_progress','resolved'].includes(status))return json(req,{error:'bad_request'},400);
+      const {data:current,error:currentError}=await admin.from('platform_tenant_cases').select('id,tenant_id,status').eq('id',ticketId).maybeSingle();
+      if(currentError)throw currentError;if(!current)return json(req,{error:'not_found'},404);
+      const now=new Date().toISOString();
+      const {error:updateError}=await admin.from('platform_tenant_cases').update({status,updated_by:actor,updated_by_email:str(user.email,254),updated_at:now}).eq('id',ticketId);
+      if(updateError)throw updateError;
+      if(message||status!==current.status){
+        const {error:eventError}=await admin.from('platform_tenant_case_events').insert({tenant_id:current.tenant_id,case_id:ticketId,event_type:message?'message':'updated',message:message||null,status,actor_id:actor,actor_email:str(user.email,254)});
+        if(eventError)throw eventError;
+      }
+      await admin.rpc('platform_log',{p_actor:actor,p_action:'support.ticket.update',p_tenant:current.tenant_id,p_payload:{ticket_id:ticketId,status,message_added:!!message}});
+      return json(req,{ok:true});
+    }
+    if(['announcements','announcement_save','tenant_flags_get','tenant_flags_set','admin_logins'].includes(action)&&role!=='owner')
+      return json(req,{error:'forbidden'},403);
+    if(action==='announcements'){
+      const {data,error}=await admin.from('platform_announcements').select('id,title,body,audience,tenant_ids,starts_at,ends_at,is_active,created_at').order('created_at',{ascending:false}).limit(300);
+      if(error)throw error;return json(req,{data:data??[]});
+    }
+    if(action==='announcement_save'){
+      const item=obj(body.announcement),id=uuidOf(item.id);
+      const payload={title:str(item.title,180),body:str(item.body,5000),audience:item.audience==='selected'?'selected':'all',
+        tenant_ids:Array.isArray(item.tenant_ids)?item.tenant_ids.filter((v)=>uuidOf(v)).slice(0,500):[],
+        starts_at:str(item.starts_at,50)||new Date().toISOString(),ends_at:str(item.ends_at,50)||null,is_active:item.is_active!==false,created_by:actor};
+      if(payload.title.length<3||!payload.body|| (payload.audience==='selected'&&!payload.tenant_ids.length))return json(req,{error:'bad_request'},400);
+      const query=id?admin.from('platform_announcements').update(payload).eq('id',id):admin.from('platform_announcements').insert(payload);
+      const {error}=await query;if(error)throw error;
+      await admin.rpc('platform_log',{p_actor:actor,p_action:'announcement.save',p_tenant:null,p_payload:{audience:payload.audience}});
+      return json(req,{ok:true});
+    }
+    if(action==='tenant_flags_get'){
+      const tenantId=uuidOf(body.tenant_id);if(!tenantId)return json(req,{error:'bad_request'},400);
+      const {data,error}=await admin.from('platform_tenant_feature_flags').select('flag_key,enabled,updated_at').eq('tenant_id',tenantId).order('flag_key');
+      if(error)throw error;return json(req,{data:data??[]});
+    }
+    if(action==='tenant_flags_set'){
+      const tenantId=uuidOf(body.tenant_id),key=str(body.flag_key,64),enabled=body.enabled;
+      if(!tenantId||! /^[a-z][a-z0-9_]{1,63}$/.test(key)||typeof enabled!=='boolean')return json(req,{error:'bad_request'},400);
+      const {error}=await admin.from('platform_tenant_feature_flags').upsert({tenant_id:tenantId,flag_key:key,enabled,updated_by:actor,updated_at:new Date().toISOString()});
+      if(error)throw error;await admin.rpc('platform_log',{p_actor:actor,p_action:'tenant.feature_flag.update',p_tenant:tenantId,p_payload:{flag_key:key,enabled}});
+      return json(req,{ok:true});
+    }
+    if(action==='admin_login_event'){
+      const forwarded=str(body.ip_address,64)||String(req.headers.get('x-forwarded-for')??'').split(',')[0].trim();
+      const ip=/^(?:\d{1,3}\.){3}\d{1,3}$|^[0-9a-f:]{3,45}$/i.test(forwarded)?forwarded:null;
+      const {error}=await admin.from('platform_admin_login_events').insert({user_id:actor,email:str(user.email,254),ip_address:ip,user_agent:str(body.user_agent,500)||str(req.headers.get('user-agent'),500)});
+      if(error)throw error;
+      return json(req,{ok:true});
+    }
+    if(action==='admin_logins'){
+      if(role!=='owner')return json(req,{error:'forbidden'},403);
+      const {data,error}=await admin.from('platform_admin_login_events').select('id,user_id,email,ip_address,user_agent,signed_in_at').order('signed_in_at',{ascending:false}).limit(300);
+      if(error)throw error;
+      return json(req,{data:data??[]});
+    }
     if (action === 'tenant_support' || action === 'tenant_note_add' || action === 'tenant_case_create' || action === 'tenant_case_update') {
       if (!['owner','support'].includes(role)) return json(req, { error: 'forbidden' }, 403);
       const tenantId = uuidOf(body.tenant_id);
@@ -133,19 +239,9 @@ Deno.serve(async (req) => {
       if (!tenant) return json(req, { error: 'not_found' }, 404);
       const actorEmail = str(user.email, 254);
       if (action === 'tenant_support') {
-        const [{ data: notes, error: notesError }, { data: cases, error: casesError }] = await Promise.all([
-          admin.from('platform_tenant_notes').select('id,body,created_by_email,created_at').eq('tenant_id', tenantId).order('created_at', { ascending: false }).limit(100),
-          admin.from('platform_tenant_cases').select('id,subject,category,status,created_by_email,updated_by_email,created_at,updated_at').eq('tenant_id', tenantId).order('updated_at', { ascending: false }).limit(100),
-        ]);
-        if (notesError || casesError) throw notesError ?? casesError;
-        const caseIds = (cases ?? []).map((item) => item.id);
-        let caseEvents: unknown[] = [];
-        if (caseIds.length) {
-          const { data, error } = await admin.from('platform_tenant_case_events').select('id,case_id,event_type,message,status,actor_email,created_at').eq('tenant_id', tenantId).in('case_id', caseIds).order('created_at', { ascending: false }).limit(200);
-          if (error) throw error;
-          caseEvents = data ?? [];
-        }
-        return json(req, { ok: true, data: { notes: notes ?? [], cases: cases ?? [], case_events: caseEvents } });
+        const { data: notes, error } = await admin.from('platform_tenant_notes').select('id,body,created_by_email,created_at').eq('tenant_id', tenantId).order('created_at', { ascending: false }).limit(100);
+        if (error) throw error;
+        return json(req, { ok: true, data: { notes: notes ?? [] } });
       }
       if (action === 'tenant_note_add') {
         const note = str(body.body, 3000);
@@ -306,7 +402,7 @@ Deno.serve(async (req) => {
       case 'subscriptions': rpc = { name: 'platform_list_subscriptions', args: { p_actor: actor, p_phase: str(body.phase, 20) || null, p_limit: Number(body.limit) || 100 } }; break;
       case 'plans': rpc = { name: 'platform_list_plans', args: { p_actor: actor } }; break;
       case 'plan_save': rpc = { name: 'platform_upsert_plan', args: { p_actor: actor, p: obj(body.plan) } }; break;
-      case 'payments': rpc = { name: 'platform_list_payments', args: { p_actor: actor, p_status: str(body.status, 20) || null, p_limit: Number(body.limit) || 100 } }; break;
+      case 'payments': rpc = { name: 'platform_list_payments', args: { p_actor: actor, p_status: str(body.status, 20) || null, p_limit: Number(body.limit) || 51, p_offset: Math.max(0, Number(body.offset) || 0) } }; break;
       case 'audit': rpc = { name: 'platform_audit_list', args: { p_actor: actor, p_tenant: uuidOf(body.tenant_id), p_from: str(body.from, 40) || null, p_to: str(body.to, 40) || null, p_action: str(body.audit_action, 100) || null, p_limit: Number(body.limit) || 51, p_offset: Math.max(0, Number(body.offset) || 0) } }; break;
       case 'notifications': rpc = { name: 'platform_notifications', args: { p_actor: actor, p_limit: Number(body.limit) || 200 } }; break;
       case 'notifications_read': {
@@ -375,7 +471,16 @@ Deno.serve(async (req) => {
         if (!EMAIL.test(email) || !/^[a-z0-9-]{2,40}$/.test(slug) || !site) return json(req, { error: 'bad_request' }, 400);
         const { error } = await caller.auth.resetPasswordForEmail(email, { redirectTo: `${site.replace(/\/$/, '')}/s/${slug}/owner` });
         await admin.rpc('platform_log', { p_actor: actor, p_action: 'owner.resend_invite', p_tenant: null, p_payload: { email, slug } });
-        return error ? json(req, { error: 'operation_failed' }, 502) : json(req, { ok: true });
+        if (error) {
+          const detail = `${error.code ?? ''} ${error.message ?? ''}`.toLowerCase();
+          console.error('resend_invite email delivery failed:', { status: error.status, code: error.code, message: error.message });
+          const reason = /rate.?limit|too many requests/.test(detail) ? 'invite_rate_limited'
+            : /redirect|validation_failed/.test(detail) ? 'invite_redirect_not_allowed'
+            : /email_address_not_authorized|smtp|email_provider_disabled/.test(detail) ? 'invite_email_provider_error'
+            : 'invite_email_failed';
+          return json(req, { error: reason }, 502);
+        }
+        return json(req, { ok: true });
       }
       default: return json(req, { error: 'unknown_action' }, 400);
     }

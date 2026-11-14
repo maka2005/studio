@@ -1,0 +1,57 @@
+@use '../../styles/variables' as *;
+
+.section {
+  padding: 96px 0;
+
+  &--muted {
+    background: $color-bg-alt;
+  }
+
+  @include mobile {
+    padding: 64px 0;
+  }
+}
+
+.container {
+  max-width: $container;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.section-header {
+  max-width: 720px;
+  margin-bottom: 56px;
+
+  &--center {
+    margin-left: auto;
+    margin-right: auto;
+    text-align: center;
+  }
+
+  &__eyebrow {
+    margin-bottom: 12px;
+    color: $color-primary;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  &__title {
+    font-size: 36px;
+  }
+
+  &__desc {
+    margin-top: 16px;
+    color: $color-text-muted;
+    font-size: 17px;
+  }
+
+  @include mobile {
+    margin-bottom: 40px;
+
+    &__title {
+      font-size: 28px;
+    }
+  }
+}

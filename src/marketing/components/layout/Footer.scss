@@ -1,0 +1,57 @@
+@use '../../styles/variables' as *;
+
+.footer {
+  margin-top: auto;
+  background: $color-bg-alt;
+  border-top: 1px solid $color-border;
+
+  &__grid {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr 1fr;
+    gap: 40px;
+    padding-top: 56px;
+    padding-bottom: 40px;
+  }
+
+  &__brand {
+    margin-bottom: 8px;
+    font-size: 20px;
+    font-weight: 800;
+  }
+
+  &__text,
+  &__bottom {
+    color: $color-text-muted;
+    font-size: 14px;
+  }
+
+  &__nav,
+  &__contacts {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+
+    a {
+      color: $color-text;
+      text-decoration: none;
+
+      &:hover {
+        color: $color-primary;
+      }
+    }
+  }
+
+  &__bottom {
+    padding-top: 20px;
+    padding-bottom: 28px;
+    border-top: 1px solid $color-border;
+  }
+
+  @include mobile {
+    &__grid {
+      grid-template-columns: 1fr;
+      gap: 28px;
+      padding-top: 40px;
+    }
+  }
+}

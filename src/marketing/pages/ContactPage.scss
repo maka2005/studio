@@ -1,0 +1,12 @@
+@use '../styles/variables' as *;
+
+.contact-page__grid {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  align-items: start;
+  gap: 32px;
+
+  @include mobile {
+    grid-template-columns: 1fr;
+  }
+}

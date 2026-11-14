@@ -1,6 +1,6 @@
 import { StrictMode, Suspense, lazy } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { LoadingScreen } from './components/LoadingScreen';
 import './styles.css';
@@ -38,6 +38,24 @@ window.addEventListener('vite:preloadError', (event) => {
   root.replaceChildren(panel);
 });
 
+// После выпуска старая вкладка иногда запрашивает уже удалённый CSS кабинета.
+// Один раз перезагружаем страницу, чтобы браузер получил свежий HTML и имена файлов.
+window.addEventListener('error', (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLLinkElement) || target.rel !== 'stylesheet') return;
+  try {
+    const path = new URL(target.href, window.location.href).pathname;
+    if (!path.startsWith('/assets/')) return;
+    const key = 'servio-stale-style-reload-at';
+    const previous = Number(sessionStorage.getItem(key) ?? 0);
+    if (Date.now() - previous < 60_000) return;
+    sessionStorage.setItem(key, String(Date.now()));
+    window.location.reload();
+  } catch {
+    // Private browsing can disable sessionStorage; the page still remains usable.
+  }
+}, true);
+
 const Home = lazy(() => import('./pages/Home').then((m) => ({ default: m.Home })));
 const ServicesPage = lazy(() => import('./pages/ServiceList').then((m) => ({ default: m.ServicesPage })));
 const MyBooking = lazy(() => import('./pages/MyBooking').then((m) => ({ default: m.MyBooking })));
@@ -46,6 +64,8 @@ const Profile = lazy(() => import('./pages/Profile').then((m) => ({ default: m.P
 const Install = lazy(() => import('./pages/Install').then((m) => ({ default: m.Install })));
 const Legal = lazy(() => import('./pages/Legal').then((m) => ({ default: m.Legal })));
 const PlatformAdmin = lazy(() => import('./pages/PlatformAdmin').then((m) => ({ default: m.PlatformAdmin })));
+const ServiceStatus = lazy(() => import('./pages/ServiceStatus').then((m) => ({ default: m.ServiceStatus })));
+const Marketing = lazy(() => import('./marketing/App'));
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -66,8 +86,8 @@ createRoot(document.getElementById('root')!).render(
       <BrowserRouter>
         <Suspense fallback={<LoadingScreen />}>
           <Routes>
-            <Route path="/" element={<Navigate to={`/s/${import.meta.env.VITE_DEFAULT_SLUG ?? 'graphite'}/`} replace />} />
             <Route path="/platform/admin" element={<PlatformAdmin />} />
+            <Route path="/status" element={<ServiceStatus />} />
             <Route path="/s/:slug" element={<Shell />}>
               <Route index element={<Home />} />
               <Route path="services" element={<ServicesPage />} />
@@ -77,6 +97,7 @@ createRoot(document.getElementById('root')!).render(
               <Route path="legal/:doc" element={<Legal />} />
               <Route path="owner/*" element={<Owner />} />
             </Route>
+            <Route path="/*" element={<Marketing />} />
           </Routes>
         </Suspense>
       </BrowserRouter>

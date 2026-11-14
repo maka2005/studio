@@ -1,0 +1,62 @@
+@use '../../styles/variables' as *;
+
+.shot {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  overflow: hidden;
+  background: $color-bg;
+  border: 1px solid $color-border;
+  border-radius: $radius;
+  box-shadow: $shadow;
+
+  &__bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 32px;
+    padding: 0 12px;
+    background: #f1f5f9;
+    border-bottom: 1px solid $color-border;
+
+    span {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: #cbd5e1;
+    }
+  }
+
+  img {
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: top;
+  }
+
+  &__placeholder {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    margin: 12px;
+    padding: 16px;
+    text-align: center;
+    color: $color-text-muted;
+    background: $color-bg-alt;
+    border: 2px dashed #cbd5e1;
+    border-radius: 12px;
+
+    span {
+      font-weight: 600;
+      color: $color-text;
+    }
+
+    small {
+      font-size: 13px;
+    }
+  }
+}

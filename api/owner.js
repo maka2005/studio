@@ -6,6 +6,7 @@ const IMP_ADMIN = SECURE_COOKIE ? '__Host-studio_owner_imp_admin' : 'studio_owne
 const IMP_EXP = SECURE_COOKIE ? '__Host-studio_owner_imp_exp' : 'studio_owner_imp_exp';
 const OWNER_RPCS = new Set([
   'owner_me','owner_access','owner_bookings','staff_bookings','owner_stats','owner_repeat_stats','owner_audit_history',
+  'owner_platform_announcements','owner_platform_feature_flags',
   'owner_set_status','staff_set_status','owner_cancel','owner_erase_customer','owner_reschedule','owner_create_booking',
   'owner_block','owner_add_payment','owner_upsert_service','owner_delete_service','owner_upsert_resource','owner_delete_resource',
   'owner_notification_settings','owner_update_notification_settings','owner_update_config','owner_update_legal','owner_telegram_code',
@@ -119,7 +120,7 @@ export default async function handler(req, res) {
       if (jar[IMP_SESSION] && jar[IMP_ADMIN]) await platformAction(cfg,jar[IMP_ADMIN],'impersonation_end',{session_id:jar[IMP_SESSION]});
       return send(res, 200, { ok: true }, { 'Set-Cookie': [...clearCookies(),...clearImpersonationCookies()] });
     }
-    if (req.method !== 'POST') return send(res, 405, { error: 'method_not_allowed' });
+    if (req.method !== 'POST' && !(req.method === 'GET' && action === 'support')) return send(res, 405, { error: 'method_not_allowed' });
 
     const session = await getSession(req, res, cfg);
     if (action === 'login') {
@@ -181,6 +182,30 @@ export default async function handler(req, res) {
         method: 'POST', headers: { apikey: cfg.anon, Authorization: `Bearer ${session.access}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
       });
       return send(res, result.status, await result.json().catch(() => ({ error: 'request_failed' })));
+    }
+    if (action === 'support') {
+      if (impersonation) return send(res,403,{error:'forbidden'});
+      const body = req.method==='GET'?{}:await parseBody(req);
+      const slug = String(body.slug || '');
+      if (!/^[a-z0-9-]{2,40}$/.test(slug)) return send(res, 400, { error: 'bad_request' });
+      const operation=req.method==='GET'?'list':String(body.action||'');
+      const rpc=operation==='list'
+        ? {name:'owner_support_list',args:{p_slug:slug,p_limit:Math.max(1,Math.min(50,Number(body.limit)||10)),p_offset:Math.max(0,Number(body.offset)||0)}}
+        : operation==='create'
+          ? {name:'owner_support_create',args:{p_slug:slug,p_subject:String(body.subject||''),p_category:String(body.category||''),p_custom_type:String(body.custom_type||''),p_severity:String(body.severity||''),p_message:String(body.message||'')}}
+          : operation==='reply'
+            ? {name:'owner_support_reply',args:{p_slug:slug,p_ticket:String(body.ticket_id||''),p_message:String(body.message||'')}}
+            : null;
+      if(!rpc)return send(res,400,{error:'bad_request'});
+      if(operation==='reply'&&!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(body.ticket_id||'')))return send(res,400,{error:'bad_request'});
+      const result=await supabaseFetch(cfg.url,cfg.anon,session.access,`/rest/v1/rpc/${rpc.name}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(rpc.args)});
+      const payload=await result.json().catch(()=>({error:'support_request_failed'}));
+      if(!result.ok){
+        const message=String(payload?.message||payload?.hint||'');
+        const status=message.includes('unauthorized')?401:message.includes('forbidden')?403:message.includes('not_found')?404:result.status;
+        return send(res,status,{error:message.includes('bad_request')?'bad_request':message.includes('forbidden')?'forbidden':message.includes('unauthorized')?'session_expired':'support_request_failed'});
+      }
+      return send(res,operation==='create'?201:200,payload);
     }
     if (action === 'password') {
       if (impersonation) return send(res,403,{error:'forbidden'});

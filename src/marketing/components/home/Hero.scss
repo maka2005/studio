@@ -1,0 +1,77 @@
+@use '../../styles/variables' as *;
+
+.hero {
+  padding: 72px 0 96px;
+  background: linear-gradient(180deg, $color-bg-alt 0%, $color-bg 100%);
+
+  &__inner {
+    display: grid;
+    grid-template-columns: 1fr 1.1fr;
+    align-items: center;
+    gap: 64px;
+  }
+
+  &__eyebrow {
+    margin-bottom: 16px;
+    color: $color-primary;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  &__title {
+    font-size: 52px;
+    font-weight: 800;
+  }
+
+  &__lead {
+    margin-top: 20px;
+    color: $color-text-muted;
+    font-size: 18px;
+  }
+
+  &__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 32px;
+  }
+
+  &__points {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 24px;
+    margin-top: 32px;
+    color: $color-text-muted;
+    font-size: 15px;
+
+    li::before {
+      content: '✓';
+      margin-right: 8px;
+      color: $color-accent;
+      font-weight: 700;
+    }
+  }
+
+  @media (max-width: 1023px) {
+    &__inner {
+      grid-template-columns: 1fr;
+      gap: 48px;
+    }
+  }
+
+  @include mobile {
+    padding: 40px 0 64px;
+
+    &__title {
+      font-size: 34px;
+    }
+
+    &__lead {
+      font-size: 16px;
+    }
+
+    &__actions .btn {
+      flex: 1 1 100%;
+    }
+  }
+}
