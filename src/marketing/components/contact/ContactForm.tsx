@@ -21,7 +21,7 @@ export function ContactForm() {
     businessName: '',
     ownerName: '',
     ownerEmail: '',
-    phone: '',
+    phone: maskPhone(params.get('phone') ?? ''),
     businessType: businessTypes[0] ?? 'Автосервис',
     requestType: params.get('type') === 'demo' ? 'demo' : 'connect',
     plan: params.get('plan') ?? '',

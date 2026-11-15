@@ -1,8 +1,52 @@
 @use '../../styles/variables' as *;
 
 .hero {
+  position: relative;
   padding: 72px 0 96px;
+  overflow: hidden;
   background: linear-gradient(180deg, $color-bg-alt 0%, $color-bg 100%);
+
+  &__glow {
+    position: absolute;
+    top: -220px;
+    right: -160px;
+    width: 640px;
+    height: 640px;
+    background: radial-gradient(circle, rgba(31, 79, 216, 0.16), transparent 65%);
+    pointer-events: none;
+  }
+
+  &__inner {
+    position: relative;
+  }
+
+  &__title span {
+    color: $color-primary;
+  }
+
+  &__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 32px;
+
+    li {
+      padding: 7px 14px;
+      color: $color-text;
+      font-size: 14px;
+      font-weight: 500;
+      background: #fff;
+      border: 1px solid $color-border;
+      border-radius: 999px;
+    }
+
+    li::before {
+      content: '✓';
+      margin-right: 8px;
+      color: $color-accent;
+      font-weight: 700;
+    }
+  }
 
   &__inner {
     display: grid;
@@ -19,7 +63,7 @@
   }
 
   &__title {
-    font-size: 52px;
+    font-size: 50px;
     font-weight: 800;
   }
 

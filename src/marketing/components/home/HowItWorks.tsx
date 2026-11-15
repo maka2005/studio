@@ -4,7 +4,7 @@ import './HowItWorks.scss';
 
 export function HowItWorks() {
   return (
-    <Section>
+    <Section id="how" tone="muted">
       <SectionHeader
         eyebrow="Как это работает"
         title="От заявки до первой онлайн-записи"

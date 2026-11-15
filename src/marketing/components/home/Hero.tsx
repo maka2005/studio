@@ -1,37 +1,37 @@
 import { Button } from '../ui/Button';
-import { ScreenshotFrame } from '../ui/ScreenshotFrame';
+import { heroChips } from '../../data/content';
+import { ProductPreview } from './ProductPreview';
 import './Hero.scss';
-
-const highlights = ['Онлайн-запись клиентов', 'Расписание в одном окне', 'Аналитика и отчёты'];
 
 export function Hero() {
   return (
     <section className="hero">
+      <div className="hero__glow" aria-hidden="true" />
       <div className="container hero__inner">
         <div className="hero__content">
-          <p className="hero__eyebrow">Для СТО и сервисных бизнесов Казахстана</p>
+          <p className="hero__eyebrow">Для СТО, детейлинга, автомоек и шиномонтажа в Казахстане</p>
           <h1 className="hero__title">
-            Записи, расписание и аналитика вашего сервиса — в одной системе
+            Онлайн-запись и управление автосервисом <span>в одной системе</span>
           </h1>
           <p className="hero__lead">
-            Servio помогает владельцам СТО, детейлинг-студий, автомоек и шиномонтажных мастерских
-            принимать онлайн-запись, управлять услугами и сотрудниками и видеть, как идёт бизнес.
+            Servio принимает записи клиентов 24/7, собирает расписание сотрудников, напоминает клиентам в Telegram
+            и показывает аналитику — вместо звонков, тетрадей и разрозненных таблиц.
           </p>
 
           <div className="hero__actions">
-            <Button variant="secondary" to="/contact?type=demo">Попробовать демо</Button>
             <Button to="/contact">Подключить Servio</Button>
+            <Button variant="secondary" to="/contact?type=demo">Попробовать демо</Button>
           </div>
 
-          <ul className="hero__points">
-            {highlights.map((item) => (
+          <ul className="hero__chips">
+            {heroChips.map((item) => (
               <li key={item}>{item}</li>
             ))}
           </ul>
         </div>
 
         <div className="hero__visual">
-          <ScreenshotFrame label="Главный экран Servio: календарь записей" ratio="4 / 3" />
+          <ProductPreview />
         </div>
       </div>
     </section>
