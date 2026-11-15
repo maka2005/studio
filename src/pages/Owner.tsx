@@ -68,7 +68,7 @@ export function Owner() {
     }
   } // Завершаем сессию и возвращаем пользователя к форме входа.
   if (recovery) {
-    return <RecoveryPassword failed={!recoveryLink.active} signIn={(email, password) => ownerRequest('login', { email, password })} onDone={() => {
+    return <RecoveryPassword failed={!recoveryLink.active} signIn={(email, password) => ownerRequest('login', { email, password, slug: b.slug })} onDone={() => {
       recoveryLink.active = false
       recoveryLink.failed = false
       window.history.replaceState(null, '', window.location.pathname)
@@ -77,7 +77,7 @@ export function Owner() {
     }} />
   }
   if (sess.isPending) return <LoadingScreen label="Открываем кабинет…" />
-  if (!sess.data?.user) return <Login />
+  if (!sess.data?.user) return <Login slug={b.slug} />
   if (sess.data.user.user_metadata?.must_change_password === true) return <SetInitialPassword />
   return <Cabinet b={b} onLogout={logout} impersonation={sess.data.impersonation} />
 }
@@ -97,7 +97,8 @@ const LockIcon = () => (
   </svg>
 )
 
-function Login() {
+function Login({ slug }: { slug: string }) {
+  const [orgs, setOrgs] = useState<{ slug: string; name: string }[] | null>(null)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [err, setErr] = useState<string | null>(null)
@@ -115,7 +116,7 @@ function Login() {
     setBusy(true)
     setErr(null)
     try {
-      const body = await ownerRequest<{error?:string}>('login',{email:email.trim(),password})
+      const body = await ownerRequest<{error?:string}>('login',{email:email.trim(),password,slug})
       if (body?.error === 'rate_limited') setErr('Слишком много попыток входа. Подождите 15 минут и попробуйте снова.')
       else if (body?.error === 'bad_credentials') setErr('Неверная почта или пароль.')
       else if (!body || body.error) setErr('Не удалось войти. Проверьте соединение и повторите позже.')
@@ -126,7 +127,12 @@ function Login() {
       }
     } catch (error) {
       const reason = error instanceof Error ? error.message : ''
-      if (reason === 'bad_credentials') setErr('Неверная почта или пароль.')
+      if (reason === 'wrong_organization') {
+        const list = (error as { payload?: { organizations?: { slug: string; name: string }[] } }).payload?.organizations
+        setOrgs(Array.isArray(list) ? list : [])
+        setErr('Эта почта не привязана к данной организации.')
+      }
+      else if (reason === 'bad_credentials') setErr('Неверная почта или пароль.')
       else if (reason === 'rate_limited') setErr('Слишком много попыток входа. Подождите 15 минут и попробуйте снова.')
       else setErr('Не удалось связаться с сервером. Проверьте интернет и повторите.')
     } finally {
@@ -169,6 +175,12 @@ function Login() {
           <p role="alert" className="err">
             {err}
           </p>
+        )}
+        {orgs && orgs.length > 0 && (
+          <div className="col" role="status">
+            <p className="muted small">Ваш аккаунт привязан к:</p>
+            {orgs.map((o) => <a key={o.slug} className="link" href={`/s/${encodeURIComponent(o.slug)}/owner`}>{o.name} →</a>)}
+          </div>
         )}
         <button
           className="btn"

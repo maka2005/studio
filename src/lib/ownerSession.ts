@@ -10,7 +10,7 @@ export async function ownerRequest<T = Record<string, unknown>>(action: string, 
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     const error = new Error(String(payload?.error || `request_failed_${response.status}`));
-    Object.assign(error, { status: response.status });
+    Object.assign(error, { status: response.status, payload });
     throw error;
   }
   return payload as T;

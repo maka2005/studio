@@ -22,7 +22,8 @@ Deno.serve(async (req) => {
   const p = await req.json().catch(() => null) as Record<string, unknown> | null;
   const email = typeof p?.email === 'string' ? p.email.trim().toLowerCase().slice(0, 254) : '';
   const password = typeof p?.password === 'string' ? p.password : '';
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 1 || password.length > 1024) return json(req, { error: 'bad_request' }, 400);
+  const slug = typeof p?.slug === 'string' ? p.slug.trim().toLowerCase() : '';
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 1 || password.length > 1024 || !/^[a-z0-9-]{2,40}$/.test(slug)) return json(req, { error: 'bad_request' }, 400);
   const url = Deno.env.get('SUPABASE_URL') ?? '';
   const anon = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
   const service = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
@@ -37,6 +38,17 @@ Deno.serve(async (req) => {
   if (ipAllowed.data !== true || emailAllowed.data !== true) return json(req, { error: 'rate_limited' }, 429);
   const auth = createClient(url, anon, { auth: { persistSession: false, autoRefreshToken: false } });
   const { data, error } = await auth.auth.signInWithPassword({ email, password });
-  if (error || !data.session) return json(req, { error: 'bad_credentials' }, 401);
+  if (error || !data.session || !data.user) return json(req, { error: 'bad_credentials' }, 401);
+  // Вход привязан к организации: сессия выдаётся только участнику именно этой организации.
+  const { data: memberships, error: memberError } = await admin.from('tenant_members').select('role,tenants!inner(slug,config)').eq('user_id', data.user.id);
+  if (memberError) return json(req, { error: 'temporarily_unavailable' }, 503);
+  type Row = { role: string; tenants: { slug: string; config: { name?: string } | null } };
+  const rows = (memberships ?? []) as unknown as Row[];
+  if (!rows.some((m) => m.tenants.slug === slug)) {
+    // Пароль верный, но к этой организации доступа нет: сессию не выдаём и гасим её.
+    await admin.auth.admin.signOut(data.session.access_token).catch(() => undefined);
+    // Показываем только организации самого пользователя (он только что подтвердил личность паролем).
+    return json(req, { error: 'wrong_organization', organizations: rows.slice(0, 5).map((m) => ({ slug: m.tenants.slug, name: m.tenants.config?.name ?? m.tenants.slug })) }, 403);
+  }
   return json(req, { session: { access_token: data.session.access_token, refresh_token: data.session.refresh_token } });
 });

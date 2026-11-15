@@ -63,6 +63,16 @@ async function findUserByEmail(admin: ReturnType<typeof createClient>, email: st
   return null;
 }
 
+
+// Гарантия: владелец записан в tenant_members сразу при создании организации (на случай сбоя/расхождения в RPC).
+async function ensureOwnerMembership(admin: ReturnType<typeof createClient>, tenantId: string, userId: string): Promise<boolean> {
+  const { data } = await admin.from('tenant_members').select('user_id').eq('tenant_id', tenantId).eq('user_id', userId).eq('role', 'owner').maybeSingle();
+  if (data) return true;
+  const { error } = await admin.from('tenant_members').upsert({ tenant_id: tenantId, user_id: userId, role: 'owner' }, { onConflict: 'tenant_id,user_id' });
+  if (error) { console.error('ensure owner membership failed:', error.message); return false; }
+  return true;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: { ...corsFor(req), 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' } });
   if (req.method !== 'POST') return json(req, { error: 'method_not_allowed' }, 405);
@@ -149,6 +159,7 @@ Deno.serve(async (req) => {
       if (failure === 'trial_already_used') return json(req, { error: 'trial_already_used' }, 409);
       return json(req, { error: failure ? 'operation_failed' : 'slug_taken' }, 500);
     }
+    if (!(await ensureOwnerMembership(admin, result.tenant_id, owner.id))) return json(req, { error: 'operation_failed' }, 500);
     const anonClient = createClient(url, anon, { auth: { persistSession: false, autoRefreshToken: false } });
     const invite = site ? await anonClient.auth.resetPasswordForEmail(ownerEmail, { redirectTo: `${site.replace(/\/$/, '')}/s/${result.slug}/owner` }) : { error: new Error('no_site') };
     if (invite.error) console.error('demo invite failed:', invite.error.message);
@@ -573,6 +584,7 @@ Deno.serve(async (req) => {
           console.error('create_tenant failed:', error.message);
           return json(req, { error: 'operation_failed' }, 500);
         }
+        if (!(await ensureOwnerMembership(admin, String((data as { tenant_id?: string }).tenant_id), owner.id))) return json(req, { error: 'operation_failed' }, 500);
         // приглашение: письмо для установки пароля (только для вновь созданного пользователя)
         let invited = false;
         if (createdUser && site) {

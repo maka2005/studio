@@ -125,6 +125,7 @@ export default async function handler(req, res) {
     const session = await getSession(req, res, cfg);
     if (action === 'login') {
       const body = await parseBody(req);
+      if (!/^[a-z0-9-]{2,40}$/.test(String(body.slug || ''))) return send(res, 400, { error: 'bad_request' });
       const result = await fetch(`${cfg.url}/functions/v1/owner-login`, {
         method: 'POST', headers: { apikey: cfg.anon, 'Content-Type': 'application/json', 'x-real-ip': String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim() }, body: JSON.stringify(body),
       });
