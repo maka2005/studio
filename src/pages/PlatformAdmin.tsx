@@ -1,5 +1,5 @@
 import { maskPhone, PHONE_PLACEHOLDER } from '../lib/phone';
-import { BrandMark } from '../components/BrandMark'
+import { BrandMark, Wordmark } from '../components/BrandMark'
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { recoveryLink, supabase } from '../lib/supabase';
 import { PasswordInput } from '../components/PasswordInput';
@@ -136,7 +136,7 @@ function Login({ msg, onDone }: { msg: string; onDone: () => void }) {
     onDone();
   };
   return (
-    <main className="page pf-login-page"><form className="card col pf-narrow" onSubmit={submit}><div className="pf-login-brand"><span className="pf-brand-mark"><BrandMark size={15} /></span><span><b>Renvio</b><small>Команда платформы</small></span></div><h1>Вход для команды</h1><p className="muted small">Здесь можно управлять организациями, оплатой и обращениями.</p>
+    <main className="page pf-login-page"><form className="card col pf-narrow" onSubmit={submit}><div className="pf-login-brand"><span className="pf-brand-mark"><BrandMark size={15} /></span><span><b className="pf-wordmark"><Wordmark height={11} /></b><small>Команда платформы</small></span></div><h1>Вход для команды</h1><p className="muted small">Здесь можно управлять организациями, оплатой и обращениями.</p>
       <input className="field" type="email" autoComplete="username" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required />
       <PasswordInput className="field" autoComplete="current-password" placeholder="Пароль" value={password} onChange={(e) => setPassword(e.target.value)} required />
       {err && <p className="err">{err}</p>}{info && <p className="muted small" role="status">{info}</p>}
@@ -154,7 +154,7 @@ function MfaVerify({ onDone }: { onDone: () => void }) {
     try{await platformAuth('mfa_verify',{factor_id:factor.id,code:code.trim()});onDone()}catch{setErr('Неверный код.')}
   };
   return (
-    <main className="page pf-login-page"><form className="card col pf-narrow" onSubmit={submit}><div className="pf-login-brand"><span className="pf-brand-mark"><BrandMark size={15} /></span><span><b>Renvio</b><small>Google Authenticator</small></span></div><h1>Подтвердите вход</h1><p className="muted small">Откройте Google Authenticator и введите шестизначный код для сервиса Renvio.</p>
+    <main className="page pf-login-page"><form className="card col pf-narrow" onSubmit={submit}><div className="pf-login-brand"><span className="pf-brand-mark"><BrandMark size={15} /></span><span><b className="pf-wordmark"><Wordmark height={11} /></b><small>Google Authenticator</small></span></div><h1>Подтвердите вход</h1><p className="muted small">Откройте Google Authenticator и введите шестизначный код для сервиса Renvio.</p>
       <input className="field" inputMode="numeric" autoComplete="one-time-code" maxLength={6} placeholder="6 цифр" value={code} onChange={(e) => setCode(e.target.value)} required />
       {err && <p className="err">{err}</p>}<button className="btn">Подтвердить</button></form></main>);
 }
@@ -169,7 +169,7 @@ function MfaEnroll({ onDone }: { onDone: () => void }) {
     try{await platformAuth('mfa_verify',{factor_id:info.id,code:code.trim()});onDone()}catch{setErr('Неверный код.')}
   };
   return (
-    <main className="page pf-login-page"><section className="card col pf-narrow"><div className="pf-login-brand"><span className="pf-brand-mark"><BrandMark size={15} /></span><span><b>Renvio</b><small>Защищённый вход</small></span></div><h1>Защитите аккаунт</h1>
+    <main className="page pf-login-page"><section className="card col pf-narrow"><div className="pf-login-brand"><span className="pf-brand-mark"><BrandMark size={15} /></span><span><b className="pf-wordmark"><Wordmark height={11} /></b><small>Защищённый вход</small></span></div><h1>Защитите аккаунт</h1>
       <p className="muted">Чтобы защитить аккаунт, подключите приложение для кодов входа, например Google Authenticator или 1Password.</p>
       {!info ? <button className="btn" onClick={start}>Настроить</button> : (
         <form className="col" onSubmit={verify}><img src={info.qr} alt="QR-код для приложения-аутентификатора" width={200} height={200} />
@@ -205,7 +205,7 @@ function Console({ onLogout, role, accountEmail }: { onLogout: () => void; onMfa
   useEffect(() => { if (!visibleTabs.includes(tab)) setTab(role === 'support' ? 'Поддержка' : 'Главная'); }, [role]);
   return (
     <main className="page pf-wide">
-      <header className="pf-app-header"><div className="pf-brand"><span className="pf-brand-mark"><BrandMark size={15} /></span><div><b>Renvio</b><span>Platform console</span></div></div><div className="pf-header-actions"><span className="pf-header-user">{PLATFORM_ROLE_LABEL[role] ?? 'Нет доступа'}{accountEmail && <><br/><small>{accountEmail}</small></>}</span><button className="pf-logout" onClick={onLogout}>Выйти</button></div></header>
+      <header className="pf-app-header"><div className="pf-brand"><span className="pf-brand-mark"><BrandMark size={15} /></span><div><b className="pf-wordmark"><Wordmark height={11} /></b><span>Platform console</span></div></div><div className="pf-header-actions"><span className="pf-header-user">{PLATFORM_ROLE_LABEL[role] ?? 'Нет доступа'}{accountEmail && <><br/><small>{accountEmail}</small></>}</span><button className="pf-logout" onClick={onLogout}>Выйти</button></div></header>
       <div className="pf-console-layout"><nav className="pf-tabs" aria-label="Разделы платформы">{visibleTabs.map((t) => <button key={t} className={tab === t && !openTenant ? 'is-current' : ''} onClick={() => { setOpenTenant(null); setTab(t); if(t==='Уведомления'){const ids=platformNotices.data?.filter(x=>!x.is_read).map(x=>String(x.id))??[];if(ids.length)void call('notifications_read',{ids}).then(()=>platformNotices.reload())} }}>{t}{t==='Уведомления'&&platformNotices.data?.some(x=>!x.is_read)&&<i className="admin-unread-dot" aria-label="Есть непрочитанные уведомления"/>}</button>)}</nav>
       <section className="pf-console-content">{openTenant ? <TenantCard id={openTenant} role={role} onBack={() => setOpenTenant(null)} />
         : tab === 'Главная' ? <Dashboard onOpen={setOpenTenant} onNavigate={setTab} />

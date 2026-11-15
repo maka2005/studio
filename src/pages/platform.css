@@ -173,3 +173,4 @@
 .pf-support h3{margin:0}
 .pf-org__actions a.pf-action-secondary,.pf-org__actions button.pf-action-secondary,.pf-zone__row .pf-action-secondary{padding:10px 14px;border-radius:10px;text-decoration:none;font-size:13px}
 @media(max-width:640px){.pf-org__stats{grid-template-columns:1fr}.pf-org__head{flex-direction:column}.pf-org{padding:18px}}
+.pf-wordmark{display:block;line-height:0;margin:2px 0 4px;color:#f4f6fa}
