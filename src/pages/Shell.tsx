@@ -6,6 +6,7 @@ import { assetUrl, loadBusiness, type Ctx } from '../lib/tenant';
 import { Calendar, Grid, Home, User } from '../lib/icons';
 import { BookingFlow } from '../components/BookingFlow';
 import { LoadingScreen } from '../components/LoadingScreen';
+import { Logo } from '../components/BrandMark';
 import { fetchBookingOpen } from '../lib/api';
 export function Shell() {
   const { slug = '' } = useParams();
@@ -34,6 +35,7 @@ export function Shell() {
     </section></div>}
     <main className={isOwner ? 'admin-main' : undefined}><Outlet context={ctx} /></main>
     {!isOwner && <div className="page legal-links"><Link to={`${base}/legal/privacy`}>Политика конфиденциальности</Link><Link to={`${base}/legal/terms`}>Условия использования</Link><Link to={`${base}/legal/consent`}>Согласие на обработку данных</Link><Link to={`${base}/legal/storage`}>Локальное хранилище</Link></div>}
+    {!isOwner && <div className="page powered"><a href="/" target="_blank" rel="noopener" aria-label="Renvio — система онлайн-записи для автосервисов"><span>Онлайн-запись работает на</span><Logo height={10} /></a></div>}
     {!isOwner && <nav className="tabs" aria-label="Разделы">
       <NavLink end to={base}><Home />Главная</NavLink><NavLink to={`${base}/services`}><Grid />Услуги</NavLink><NavLink to={`${base}/booking`}><Calendar />Моя запись</NavLink></nav>
     }
