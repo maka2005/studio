@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { ru } from 'date-fns/locale'
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 import { downloadOwnerExport, ownerRequest, type OwnerUser } from '../lib/ownerSession'
-import { supabase } from '../lib/supabase'
+import { recoveryLink, supabase } from '../lib/supabase'
 import { errText, fetchServices, fetchSlots, owner, type OwnerBooking, type OwnerNotificationSettings, type OwnerAuditEvent, type OwnerBillingNotification } from '../lib/api'
 import { duration, money, telHref } from '../lib/format'
 import { assetUrl, type Business, type Ctx } from '../lib/tenant'
@@ -42,6 +42,7 @@ const STATUS: Record<string, string> = {
 export function Owner() {
   const { b } = useOutletContext<Ctx>()
   const qc = useQueryClient()
+  const [recovery, setRecovery] = useState(recoveryLink.active || recoveryLink.failed)
   const sess = useQuery({
     queryKey: ['owner', 'session'],
     queryFn: async () => ownerRequest<{user:OwnerUser|null;impersonation?:{reason:string;expires_at:string;tenant_slug:string}}>('session',undefined,'GET'),
@@ -64,10 +65,50 @@ export function Owner() {
       window.location.assign(`/s/${encodeURIComponent(b.slug)}/owner`)
     }
   } // Завершаем сессию и возвращаем пользователя к форме входа.
+  if (recovery) {
+    return <RecoverySetPassword failed={!recoveryLink.active} onDone={() => {
+      recoveryLink.active = false
+      recoveryLink.failed = false
+      window.history.replaceState(null, '', window.location.pathname)
+      void qc.invalidateQueries({ queryKey: ['owner'] })
+      setRecovery(false)
+    }} />
+  }
   if (sess.isPending) return <LoadingScreen label="Открываем кабинет…" />
   if (!sess.data?.user) return <Login />
   if (sess.data.user.user_metadata?.must_change_password === true) return <SetInitialPassword />
   return <Cabinet b={b} onLogout={logout} impersonation={sess.data.impersonation} />
+}
+
+// Экран по ссылке из письма «Задать пароль» / «Забыли пароль».
+function RecoverySetPassword({ failed, onDone }: { failed: boolean; onDone: () => void }) {
+  const [password, setPassword] = useState(''); const [confirm, setConfirm] = useState(''); const [msg, setMsg] = useState(''); const [busy, setBusy] = useState(false)
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault(); setMsg('')
+    if (password.length < 10) { setMsg('Придумайте пароль не короче 10 символов.'); return }
+    if (password !== confirm) { setMsg('Пароли не совпадают.'); return }
+    setBusy(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const email = session?.user.email
+      if (!email) { setMsg('Ссылка устарела или уже использована. Вернитесь ко входу и запросите новую через «Забыли пароль?».'); return }
+      const { error } = await supabase.auth.updateUser({ password, data: { must_change_password: false } })
+      if (error) {
+        setMsg(/different|same/i.test(error.message) ? 'Новый пароль должен отличаться от прежнего.' : 'Не удалось задать пароль. Запросите новую ссылку через «Забыли пароль?».')
+        return
+      }
+      try { await ownerRequest('login', { email, password }) } catch { /* войдёт вручную */ }
+      await supabase.auth.signOut({ scope: 'local' }).catch(() => undefined)
+      window.dispatchEvent(new Event('owner-session-changed'))
+      onDone()
+    } catch {
+      setMsg('Не удалось сохранить пароль. Проверьте соединение и повторите.')
+    } finally { setBusy(false) }
+  }
+  if (failed) {
+    return <div className="page admin-login-page"><div className="login-wrap admin-login"><div className="login-ico"><LockIcon /></div><h1>Ссылка недействительна</h1><p className="muted">Ссылка из письма устарела или уже использовалась. Перейдите ко входу и нажмите «Забыли пароль?», чтобы получить новую.</p><button className="btn" type="button" onClick={onDone}>Перейти ко входу</button></div></div>
+  }
+  return <div className="page admin-login-page"><form className="login-wrap admin-login" onSubmit={(e) => void submit(e)}><div className="login-ico"><LockIcon /></div><h1>Задайте пароль</h1><p className="muted">Придумайте пароль для входа в кабинет Servio. Он должен быть не короче 10 символов.</p><label className="muted small" htmlFor="np1">Новый пароль</label><input id="np1" className="field" type="password" minLength={10} autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} required /><label className="muted small" htmlFor="np2">Повторите пароль</label><input id="np2" className="field" type="password" autoComplete="new-password" value={confirm} onChange={e => setConfirm(e.target.value)} required />{msg && <p className="err" role="alert">{msg}</p>}<button className="btn" disabled={busy}>{busy ? 'Сохраняем…' : 'Сохранить пароль и войти'}</button></form></div>
 }
 
 function SetInitialPassword() {
@@ -91,8 +132,15 @@ function Login() {
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [recovering,setRecovering]=useState(false)
-  const [recoveryEmail,setRecoveryEmail]=useState('');const [recoveryKey,setRecoveryKey]=useState('');const [newPassword,setNewPassword]=useState('');const [recoveryMessage,setRecoveryMessage]=useState('');const [newRecoveryKey,setNewRecoveryKey]=useState('')
+  const [mailMessage,setMailMessage]=useState('');const [mailBusy,setMailBusy]=useState(false);const [recoveryEmail,setRecoveryEmail]=useState('');const [recoveryKey,setRecoveryKey]=useState('');const [newPassword,setNewPassword]=useState('');const [recoveryMessage,setRecoveryMessage]=useState('');const [newRecoveryKey,setNewRecoveryKey]=useState('')
   const recover=async()=>{setRecoveryMessage('');setNewRecoveryKey('');try{const result=await owner.teamAction('','recover',{email:recoveryEmail.trim(),recovery_key:recoveryKey,password:newPassword});setRecoveryMessage('Пароль изменён. Войдите с новым паролем. Сохраните новый ключ восстановления:');setNewRecoveryKey(result.recovery_key??'Ключ не удалось обновить. После входа создайте новый во вкладке «Мой доступ».')}catch{setRecoveryMessage('Не удалось восстановить доступ. Проверьте почту и резервный ключ. Если ключ не сохранили, обратитесь к администратору проекта.')}}
+  const sendResetMail = async () => {
+    setMailMessage(''); setMailBusy(true)
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(recoveryEmail.trim(), { redirectTo: `${window.location.origin}${window.location.pathname}` })
+      setMailMessage(error && /rate|seconds|limit/i.test(error.message) ? 'Слишком часто. Подождите минуту и повторите.' : 'Если такая почта есть в системе, мы отправили на неё ссылку для установки пароля. Проверьте входящие и папку «Спам».')
+    } catch { setMailMessage('Не удалось отправить письмо. Проверьте соединение и повторите.') } finally { setMailBusy(false) }
+  }
   const submit = async () => {
     setBusy(true)
     setErr(null)
@@ -161,7 +209,7 @@ function Login() {
           {busy ? 'Входим…' : 'Войти'}
         </button>
         <button type="button" className="link" onClick={()=>{setRecovering(!recovering);setRecoveryMessage('')}}>{recovering?'Назад ко входу':'Забыли пароль?'}</button>
-        {recovering&&<div className="col"><p className="muted small">Введите почту и резервный ключ, который вы сохранили в кабинете. Письмо с кодом не отправляется.</p><input className="field" type="email" required placeholder="Почта аккаунта" value={recoveryEmail} onChange={e=>setRecoveryEmail(e.target.value)}/><input className="field" required placeholder="Резервный ключ" value={recoveryKey} onChange={e=>setRecoveryKey(e.target.value)}/><input className="field" type="password" minLength={10} required placeholder="Новый пароль (от 10 символов)" value={newPassword} onChange={e=>setNewPassword(e.target.value)}/><button type="button" className="btn" disabled={!recoveryEmail||!recoveryKey||newPassword.length<10} onClick={()=>void recover()}>Восстановить доступ</button>{recoveryMessage&&<p className="muted small" role="status">{recoveryMessage}</p>}{newRecoveryKey&&<div className="card col"><b>Новый резервный ключ</b><code>{newRecoveryKey}</code><button type="button" className="btn ghost mini" onClick={async()=>{try{await navigator.clipboard.writeText(newRecoveryKey);setNewRecoveryKey('');setRecoveryMessage('Новый ключ скопирован. Сохраните его в надёжном месте.')}catch{setRecoveryMessage('Сохраните ключ вручную в надёжном месте.')}}}>Скопировать и скрыть</button></div>}</div>}
+        {recovering&&<div className="col"><p className="muted small">Укажите почту аккаунта — мы отправим на неё ссылку для установки нового пароля.</p><input className="field" type="email" required placeholder="Почта аккаунта" value={recoveryEmail} onChange={e=>setRecoveryEmail(e.target.value)}/><button type="button" className="btn" disabled={!recoveryEmail||mailBusy} onClick={()=>void sendResetMail()}>{mailBusy?'Отправляем…':'Отправить ссылку на почту'}</button>{mailMessage&&<p className="muted small" role="status">{mailMessage}</p>}<p className="muted small">Нет доступа к почте? Восстановите доступ по резервному ключу, который вы сохранили в кабинете.</p><input className="field" required placeholder="Резервный ключ" value={recoveryKey} onChange={e=>setRecoveryKey(e.target.value)}/><input className="field" type="password" minLength={10} required placeholder="Новый пароль (от 10 символов)" value={newPassword} onChange={e=>setNewPassword(e.target.value)}/><button type="button" className="btn" disabled={!recoveryEmail||!recoveryKey||newPassword.length<10} onClick={()=>void recover()}>Восстановить доступ</button>{recoveryMessage&&<p className="muted small" role="status">{recoveryMessage}</p>}{newRecoveryKey&&<div className="card col"><b>Новый резервный ключ</b><code>{newRecoveryKey}</code><button type="button" className="btn ghost mini" onClick={async()=>{try{await navigator.clipboard.writeText(newRecoveryKey);setNewRecoveryKey('');setRecoveryMessage('Новый ключ скопирован. Сохраните его в надёжном месте.')}catch{setRecoveryMessage('Сохраните ключ вручную в надёжном месте.')}}}>Скопировать и скрыть</button></div>}</div>}
       </form>
     </div>
   )

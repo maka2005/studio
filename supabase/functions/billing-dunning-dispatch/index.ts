@@ -1,4 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import nodemailer from 'npm:nodemailer@6.9.16';
 
 const env=(key:string)=>Deno.env.get(key)??'';
 const escapeHtml=(value:unknown)=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]??char));
@@ -34,11 +35,17 @@ Deno.serve(async(req)=>{
   if(req.method!=='POST')return new Response('method_not_allowed',{status:405});
   if(!env('CRON_SECRET')||req.headers.get('x-cron-secret')!==env('CRON_SECRET'))return new Response('forbidden',{status:403});
 
+  // Почта: SMTP (например Gmail с паролем приложения) или Resend. SMTP приоритетнее, если заданы SMTP_USER и SMTP_PASS.
+  const smtpUser=env('SMTP_USER');
+  const smtpPass=env('SMTP_PASS');
+  const useSmtp=Boolean(smtpUser&&smtpPass);
   const apiKey=env('RESEND_API_KEY');
-  const from=env('BILLING_EMAIL_FROM');
-  const supportEmail=env('BILLING_SUPPORT_EMAIL');
+  const from=env('BILLING_EMAIL_FROM')||(useSmtp?`Servio <${smtpUser}>`:'');
+  const supportEmail=env('BILLING_SUPPORT_EMAIL')||(useSmtp?smtpUser:'');
   const siteUrl=env('SITE_URL');
-  if(!apiKey||!from||!supportEmail||!siteUrl||!/^\S+@\S+\.\S+$/.test(supportEmail))return Response.json({enabled:false,reason:'email_provider_not_configured'});
+  if((!useSmtp&&!apiKey)||!from||!supportEmail||!siteUrl||!/^\S+@\S+\.\S+$/.test(supportEmail))return Response.json({enabled:false,reason:'email_provider_not_configured'});
+  const smtpPort=Number(env('SMTP_PORT')||465);
+  const transporter=useSmtp?nodemailer.createTransport({host:env('SMTP_HOST')||'smtp.gmail.com',port:smtpPort,secure:smtpPort===465,auth:{user:smtpUser,pass:smtpPass}}):null;
 
   const admin=createClient(env('SUPABASE_URL'),env('SUPABASE_SERVICE_ROLE_KEY'));
   const {error:enqueueError}=await admin.rpc('enqueue_platform_billing_reminders');
@@ -57,16 +64,27 @@ Deno.serve(async(req)=>{
         if(stale){await admin.rpc('finish_platform_billing_email',{p_id:job.id,p_sent:false,p_error:'skip:subscription_changed'});skipped++;continue;}
       }
       const {subject,html,text}=emailContent(job.kind,job.payload,siteUrl,supportEmail);
-      const response=await fetch('https://api.resend.com/emails',{
-        method:'POST',headers:{Authorization:`Bearer ${apiKey}`,'Content-Type':'application/json','Idempotency-Key':job.dedupe_key},
-        body:JSON.stringify({from,to:[job.recipient_email],reply_to:supportEmail,subject,html,text}),signal:AbortSignal.timeout(10000),
-      });
-      const result=await response.json().catch(()=>({}));
-      if(!response.ok||!result.id){
-        const message=String(result.message??`email_provider_http_${response.status}`).slice(0,200);
-        await admin.rpc('finish_platform_billing_email',{p_id:job.id,p_sent:false,p_error:message});failed++;continue;
+      let messageId='';
+      if(transporter){
+        try{
+          const info=await transporter.sendMail({from,to:job.recipient_email,replyTo:supportEmail,subject,html,text});
+          messageId=String(info.messageId??'smtp');
+        }catch(smtpError){
+          await admin.rpc('finish_platform_billing_email',{p_id:job.id,p_sent:false,p_error:String((smtpError as Error).message).slice(0,200)});failed++;continue;
+        }
+      }else{
+        const response=await fetch('https://api.resend.com/emails',{
+          method:'POST',headers:{Authorization:`Bearer ${apiKey}`,'Content-Type':'application/json','Idempotency-Key':job.dedupe_key},
+          body:JSON.stringify({from,to:[job.recipient_email],reply_to:supportEmail,subject,html,text}),signal:AbortSignal.timeout(10000),
+        });
+        const result=await response.json().catch(()=>({}));
+        if(!response.ok||!result.id){
+          const message=String(result.message??`email_provider_http_${response.status}`).slice(0,200);
+          await admin.rpc('finish_platform_billing_email',{p_id:job.id,p_sent:false,p_error:message});failed++;continue;
+        }
+        messageId=String(result.id);
       }
-      const {error:finishError}=await admin.rpc('finish_platform_billing_email',{p_id:job.id,p_sent:true,p_message_id:String(result.id)});
+      const {error:finishError}=await admin.rpc('finish_platform_billing_email',{p_id:job.id,p_sent:true,p_message_id:messageId});
       if(finishError)throw finishError;
       sent++;
     }catch(error){
