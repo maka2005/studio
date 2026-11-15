@@ -42,9 +42,37 @@
   }
 
   &__bottom {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
     padding-top: 20px;
     padding-bottom: 28px;
     border-top: 1px solid $color-border;
+  }
+
+  &__status {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: $color-text-muted;
+    text-decoration: none;
+
+    &:hover {
+      color: $color-primary;
+    }
+  }
+
+  &__status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #94a3b8;
+
+    &.is-operational { background: #22c55e; }
+    &.is-degraded { background: #f59e0b; }
+    &.is-outage { background: #ef4444; }
   }
 
   @include mobile {

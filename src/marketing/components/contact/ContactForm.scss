@@ -97,3 +97,11 @@
     color: $color-primary;
   }
 }
+
+.contact-form__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 16px;
+}

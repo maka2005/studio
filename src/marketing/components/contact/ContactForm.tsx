@@ -22,6 +22,7 @@ export function ContactForm() {
     consent: false,
   });
   const [result, setResult] = useState<LeadResult | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const update =
     (field: Exclude<keyof LeadPayload, 'consent'>) =>
@@ -51,6 +52,7 @@ export function ContactForm() {
 
   if (status === 'sent') {
     if (result?.mode === 'demo' && result.slug) {
+      const bookingUrl = `${window.location.origin}/s/${result.slug}`;
       return (
         <div className="contact-form contact-form--success" role="status">
           <h2>Демо-версия готова</h2>
@@ -60,12 +62,25 @@ export function ContactForm() {
               ? `Письмо для установки пароля отправлено на ${form.ownerEmail}. Откройте его, задайте пароль и войдите в кабинет.`
               : 'Письмо с доступом отправить не удалось — наша команда свяжется с вами и поможет войти.'}
           </p>
+          <p>Адрес записи для клиентов:</p>
           <p>
-            Адрес записи для клиентов: <b>/s/{result.slug}</b>
+            <a href={bookingUrl} target="_blank" rel="noopener noreferrer"><b>{bookingUrl}</b></a>
           </p>
-          <p>
-            <a className="btn btn--primary" href={`/s/${result.slug}/owner`}>Перейти в кабинет</a>
-          </p>
+          <div className="contact-form__actions">
+            <Button href={`/s/${result.slug}/owner`}>Перейти в кабинет</Button>
+            <Button variant="secondary" href={bookingUrl}>Открыть страницу записи</Button>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                navigator.clipboard?.writeText(bookingUrl).then(() => {
+                  setCopied(true);
+                  window.setTimeout(() => setCopied(false), 2000);
+                });
+              }}
+            >
+              {copied ? 'Ссылка скопирована ✓' : 'Скопировать ссылку'}
+            </Button>
+          </div>
         </div>
       );
     }
