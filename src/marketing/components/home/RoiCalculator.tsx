@@ -54,7 +54,7 @@ export function RoiCalculator() {
   const lossNoShow = bookings * (noShow / 100) * check;
   const total = lossMissed + lossNoShow;
   const recovered = total * 0.3; // осторожное допущение: возвращается 30% потерь
-  const cheapest = plans.reduce((min, p) => (p.price < min.price ? p : min), plans[0]);
+  const cheapest = [...plans].sort((a, b) => a.price - b.price)[0];
   const price = cheapest?.price ?? 0;
   const profit = recovered - price;
 
