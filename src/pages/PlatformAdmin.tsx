@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { supabase } from '../lib/supabase';
+import { recoveryLink, supabase } from '../lib/supabase';
+import { PasswordInput } from '../components/PasswordInput';
+import { RecoveryPassword } from '../components/RecoveryPassword';
+import { Toaster, notify } from '../components/Toaster';
 import '../styles.css';
 import './platform.css';
 
@@ -52,6 +55,7 @@ export function PlatformAdmin() {
   const [msg, setMsg] = useState('');
   const [role, setRole] = useState('read_only');
   const [accountEmail, setAccountEmail] = useState('');
+  const [recovery, setRecovery] = useState(recoveryLink.active || recoveryLink.failed);
 
   const check = useCallback(async () => {
     try {
@@ -81,7 +85,15 @@ export function PlatformAdmin() {
       else { setMsg(errText(e)); setStep('login'); }
     }
   }, []);
-  useEffect(() => { void check(); }, [check]);
+  useEffect(() => { if (!recovery) void check(); }, [check, recovery]);
+
+  if (recovery) {
+    return <RecoveryPassword failed={!recoveryLink.active} signIn={(email, password) => platformAuth('login', { email, password })} onDone={() => {
+      recoveryLink.active = false; recoveryLink.failed = false;
+      window.history.replaceState(null, '', window.location.pathname);
+      setStep('loading'); setRecovery(false);
+    }} />;
+  }
 
   if (step === 'loading') return <main className="page"><p className="muted">Загрузка…</p></main>;
   if (step === 'denied') return (
@@ -90,11 +102,30 @@ export function PlatformAdmin() {
   if (step === 'login') return <Login msg={msg} onDone={check} />;
   if (step === 'mfa') return <MfaVerify onDone={check} />;
   if (step === 'enroll') return <MfaEnroll onDone={check} />;
-  return <Console role={role} accountEmail={accountEmail} onLogout={async () => { await platformAuth('logout'); setStep('login'); }} onMfa={() => setStep('mfa')} />;
+  return <><Toaster /><Console role={role} accountEmail={accountEmail} onLogout={async () => { await platformAuth('logout'); setStep('login'); }} onMfa={() => setStep('mfa')} /></>;
+}
+
+async function resendInvite(email: string, slug: string) {
+  try {
+    await call('resend_invite', { email, slug });
+    notify(`Приглашение отправлено на ${email}. Письмо приходит в течение минуты, проверьте также папку «Спам».`, 'ok');
+  } catch (e) {
+    notify(`Не удалось отправить приглашение на ${email}. ${errText(e)}`, 'err');
+    throw e;
+  }
 }
 
 function Login({ msg, onDone }: { msg: string; onDone: () => void }) {
-  const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [err, setErr] = useState(msg); const [busy, setBusy] = useState(false);
+  const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [err, setErr] = useState(msg); const [busy, setBusy] = useState(false); const [info, setInfo] = useState('');
+  const forgot = async () => {
+    setErr(''); setInfo('');
+    if (!/^\S+@\S+\.\S+$/.test(email.trim())) { setErr('Введите свой email в поле выше, и мы отправим ссылку для нового пароля.'); return; }
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: `${window.location.origin}/platform/admin` });
+      if (error && /rate|seconds|limit/i.test(error.message)) setErr('Слишком часто. Подождите минуту и повторите.');
+      else setInfo('Если такой аккаунт есть, мы отправили на почту ссылку для установки пароля. Проверьте входящие и папку «Спам».');
+    } catch { setErr('Не удалось отправить письмо. Проверьте соединение и повторите.'); }
+  };
   const submit = async (e: FormEvent) => {
     e.preventDefault(); setBusy(true); setErr('');
     try{await platformAuth('login',{email:email.trim(),password})}catch{setBusy(false);setErr('Неверный email или пароль.');return}
@@ -104,9 +135,10 @@ function Login({ msg, onDone }: { msg: string; onDone: () => void }) {
   return (
     <main className="page pf-login-page"><form className="card col pf-narrow" onSubmit={submit}><div className="pf-login-brand"><span className="pf-brand-mark">S</span><span><b>Servio</b><small>Команда платформы</small></span></div><h1>Вход для команды</h1><p className="muted small">Здесь можно управлять организациями, оплатой и обращениями.</p>
       <input className="field" type="email" autoComplete="username" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-      <input className="field" type="password" autoComplete="current-password" placeholder="Пароль" value={password} onChange={(e) => setPassword(e.target.value)} required />
-      {err && <p className="err">{err}</p>}
-      <button className="btn" disabled={busy}>Войти</button></form></main>);
+      <PasswordInput className="field" autoComplete="current-password" placeholder="Пароль" value={password} onChange={(e) => setPassword(e.target.value)} required />
+      {err && <p className="err">{err}</p>}{info && <p className="muted small" role="status">{info}</p>}
+      <button className="btn" disabled={busy}>Войти</button>
+      <button type="button" className="link" onClick={() => void forgot()}>Забыли пароль? Отправить ссылку на почту</button></form></main>);
 }
 
 function MfaVerify({ onDone }: { onDone: () => void }) {
@@ -287,7 +319,7 @@ function Tenants({ onOpen }: { onOpen: (id: string) => void }) {
         <td>{r.owner_email ?? '—'}</td><td>{r.plan_code ?? '—'}</td><td><Badge phase={r.phase} /></td><td>{r.ends_at ? fmtDate(r.ends_at) : 'бессрочно'}</td>
         <td className="pf-actions">
           <a href={`/s/${r.slug}/`} target="_blank" rel="noreferrer">Сайт</a>
-          {r.owner_email && <button onClick={() => act(() => call('resend_invite',{email:r.owner_email,slug:r.slug}))}>Приглашение</button>}
+          {r.owner_email && <button onClick={() => act(() => resendInvite(r.owner_email, r.slug))}>Приглашение</button>}
           {r.subscription_id && ['suspended', 'expired'].includes(r.phase) && <button onClick={() => act(() => resumeFlow(r.subscription_id))}>Возобновить</button>}
         </td></tr>))}</Table>}
     {data&&(rows.length>0||page>0)&&<nav className="admin-service-pagination" aria-label="Организации"><button className="admin-page-button" disabled={page===0||loading} onClick={()=>setPage(page-1)}>Назад</button><span className="muted small">Страница <b>{page+1}</b></span><button className="admin-page-button" disabled={!hasNext||loading} onClick={()=>setPage(page+1)}>Далее</button></nav>}
@@ -373,7 +405,7 @@ function TenantCard({ id, role, onBack }: { id: string; role: string; onBack: ()
     <button className="back" onClick={onBack}>← Назад</button>
     {subModal&&<SubscriptionActionModal type={subModal.type} subscription={subModal.subscription} initialPlan={cur?.plan_code??'START'} initialDate={cur?.ends_at?.slice(0,10)??''} onClose={()=>setSubModal(null)} onSubmit={async values=>{await act(()=>runSubAction(subModal.subscription.id,subModal.type,values));setSubModal(null)}}/>}
     <section className="card"><div className="row between wrap"><div><h2>{t.config?.name ?? t.slug}</h2><p className="muted small">{t.slug} · {t.timezone} · создана {fmtDate(t.created_at)} · доступ: {d.access_state}</p>{t.archived_at&&<p className="err small">В архиве с {fmtDate(t.archived_at)}{t.deletion_requested_at?` · удаление запрошено, хранение до ${fmtDate(new Date(new Date(t.deletion_requested_at).getTime()+30*86400000).toISOString())}`:''}</p>}</div>
-      <div className="row wrap"><a className="btn ghost inline" href={`/s/${t.slug}/`} target="_blank" rel="noreferrer">Публичная страница</a>{t.owner_email&&<button className="btn ghost inline" onClick={()=>void act(()=>call('resend_invite',{email:t.owner_email,slug:t.slug}))}>Отправить приглашение владельцу</button>}<button className="btn ghost inline" onClick={exportData}>Экспорт данных</button></div></div>
+      <div className="row wrap"><a className="btn ghost inline" href={`/s/${t.slug}/`} target="_blank" rel="noreferrer">Публичная страница</a>{t.owner_email&&<button className="btn ghost inline" onClick={()=>void act(()=>resendInvite(t.owner_email, t.slug))}>Отправить приглашение владельцу</button>}<button className="btn ghost inline" onClick={exportData}>Экспорт данных</button></div></div>
       {msg && <p className="err">{msg}</p>}
       {role==='owner'&&<div className="col"><label className="pf-label">Причина действия с организацией<input className="field" minLength={5} maxLength={500} value={lifeReason} onChange={e=>setLifeReason(e.target.value)} placeholder="Обязательная причина (не менее 5 символов)"/></label><div className="row wrap"><button className="btn ghost" disabled={lifeReason.trim().length<5} onClick={()=>void act(()=>call('tenant_lifecycle',{tenant_id:id,lifecycle_action:t.archived_at?'restore':'archive',reason:lifeReason.trim()}))}>{t.archived_at?'Восстановить':'В архив'}</button><button className="btn danger" disabled={lifeReason.trim().length<5||!!t.deletion_requested_at} onClick={()=>{if(window.confirm('Удаление будет запрошено с 30-дневным сроком хранения. Данные сейчас не стираются. Продолжить?'))void act(()=>call('tenant_lifecycle',{tenant_id:id,lifecycle_action:'delete_request',reason:lifeReason.trim()}))}}>Запросить удаление (30 дней)</button></div></div>}
       <p className="muted small">Сотрудники: {d.counters.staff} · Услуги: {d.counters.services} · Записи за 30 дней: {d.counters.bookings_30d}</p></section>
@@ -413,7 +445,7 @@ function CreateTenant({ onCreated, prefill }: { onCreated: (id: string) => void;
     const services = String(f.services).split('\n').map((l) => l.trim()).filter(Boolean).map((l) => { const [name, price, dur] = l.split(';').map((x) => x.trim()); return { name, price: Number(price), duration_minutes: Number(dur) }; });
     try {
       const r = await call<Row>('create_tenant', { idempotency_key: key.current, tenant: { ...f, start: iso(f.start), months: Number(f.months), services } });
-      setOk(r.replayed ? 'Организация уже была создана этим запросом.' : r.invite_sent ? 'Организация создана, приглашение отправлено владельцу.' : 'Организация создана. Приглашение не отправлено — отправьте его из карточки.');
+      { const okText = r.replayed ? 'Организация уже была создана этим запросом.' : r.invite_sent ? 'Организация создана, приглашение отправлено владельцу.' : 'Организация создана. Приглашение не отправлено — отправьте его из карточки.'; setOk(okText); notify(okText, r.invite_sent || r.replayed ? 'ok' : 'warn'); }
       if(prefill?.id){try{await call('business_lead_update',{lead_id:prefill.id,status:'converted',tenant_id:r.tenant_id,tenant_slug:r.slug??f.slug})}catch{setOk(x=>x+' Заявку не удалось отметить подключённой — сделайте это вручную.')}}
       key.current = newKey(); onCreated(r.tenant_id);
     } catch (e2) { setErr(errText(e2)); } finally { setBusy(false); }
@@ -613,7 +645,7 @@ function platformAuditDetail(action:string,payload:Row){
   if(action.startsWith('admin.')){const target=payload.target_email?`Администратор: ${String(payload.target_email)} · `:'';if(action==='admin.add'||action==='admin.role_update')return `${target}роль: ${PLATFORM_ROLE_LABEL[String(payload.role)]??String(payload.role??'—')}${payload.invite_sent===true?' · приглашение отправлено':''}`;if(action==='admin.mfa_reset')return `${target}сброшено способов MFA: ${Number(payload.factors_removed??0)}`;return `${target}доступ отключён`}
   if(action==='tenant.export'){const counts=payload.counts??{};return `Выгружены данные · записей: ${Number(counts.bookings??0)}, услуг: ${Number(counts.services??0)}`}
   if(action==='plan.upsert'){const d=payload.data??{};return `${String(d.name??'Тариф')} · ${Number(d.price_kzt??0).toLocaleString('ru-RU')} ₸ за ${Number(d.period_months??1)} мес. · ${d.is_active===false?'выключен':'активен'}`}
-  if(action==='owner.resend_invite')return `Приглашение отправлено на ${String(payload.email??'адрес владельца')}`;
+  if(action==='owner.resend_invite')return payload.sent===false?`Не удалось отправить приглашение на ${String(payload.email??'адрес владельца')}`:`Приглашение отправлено на ${String(payload.email??'адрес владельца')}`;
   if(action==='impersonation.end'||action==='impersonation.expired')return 'Служебный сеанс завершён';
   return 'Изменения сохранены';
 }

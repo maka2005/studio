@@ -568,7 +568,7 @@ Deno.serve(async (req) => {
         const email = str(body.email, 254).toLowerCase(); const slug = str(body.slug, 40).toLowerCase();
         if (!EMAIL.test(email) || !/^[a-z0-9-]{2,40}$/.test(slug) || !site) return json(req, { error: 'bad_request' }, 400);
         const { error } = await caller.auth.resetPasswordForEmail(email, { redirectTo: `${site.replace(/\/$/, '')}/s/${slug}/owner` });
-        await admin.rpc('platform_log', { p_actor: actor, p_action: 'owner.resend_invite', p_tenant: null, p_payload: { email, slug } });
+        await admin.rpc('platform_log', { p_actor: actor, p_action: 'owner.resend_invite', p_tenant: null, p_payload: { email, slug, sent: !error } });
         if (error) {
           const detail = `${error.code ?? ''} ${error.message ?? ''}`.toLowerCase();
           console.error('resend_invite email delivery failed:', { status: error.status, code: error.code, message: error.message });
