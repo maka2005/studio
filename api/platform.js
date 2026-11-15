@@ -130,8 +130,14 @@ export default async function handler(req,res) {
       return send(res,200,{user:await u.json(),authorized:result.ok,role:data.role,mfa_required:data.mfa_required===true,aal:data.aal});
     }
     if(req.method==='GET'&&action==='factors') {
-      const r=await authFetch(cfg,session.access_token,'/auth/v1/factors');
-      return send(res,r.status,await r.json().catch(()=>({})));
+      // В Supabase Auth нет GET /factors (ответ 405): список факторов приходит в объекте пользователя.
+      const r=await authFetch(cfg,session.access_token,'/auth/v1/user');
+      const account=await r.json().catch(()=>({}));
+      if(!r.ok)return send(res,r.status,{error:'factors_unavailable'});
+      const totp=(Array.isArray(account.factors)?account.factors:[])
+        .filter(f=>f.factor_type==='totp'&&f.status==='verified')
+        .map(f=>({id:f.id,friendly_name:f.friendly_name,status:f.status}));
+      return send(res,200,{factors:{totp}});
     }
     if(req.method==='POST'&&action==='mfa_enroll') {
       const r=await authFetch(cfg,session.access_token,'/auth/v1/factors',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({factor_type:'totp',friendly_name:String(body.friendly_name||'platform-admin')})});
