@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
+import '../styles.css';
 import './platform.css';
 
 // Админка платформы. Все данные приходят из Edge Function platform-admin, которая на сервере

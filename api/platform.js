@@ -71,10 +71,20 @@ export default async function handler(req,res) {
   try { if(req.method==='POST') body=await parseBody(req); } catch { return send(res,400,{error:'bad_request'}); }
   const action=String(req.query?.action||'');
   try {
-    if(req.method==='POST'&&action==='lead') {
-      const r=await fetch(`${cfg.url}/functions/v1/platform-admin`,{method:'POST',headers:{apikey:cfg.anon,Authorization:`Bearer ${cfg.anon}`,'Content-Type':'application/json'},body:JSON.stringify({action:'public_lead_submit',lead:body})});
+    if(req.method==='POST'&&action==='demo') {
+      const r=await fetch(`${cfg.url}/functions/v1/platform-admin`,{method:'POST',headers:{apikey:cfg.anon,Authorization:`Bearer ${cfg.anon}`,'Content-Type':'application/json','x-client-ip':String(req.headers['x-forwarded-for']||'').split(',')[0].trim()},body:JSON.stringify({action:'public_demo_start',lead:body})});
       const result=await r.json().catch(()=>({}));
       return send(res,r.status,result);
+    }
+    if(req.method==='POST'&&action==='lead') {
+      const r=await fetch(`${cfg.url}/functions/v1/platform-admin`,{method:'POST',headers:{apikey:cfg.anon,Authorization:`Bearer ${cfg.anon}`,'Content-Type':'application/json','x-client-ip':String(req.headers['x-forwarded-for']||'').split(',')[0].trim()},body:JSON.stringify({action:'public_lead_submit',lead:body})});
+      const result=await r.json().catch(()=>({}));
+      return send(res,r.status,result);
+    }
+    if(req.method==='GET'&&action==='plans') {
+      const r=await fetch(`${cfg.url}/functions/v1/platform-admin`,{method:'POST',headers:{apikey:cfg.anon,Authorization:`Bearer ${cfg.anon}`,'Content-Type':'application/json'},body:JSON.stringify({action:'public_plans'})});
+      const result=await r.json().catch(()=>({}));
+      return send(res,r.status,result,r.ok?{'Cache-Control':'public, s-maxage=300, stale-while-revalidate=600'}:{});
     }
     if(req.method==='POST'&&action==='login') {
       const r=await fetch(`${cfg.url}/auth/v1/token?grant_type=password`,{method:'POST',headers:{apikey:cfg.anon,'Content-Type':'application/json'},body:JSON.stringify({email:String(body.email||'').trim(),password:String(body.password||'')})});

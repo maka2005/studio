@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import '../styles.css'
 import './platform.css'
 
 type HealthCheck = { key:string; label:string; state:'operational'|'down'|'unknown' }

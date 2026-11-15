@@ -2,9 +2,6 @@ import { StrictMode, Suspense, lazy } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { LoadingScreen } from './components/LoadingScreen';
-import './styles.css';
-import { Shell } from './pages/Shell';
 
 // A tab can outlive a Vercel deployment and keep importing chunks from the
 // previous build. Reload once so Vite picks up the current HTML manifest.
@@ -56,6 +53,9 @@ window.addEventListener('error', (event) => {
   }
 }, true);
 
+// Стили приложения записи (styles.css) подключаются только внутри Shell, админки и страницы статуса:
+// их общие классы (.btn, .card, .hero, h1, body) иначе ломают вёрстку маркетингового сайта.
+const Shell = lazy(() => import('./pages/Shell').then((m) => ({ default: m.Shell })));
 const Home = lazy(() => import('./pages/Home').then((m) => ({ default: m.Home })));
 const ServicesPage = lazy(() => import('./pages/ServiceList').then((m) => ({ default: m.ServicesPage })));
 const MyBooking = lazy(() => import('./pages/MyBooking').then((m) => ({ default: m.MyBooking })));
@@ -84,7 +84,7 @@ createRoot(document.getElementById('root')!).render(
       },
     })}>
       <BrowserRouter>
-        <Suspense fallback={<LoadingScreen />}>
+        <Suspense fallback={<div role="status" aria-busy="true" style={{ minHeight: '60vh' }} />}>
           <Routes>
             <Route path="/platform/admin" element={<PlatformAdmin />} />
             <Route path="/status" element={<ServiceStatus />} />
