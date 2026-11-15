@@ -12,7 +12,7 @@ interface PlanRow {
 const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
 function toLimits(raw: PlanRow['limits']): PlanLimits {
-  const l = raw ?? {};
+  const l: Record<string, unknown> = raw ?? {};
   return {
     employees: num(l.employees),
     services: num(l.services),
@@ -36,7 +36,7 @@ function toPlans(rows: PlanRow[]): Plan[] | null {
       description: base?.description ?? (typeof row.description === 'string' ? row.description : ''),
       highlighted: code === 'pro',
       limits: toLimits(row.limits),
-      included: fallbackPlans[0].included,
+      included: fallbackPlans[0]?.included ?? [],
     });
   }
   return result.length ? result : null;
