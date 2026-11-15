@@ -1,5 +1,5 @@
 import { SITE } from '../config/site';
-import { faq } from '../data/content';
+import { faqItems } from '../data/content';
 
 const abs = (path: string) => SITE.url + path;
 
@@ -54,10 +54,10 @@ export const softwareLd = (plans: { name: string; price: number }[]) => ({
   })),
 });
 
-export const faqLd = () => ({
+export const faqLd = (trialDays: number | null) => ({
   '@context': 'https://schema.org',
   '@type': 'FAQPage',
-  mainEntity: faq.map((item) => ({
+  mainEntity: faqItems(trialDays).map((item) => ({
     '@type': 'Question',
     name: item.question,
     acceptedAnswer: { '@type': 'Answer', text: item.answer },

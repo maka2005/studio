@@ -18,6 +18,11 @@ const getConfig = () => ({
   url: (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').replace(/\/$/, ''),
   anon: process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '',
 });
+// Реальный IP и секрет прокси для Edge Functions: без этого они видят только IP серверов Vercel (общий лимит на всех).
+const proxyHeaders = (req) => ({
+  'x-real-ip': String(req.headers['x-real-ip'] || req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim(),
+  ...(process.env.PLATFORM_PROXY_SECRET ? { 'x-proxy-secret': process.env.PLATFORM_PROXY_SECRET } : {}),
+});
 const send = (res, status, body, extra = {}) => {
   res.statusCode = status;
   res.setHeader('Cache-Control', 'no-store');
@@ -127,7 +132,7 @@ export default async function handler(req, res) {
       const body = await parseBody(req);
       if (!/^[a-z0-9-]{2,40}$/.test(String(body.slug || ''))) return send(res, 400, { error: 'bad_request' });
       const result = await fetch(`${cfg.url}/functions/v1/owner-login`, {
-        method: 'POST', headers: { apikey: cfg.anon, 'Content-Type': 'application/json', 'x-real-ip': String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim() }, body: JSON.stringify(body),
+        method: 'POST', headers: { apikey: cfg.anon, 'Content-Type': 'application/json', ...proxyHeaders(req) }, body: JSON.stringify(body),
       });
       const payload = await result.json().catch(() => ({}));
       if (!result.ok || !payload.session) return send(res, result.status, payload);
@@ -137,7 +142,7 @@ export default async function handler(req, res) {
     if (action === 'recover') {
       const body = await parseBody(req);
       const result = await fetch(`${cfg.url}/functions/v1/owner-team`, {
-        method: 'POST', headers: { apikey: cfg.anon, 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, action: 'recover' }),
+        method: 'POST', headers: { apikey: cfg.anon, 'Content-Type': 'application/json', ...proxyHeaders(req) }, body: JSON.stringify({ ...body, action: 'recover' }),
       });
       return send(res, result.status, await result.json().catch(() => ({ error: 'request_failed' })));
     }

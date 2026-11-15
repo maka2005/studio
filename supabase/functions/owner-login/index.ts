@@ -11,7 +11,11 @@ const corsFor = (req: Request) => {
 const json = (req: Request, body: unknown, status = 200) => {
   return new Response(JSON.stringify(body), { status, headers: { ...corsFor(req), 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Content-Type': 'application/json' } });
 };
-const ipOf = (r: Request) => r.headers.get('cf-connecting-ip') ?? r.headers.get('x-real-ip') ?? 'unknown';
+// IP клиента. Запросы приходят с серверов Vercel, поэтому cf-connecting-ip там общий для всех. Реальный IP (x-real-ip) принимаем только вместе с секретом прокси.
+const PROXY_SECRET = Deno.env.get('PLATFORM_PROXY_SECRET') ?? '';
+const safeEqual = (a: string, b: string) => { if (a.length !== b.length) return false; let d = 0; for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i); return d === 0; };
+const viaProxy = (r: Request) => PROXY_SECRET.length >= 16 && safeEqual(r.headers.get('x-proxy-secret') ?? '', PROXY_SECRET);
+const ipOf = (r: Request) => (viaProxy(r) ? r.headers.get('x-real-ip')?.trim() : '') || r.headers.get('cf-connecting-ip')?.trim() || 'unknown';
 const sha = async (s: string) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)))].map((x) => x.toString(16).padStart(2, '0')).join('');
 
 Deno.serve(async (req) => {

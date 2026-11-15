@@ -1,9 +1,11 @@
 import { Button } from '../ui/Button';
 import { heroChips } from '../../data/content';
+import { useTrialDays } from '../../hooks/usePlans';
 import { ProductPreview } from './ProductPreview';
 import './Hero.scss';
 
 export function Hero() {
+  const trialDays = useTrialDays();
   return (
     <section className="hero">
       <div className="hero__glow" aria-hidden="true" />
@@ -24,7 +26,7 @@ export function Hero() {
           </div>
 
           <ul className="hero__chips">
-            {heroChips.map((item) => (
+            {heroChips(trialDays).map((item) => (
               <li key={item}>{item}</li>
             ))}
           </ul>

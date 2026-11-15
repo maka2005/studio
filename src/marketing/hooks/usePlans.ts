@@ -42,31 +42,70 @@ function toPlans(rows: PlanRow[]): Plan[] | null {
   return result.length ? result : null;
 }
 
-let cache: Plan[] | null = null;
+interface PlatformInfo {
+  plans: Plan[] | null;
+  /** Срок пробного периода из platform_settings.trial_days. */
+  trialDays: number | null;
+}
+
+let cache: PlatformInfo | null = null;
+let pending: Promise<PlatformInfo> | null = null;
+
+/** Один запрос на всех: тарифы и срок пробного периода приходят вместе. */
+function loadInfo(): Promise<PlatformInfo> {
+  if (cache) return Promise.resolve(cache);
+  pending ??= fetch('/api/platform?action=plans')
+    .then((r) => (r.ok ? r.json() : null))
+    .then((json) => {
+      const days = num(json?.trial_days);
+      const info: PlatformInfo = {
+        plans: Array.isArray(json?.data) ? toPlans(json.data as PlanRow[]) : null,
+        trialDays: days !== null && Number.isInteger(days) && days >= 1 && days <= 365 ? days : null,
+      };
+      if (info.plans || info.trialDays !== null) cache = info;
+      return info;
+    })
+    .catch((): PlatformInfo => ({ plans: null, trialDays: null }))
+    .finally(() => {
+      pending = null;
+    });
+  return pending;
+}
 
 /** Тарифы сайта: берутся из админки, при ошибке показываются запасные значения. */
 export function usePlans(): Plan[] {
-  const [plans, setPlans] = useState<Plan[]>(cache ?? fallbackPlans);
+  const [plans, setPlans] = useState<Plan[]>(cache?.plans ?? fallbackPlans);
 
   useEffect(() => {
-    if (cache) return;
-    const controller = new AbortController();
-    fetch('/api/platform?action=plans', { signal: controller.signal })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((json) => {
-        const parsed = Array.isArray(json?.data) ? toPlans(json.data as PlanRow[]) : null;
-        if (parsed) {
-          cache = parsed;
-          setPlans(parsed);
-        }
-      })
-      .catch(() => {
-        /* остаются запасные значения */
-      });
-    return () => controller.abort();
+    if (cache?.plans) return;
+    let alive = true;
+    void loadInfo().then((info) => {
+      if (alive && info.plans) setPlans(info.plans);
+    });
+    return () => {
+      alive = false;
+    };
   }, []);
 
   return plans;
+}
+
+/** Срок пробного периода в днях из базы или null, пока не загружен. */
+export function useTrialDays(): number | null {
+  const [days, setDays] = useState<number | null>(cache?.trialDays ?? null);
+
+  useEffect(() => {
+    if (cache?.trialDays != null) return;
+    let alive = true;
+    void loadInfo().then((info) => {
+      if (alive && info.trialDays !== null) setDays(info.trialDays);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  return days;
 }
 
 export function formatLimit(value: number | null, unit: string): string {

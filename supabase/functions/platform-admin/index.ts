@@ -65,6 +65,13 @@ async function findUserByEmail(admin: ReturnType<typeof createClient>, email: st
 
 
 const ACCEPTED = { ok: true, mode: 'accepted' };
+// Срок пробного периода хранится в platform_settings.trial_days (меняется в админке). Это единственный источник правды для сайта и для подписок.
+async function getTrialDays(admin: ReturnType<typeof createClient>): Promise<number> {
+  const { data, error } = await admin.from('platform_settings').select('value').eq('key', 'trial_days').maybeSingle();
+  const n = Number((data as { value?: unknown } | null)?.value);
+  return !error && Number.isInteger(n) && n >= 1 && n <= 60 ? n : 14;
+}
+
 // Источник IP для публичных форм. x-client-ip принимается только от нашего прокси (общий секрет), иначе берём IP, который выставляет сам шлюз Supabase.
 const PROXY_SECRET = Deno.env.get('PLATFORM_PROXY_SECRET') ?? '';
 const safeEqual = (a: string, b: string) => { if (a.length !== b.length) return false; let d = 0; for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i); return d === 0; };
@@ -135,7 +142,7 @@ Deno.serve(async (req) => {
     }
 
     // Подключение: тариф обязателен и берётся из базы (цена не приходит от клиента).
-    const TRIAL_DAYS_CONNECT = 3;
+    const TRIAL_DAYS_CONNECT = await getTrialDays(admin);
     let chosen: { code: string; name: string; price_kzt: number; period_months: number } | null = null;
     if (connect) {
       const { data: planRow } = await admin.from('plans').select('code,name,price_kzt,period_months').eq('code', plan.toUpperCase()).eq('is_active', true).neq('code', 'LEGACY').maybeSingle();
@@ -167,7 +174,7 @@ Deno.serve(async (req) => {
       const slug = `${base.slice(0, 40 - suffix.length)}${suffix}`;
       const { data, error } = await admin.rpc('platform_create_tenant_system', {
         p_key: `${connect ? 'connect' : 'demo'}:${(await sha256Hex(ownerEmail)).slice(0, 32)}:${attempt}`,
-        p: { name: businessName, slug, owner_user_id: owner.id, owner_email: ownerEmail, owner_name: ownerName, phone, business_type: 'autoservice', plan_code: planCode, trial: true, ...(connect ? { trial_days: TRIAL_DAYS_CONNECT } : {}), services: [] },
+        p: { name: businessName, slug, owner_user_id: owner.id, owner_email: ownerEmail, owner_name: ownerName, phone, business_type: 'autoservice', plan_code: planCode, trial: true, services: [] },
       });
       if (!error) { result = data as { tenant_id?: string; slug?: string }; break; }
       if (error.message?.includes('slug_taken')) continue;
@@ -208,7 +215,7 @@ Deno.serve(async (req) => {
     const admin=createClient(url,service,{auth:{persistSession:false,autoRefreshToken:false}});
     const {data,error}=await admin.from('plans').select('code,name,description,price_kzt,period_months,limits').eq('is_active',true).neq('code','LEGACY').order('sort_order',{ascending:true});
     if(error){console.error('public plans failed:',error.message);return json(req,{error:'temporarily_unavailable'},503)}
-    return json(req,{data:data??[]});
+    return json(req,{data:data??[],trial_days:await getTrialDays(admin)});
   }
 
   // --- 1. аутентификация

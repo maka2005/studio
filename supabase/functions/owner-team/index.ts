@@ -1,4 +1,9 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
+// IP клиента. Запросы приходят с серверов Vercel, поэтому cf-connecting-ip там общий для всех. Реальный IP (x-real-ip) принимаем только вместе с секретом прокси.
+const PROXY_SECRET = Deno.env.get('PLATFORM_PROXY_SECRET') ?? '';
+const safeEqual = (a: string, b: string) => { if (a.length !== b.length) return false; let d = 0; for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i); return d === 0; };
+const viaProxy = (r: Request) => PROXY_SECRET.length >= 16 && safeEqual(r.headers.get('x-proxy-secret') ?? '', PROXY_SECRET);
+const ipOf = (r: Request) => (viaProxy(r) ? r.headers.get('x-real-ip')?.trim() : '') || r.headers.get('cf-connecting-ip')?.trim() || 'unknown';
 
 const site=(Deno.env.get('SITE_URL')??'').trim();
 const allowed=new Set<string>(); try{if(site)allowed.add(new URL(site).origin)}catch{}
@@ -21,7 +26,7 @@ Deno.serve(async(req)=>{
  if(action==='recover'){
   const email=typeof p?.email==='string'?p.email.trim().toLowerCase():''; const key=typeof p?.recovery_key==='string'?p.recovery_key.trim():''; const password=typeof p?.password==='string'?p.password:'';
   if(!emailOk(email)||key.length<30||password.length<10||password.length>1024)return json(req,{error:'bad_request'},400);
-  const ip=req.headers.get('cf-connecting-ip')??req.headers.get('x-real-ip')??'unknown'; const [ih,eh]=await Promise.all([sha(ip),sha(email)]);
+  const ip=ipOf(req); const [ih,eh]=await Promise.all([sha(ip),sha(email)]);
   const limits=await Promise.all([admin.rpc('consume_public_rate',{p_scope:'account_recovery',p_key:`ip:${ih}`,p_limit:8,p_window:3600}),admin.rpc('consume_public_rate',{p_scope:'account_recovery',p_key:`email:${eh}`,p_limit:5,p_window:3600})]);
   if(limits.some(x=>x.error))return json(req,{error:'temporarily_unavailable'},503); if(limits.some(x=>x.data!==true))return json(req,{error:'rate_limited'},429);
   let target: {id:string}|null=null;

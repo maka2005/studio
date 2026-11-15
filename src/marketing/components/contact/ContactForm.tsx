@@ -3,12 +3,12 @@ import { useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { businessTypes } from '../../data/content';
 import { submitLead, type LeadPayload, type LeadResult } from '../../services/leads';
-import { usePlans } from '../../hooks/usePlans';
+import { usePlans, useTrialDays } from '../../hooks/usePlans';
+import { daysText, trialSummary } from '../../lib/trial';
 import { Button } from '../ui/Button';
 import { Turnstile, turnstileEnabled } from './Turnstile';
 import './ContactForm.scss';
 
-const TRIAL_DAYS = 3;
 const money = (n: number) => `${n.toLocaleString('ru-RU')} ₸`;
 const dateRu = (d: Date) => new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long' }).format(d);
 
@@ -18,6 +18,7 @@ export function ContactForm() {
   const [params] = useSearchParams();
   const [status, setStatus] = useState<Status>('idle');
   const plans = usePlans();
+  const trialDays = useTrialDays();
   const [form, setForm] = useState<LeadPayload>({
     businessName: '',
     ownerName: '',
@@ -42,7 +43,7 @@ export function ContactForm() {
 
   const selectedPlan = plans.find((p) => p.id === form.plan.toLowerCase()) ?? plans[0];
   const connecting = form.requestType === 'connect';
-  const trialEnd = new Date(Date.now() + TRIAL_DAYS * 86400_000);
+  const trialEnd = trialDays ? new Date(Date.now() + trialDays * 86400_000) : null;
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -87,7 +88,7 @@ export function ContactForm() {
             Проверьте почту {form.ownerEmail}: если для неё можно создать организацию, мы отправили письмо со ссылкой для установки пароля и входа в кабинет.
             Не пришло в течение нескольких минут — загляните в «Спам». Если автоматически подключить не получилось, наша команда свяжется с вами.
           </p>
-          {connecting && selectedPlan && <p>Тариф: <b>{selectedPlan.name}</b>. Пробный период — {TRIAL_DAYS} дня, оплата после него по согласованию с менеджером.</p>}
+          {connecting && selectedPlan && <p>Тариф: <b>{selectedPlan.name}</b>. Пробный период{trialDays ? ` — ${daysText(trialDays)}` : ''}, оплата после него по согласованию с менеджером.</p>}
         </div>
       );
     }
@@ -137,7 +138,7 @@ export function ContactForm() {
           </p>
           <div className="order-summary" aria-label="Ваш заказ">
             <div className="order-summary__row"><span>Тариф</span><b>{result.planName}</b></div>
-            <div className="order-summary__row"><span>Пробный период</span><b>{result.trialDays ?? TRIAL_DAYS} дня, до {dateRu(trialEndsAt)}</b></div>
+            <div className="order-summary__row"><span>Пробный период</span><b>{trialSummary(result.trialDays ?? trialDays, trialEndsAt)}</b></div>
             <div className="order-summary__row"><span>К оплате сейчас</span><b>0 ₸</b></div>
             {result.priceKzt !== undefined && (
               <div className="order-summary__row order-summary__row--total">
@@ -217,7 +218,7 @@ export function ContactForm() {
         <div className="contact-form__field">
           <label htmlFor="requestType">Цель обращения</label>
           <select id="requestType" name="requestType" value={form.requestType} onChange={update('requestType')}>
-            <option value="connect">Подключить Renvio ({TRIAL_DAYS} дня бесплатно)</option>
+            <option value="connect">{`Подключить Renvio${trialDays ? ` (${daysText(trialDays)} бесплатно)` : ''}`}</option>
             <option value="demo">Демонстрация системы</option>
           </select>
         </div>
@@ -244,7 +245,7 @@ export function ContactForm() {
           </div>
           <div className="order-summary" aria-label="Ваш заказ">
             <div className="order-summary__row"><span>Тариф</span><b>{selectedPlan.name}</b></div>
-            <div className="order-summary__row"><span>Пробный период</span><b>{TRIAL_DAYS} дня, до {dateRu(trialEnd)}</b></div>
+            <div className="order-summary__row"><span>Пробный период</span><b>{trialSummary(trialDays, trialEnd)}</b></div>
             <div className="order-summary__row"><span>К оплате сегодня</span><b>0 ₸</b></div>
             <div className="order-summary__row order-summary__row--total">
               <span>После пробного периода</span>

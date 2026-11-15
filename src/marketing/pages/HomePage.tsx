@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useDocumentMeta } from '../hooks/useDocumentMeta';
-import { usePlans } from '../hooks/usePlans';
+import { usePlans, useTrialDays } from '../hooks/usePlans';
 import { homeBreadcrumbs, seo } from '../data/content';
 import { breadcrumbLd, faqLd, organizationLd, softwareLd, websiteLd } from '../seo/schema';
 import { Hero } from '../components/home/Hero';
@@ -16,15 +16,16 @@ import { FinalCta } from '../components/home/FinalCta';
 
 export function HomePage() {
   const plans = usePlans();
+  const trialDays = useTrialDays();
   const jsonLd = useMemo(
     () => [
       organizationLd(),
       websiteLd(),
       softwareLd(plans.map((p) => ({ name: p.name, price: p.price }))),
-      faqLd(),
+      faqLd(trialDays),
       breadcrumbLd(homeBreadcrumbs),
     ],
-    [plans],
+    [plans, trialDays],
   );
 
   useDocumentMeta({ ...seo.home, jsonLd });

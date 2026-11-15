@@ -1,5 +1,6 @@
 import { features } from '../../data/content';
-import { formatLimit, usePlans } from '../../hooks/usePlans';
+import { formatLimit, usePlans, useTrialDays } from '../../hooks/usePlans';
+import { trialFreeText } from '../../lib/trial';
 import { Button } from '../ui/Button';
 import './PricingCards.scss';
 
@@ -9,6 +10,7 @@ interface PricingCardsProps {
 
 export function PricingCards({ showFeatures = true }: PricingCardsProps) {
   const plans = usePlans();
+  const trialDays = useTrialDays();
 
   return (
     <div className="pricing-cards">
@@ -43,7 +45,7 @@ export function PricingCards({ showFeatures = true }: PricingCardsProps) {
           <Button to={`/contact?type=connect&plan=${plan.id}`} variant={plan.highlighted ? 'primary' : 'secondary'} fullWidth>
             Подключить {plan.name}
           </Button>
-          <p className="plan__trial">3 дня бесплатно · доступ сразу · оплата после пробного периода</p>
+          <p className="plan__trial">{trialFreeText(trialDays)} · доступ сразу · оплата после пробного периода</p>
         </article>
       ))}
     </div>
