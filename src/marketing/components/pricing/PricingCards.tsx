@@ -40,9 +40,10 @@ export function PricingCards({ showFeatures = true }: PricingCardsProps) {
             </ul>
           )}
 
-          <Button to={`/contact?plan=${plan.id}`} variant={plan.highlighted ? 'primary' : 'secondary'} fullWidth>
+          <Button to={`/contact?type=connect&plan=${plan.id}`} variant={plan.highlighted ? 'primary' : 'secondary'} fullWidth>
             Подключить {plan.name}
           </Button>
+          <p className="plan__trial">3 дня бесплатно · доступ сразу · оплата после пробного периода</p>
         </article>
       ))}
     </div>

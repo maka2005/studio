@@ -11,15 +11,21 @@ export interface LeadPayload {
 }
 
 export interface LeadResult {
-  /** demo — организация создана автоматически; lead — заявка сохранена для менеджера */
-  mode: 'demo' | 'lead';
+  /** demo — демо создано; connect — организация подключена на пробный период; lead — заявка сохранена для менеджера */
+  mode: 'demo' | 'connect' | 'lead';
   slug?: string;
   inviteSent?: boolean;
+  /** Только для connect: сколько и когда платить после пробного периода. */
+  planName?: string;
+  priceKzt?: number;
+  periodMonths?: number;
+  trialDays?: number;
+  trialEndsAt?: string;
 }
 
 export async function submitLead(payload: LeadPayload): Promise<LeadResult> {
-  const demo = payload.requestType === 'demo';
-  const response = await fetch(`/api/platform?action=${demo ? 'demo' : 'lead'}`, {
+  const action = payload.requestType === 'demo' ? 'demo' : 'connect';
+  const response = await fetch(`/api/platform?action=${action}`, {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
@@ -27,9 +33,15 @@ export async function submitLead(payload: LeadPayload): Promise<LeadResult> {
   });
   const result = await response.json().catch(() => ({}));
   if (!response.ok || result?.error) throw new Error(String(result?.error ?? 'lead_submit_failed'));
+  const mode = result?.mode === 'demo' ? 'demo' : result?.mode === 'connect' ? 'connect' : 'lead';
   return {
-    mode: result?.mode === 'demo' ? 'demo' : 'lead',
+    mode,
     slug: typeof result?.slug === 'string' ? result.slug : undefined,
     inviteSent: result?.invite_sent === true,
+    planName: typeof result?.plan_name === 'string' ? result.plan_name : undefined,
+    priceKzt: typeof result?.price_kzt === 'number' ? result.price_kzt : undefined,
+    periodMonths: typeof result?.period_months === 'number' ? result.period_months : undefined,
+    trialDays: typeof result?.trial_days === 'number' ? result.trial_days : undefined,
+    trialEndsAt: typeof result?.trial_ends_at === 'string' ? result.trial_ends_at : undefined,
   };
 }

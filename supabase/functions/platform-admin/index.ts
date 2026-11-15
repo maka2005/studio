@@ -75,39 +75,51 @@ Deno.serve(async (req) => {
   const action = str(body.action, 40);
   if (!action) return json(req, { error: 'bad_request' }, 400);
 
-  if (action === 'public_lead_submit' || action === 'public_demo_start') {
+  if (action === 'public_lead_submit' || action === 'public_demo_start' || action === 'public_connect_start') {
     const demo = action === 'public_demo_start';
+    const connect = action === 'public_connect_start';
+    const instant = demo || connect; // организация создаётся сразу, без участия менеджера
     const source = req.headers.get('x-client-ip')?.trim() || req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || req.headers.get('cf-connecting-ip') || 'unknown';
     const ipKey = await sha256Hex(source);
     const admin = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } });
-    const limit = await admin.rpc('consume_platform_rate', { p_scope: 'platform_lead', p_key: `${demo ? 'demo:' : ''}ip:${ipKey}`, p_limit: demo ? 3 : 5, p_window: 3600 });
+    const limit = await admin.rpc('consume_platform_rate', { p_scope: 'platform_lead', p_key: `${demo ? 'demo:' : connect ? 'connect:' : ''}ip:${ipKey}`, p_limit: instant ? 3 : 5, p_window: 3600 });
     if (limit.error) return json(req, { error: 'temporarily_unavailable' }, 503);
     if (limit.data !== true) return json(req, { error: 'rate_limited' }, 429);
     const lead = obj(body.lead), businessName = str(lead.businessName, 120), ownerName = str(lead.ownerName, 120), ownerEmail = str(lead.ownerEmail, 254).toLowerCase(), phone = str(lead.phone, 32), businessType = str(lead.businessType, 80);
     const plan = str(lead.plan, 40), comment = str(lead.comment, 2000);
-    const requestType = demo ? 'demo' : (lead.requestType === 'demo' ? 'demo' : 'connect');
+    const requestType = demo ? 'demo' : connect ? 'connect' : (lead.requestType === 'demo' ? 'demo' : 'connect');
     if (businessName.length < 2 || ownerName.length < 2 || !EMAIL.test(ownerEmail) || phone.replace(/\D/g, '').length < 10 || businessType.length < 2) return json(req, { error: 'bad_request' }, 400);
     if (lead.consent !== true) return json(req, { error: 'consent_required' }, 400);
     const row = { business_name: businessName, owner_name: ownerName, owner_email: ownerEmail, phone, business_type: businessType, request_type: requestType, plan, comment, consent_at: new Date().toISOString(), consent_version: PRIVACY_VERSION };
 
-    if (!demo) {
+    if (!instant) {
       const { error } = await admin.from('platform_business_leads').insert(row);
       if (error) { console.error('public lead save failed:', error.message); return json(req, { error: 'temporarily_unavailable' }, 503); }
       return json(req, { ok: true, mode: 'lead' });
     }
 
-    // Демо: организация создаётся сразу. Если почта уже зарегистрирована, организацию к чужому аккаунту не привязываем — сохраняем обычную заявку.
+    // Подключение: тариф обязателен и берётся из базы (цена не приходит от клиента).
+    const TRIAL_DAYS_CONNECT = 3;
+    let chosen: { code: string; name: string; price_kzt: number; period_months: number } | null = null;
+    if (connect) {
+      const { data: planRow } = await admin.from('plans').select('code,name,price_kzt,period_months').eq('code', plan.toUpperCase()).eq('is_active', true).neq('code', 'LEGACY').maybeSingle();
+      if (!planRow) return json(req, { error: 'bad_request' }, 400);
+      chosen = planRow as typeof chosen;
+    }
+    const fmtKzt = (n: number) => `${n.toLocaleString('ru-RU')} ₸`;
+
+    // Демо и подключение: организация создаётся сразу. Если почта уже зарегистрирована, организацию к чужому аккаунту не привязываем — сохраняем обычную заявку.
     const existing = await findUserByEmail(admin, ownerEmail);
     if (existing) {
       const { error } = await admin.from('platform_business_leads').insert(row);
       if (error) { console.error('demo lead save failed:', error.message); return json(req, { error: 'temporarily_unavailable' }, 503); }
       return json(req, { ok: true, mode: 'lead' });
     }
-    const emailRate = await admin.rpc('consume_platform_rate', { p_scope: 'platform_lead', p_key: `demo:email:${await sha256Hex(ownerEmail)}`, p_limit: 2, p_window: 86400 });
+    const emailRate = await admin.rpc('consume_platform_rate', { p_scope: 'platform_lead', p_key: `${connect ? 'connect' : 'demo'}:email:${await sha256Hex(ownerEmail)}`, p_limit: 2, p_window: 86400 });
     if (emailRate.error) return json(req, { error: 'temporarily_unavailable' }, 503);
     if (emailRate.data !== true) return json(req, { error: 'rate_limited' }, 429);
 
-    const planCode = plan.toUpperCase() === 'PRO' ? 'PRO' : 'START';
+    const planCode = chosen ? chosen.code : (plan.toUpperCase() === 'PRO' ? 'PRO' : 'START');
     const created = await admin.auth.admin.createUser({ email: ownerEmail, email_confirm: true, user_metadata: { full_name: ownerName } });
     if (created.error || !created.data.user) { console.error('demo owner create failed:', created.error?.message); return json(req, { error: 'temporarily_unavailable' }, 502); }
     const owner = created.data.user;
@@ -118,8 +130,8 @@ Deno.serve(async (req) => {
       const suffix = attempt === 0 ? '' : `-${crypto.randomUUID().replace(/-/g, '').slice(0, 4)}`;
       const slug = `${base.slice(0, 40 - suffix.length)}${suffix}`;
       const { data, error } = await admin.rpc('platform_create_tenant_system', {
-        p_key: `demo:${(await sha256Hex(ownerEmail)).slice(0, 32)}:${attempt}`,
-        p: { name: businessName, slug, owner_user_id: owner.id, owner_email: ownerEmail, owner_name: ownerName, phone, business_type: 'autoservice', plan_code: planCode, trial: true, services: [] },
+        p_key: `${connect ? 'connect' : 'demo'}:${(await sha256Hex(ownerEmail)).slice(0, 32)}:${attempt}`,
+        p: { name: businessName, slug, owner_user_id: owner.id, owner_email: ownerEmail, owner_name: ownerName, phone, business_type: 'autoservice', plan_code: planCode, trial: true, ...(connect ? { trial_days: TRIAL_DAYS_CONNECT } : {}), services: [] },
       });
       if (!error) { result = data as { tenant_id?: string; slug?: string }; break; }
       if (error.message?.includes('slug_taken')) continue;
@@ -129,15 +141,33 @@ Deno.serve(async (req) => {
     }
     if (!result?.tenant_id || !result.slug) {
       await admin.auth.admin.deleteUser(owner.id).catch(() => undefined);
+      if (connect && failure === 'trial_already_used') {
+        // Пробный период для этой почты/телефона уже использован — сохраняем заявку, менеджер подключит вручную.
+        await admin.from('platform_business_leads').insert({ ...row, comment: `Самостоятельное подключение: пробный период уже использован. Тариф ${chosen?.name}, к оплате ${chosen ? fmtKzt(chosen.price_kzt) : ''}. ${comment}`.trim().slice(0, 2000) });
+        return json(req, { ok: true, mode: 'lead', reason: 'trial_used' });
+      }
       if (failure === 'trial_already_used') return json(req, { error: 'trial_already_used' }, 409);
       return json(req, { error: failure ? 'operation_failed' : 'slug_taken' }, 500);
     }
     const anonClient = createClient(url, anon, { auth: { persistSession: false, autoRefreshToken: false } });
     const invite = site ? await anonClient.auth.resetPasswordForEmail(ownerEmail, { redirectTo: `${site.replace(/\/$/, '')}/s/${result.slug}/owner` }) : { error: new Error('no_site') };
     if (invite.error) console.error('demo invite failed:', invite.error.message);
-    const { error: leadError } = await admin.from('platform_business_leads').insert({ ...row, status: 'converted', tenant_id: result.tenant_id, tenant_slug: result.slug });
+    let trialEndsAt: string | null = null;
+    if (connect && (result as { subscription_id?: string }).subscription_id) {
+      const { data: sub } = await admin.from('subscriptions').select('ends_at').eq('id', (result as { subscription_id?: string }).subscription_id).maybeSingle();
+      trialEndsAt = (sub as { ends_at?: string } | null)?.ends_at ?? null;
+    }
+    if (connect && !trialEndsAt) trialEndsAt = new Date(Date.now() + TRIAL_DAYS_CONNECT * 86400_000).toISOString();
+    const leadRow = connect && chosen
+      ? { ...row, status: 'new', tenant_id: result.tenant_id, tenant_slug: result.slug,
+          comment: `Самостоятельное подключение. Тариф ${chosen.name}, пробный период ${TRIAL_DAYS_CONNECT} дн. до ${trialEndsAt?.slice(0, 10)}. К оплате после пробного периода: ${fmtKzt(chosen.price_kzt)} за ${chosen.period_months} мес. Связаться для оплаты. ${comment}`.trim().slice(0, 2000) }
+      : { ...row, status: 'converted', tenant_id: result.tenant_id, tenant_slug: result.slug };
+    const { error: leadError } = await admin.from('platform_business_leads').insert(leadRow);
     if (leadError) console.error('demo lead record failed:', leadError.message);
-    await admin.rpc('platform_log', { p_actor: null, p_action: 'demo.self_signup', p_tenant: result.tenant_id, p_payload: { slug: result.slug, plan: planCode, owner_email: ownerEmail } });
+    await admin.rpc('platform_log', { p_actor: null, p_action: connect ? 'connect.self_signup' : 'demo.self_signup', p_tenant: result.tenant_id, p_payload: { slug: result.slug, plan: planCode, owner_email: ownerEmail } });
+    if (connect && chosen) {
+      return json(req, { ok: true, mode: 'connect', slug: result.slug, invite_sent: !invite.error, plan_name: chosen.name, price_kzt: chosen.price_kzt, period_months: chosen.period_months, trial_days: TRIAL_DAYS_CONNECT, trial_ends_at: trialEndsAt });
+    }
     return json(req, { ok: true, mode: 'demo', slug: result.slug, invite_sent: !invite.error });
   }
 
