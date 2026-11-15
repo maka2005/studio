@@ -64,6 +64,8 @@ async function findUserByEmail(admin: ReturnType<typeof createClient>, email: st
 }
 
 
+const ACCEPTED = { ok: true, mode: 'accepted' };
+
 // Гарантия: владелец записан в tenant_members сразу при создании организации (на случай сбоя/расхождения в RPC).
 async function ensureOwnerMembership(admin: ReturnType<typeof createClient>, tenantId: string, userId: string): Promise<boolean> {
   const { data } = await admin.from('tenant_members').select('user_id').eq('tenant_id', tenantId).eq('user_id', userId).eq('role', 'owner').maybeSingle();
@@ -123,11 +125,11 @@ Deno.serve(async (req) => {
     if (existing) {
       const { error } = await admin.from('platform_business_leads').insert(row);
       if (error) { console.error('demo lead save failed:', error.message); return json(req, { error: 'temporarily_unavailable' }, 503); }
-      return json(req, { ok: true, mode: 'lead' });
+      return json(req, ACCEPTED); // одинаковый ответ для новых и уже зарегистрированных почт — иначе можно перебором узнать, кто в системе
     }
     const emailRate = await admin.rpc('consume_platform_rate', { p_scope: 'platform_lead', p_key: `${connect ? 'connect' : 'demo'}:email:${await sha256Hex(ownerEmail)}`, p_limit: 2, p_window: 86400 });
     if (emailRate.error) return json(req, { error: 'temporarily_unavailable' }, 503);
-    if (emailRate.data !== true) return json(req, { error: 'rate_limited' }, 429);
+    if (emailRate.data !== true) return json(req, ACCEPTED);
 
     const planCode = chosen ? chosen.code : (plan.toUpperCase() === 'PRO' ? 'PRO' : 'START');
     const created = await admin.auth.admin.createUser({ email: ownerEmail, email_confirm: true, user_metadata: { full_name: ownerName } });
@@ -151,12 +153,11 @@ Deno.serve(async (req) => {
     }
     if (!result?.tenant_id || !result.slug) {
       await admin.auth.admin.deleteUser(owner.id).catch(() => undefined);
-      if (connect && failure === 'trial_already_used') {
+      if (failure === 'trial_already_used') {
         // Пробный период для этой почты/телефона уже использован — сохраняем заявку, менеджер подключит вручную.
-        await admin.from('platform_business_leads').insert({ ...row, comment: `Самостоятельное подключение: пробный период уже использован. Тариф ${chosen?.name}, к оплате ${chosen ? fmtKzt(chosen.price_kzt) : ''}. ${comment}`.trim().slice(0, 2000) });
-        return json(req, { ok: true, mode: 'lead', reason: 'trial_used' });
+        await admin.from('platform_business_leads').insert({ ...row, comment: `${connect ? `Самостоятельное подключение: тариф ${chosen?.name}, к оплате ${chosen ? fmtKzt(chosen.price_kzt) : ''}. ` : 'Демо: '}пробный период уже использован. ${comment}`.trim().slice(0, 2000) });
+        return json(req, ACCEPTED);
       }
-      if (failure === 'trial_already_used') return json(req, { error: 'trial_already_used' }, 409);
       return json(req, { error: failure ? 'operation_failed' : 'slug_taken' }, 500);
     }
     if (!(await ensureOwnerMembership(admin, result.tenant_id, owner.id))) return json(req, { error: 'operation_failed' }, 500);
@@ -176,10 +177,7 @@ Deno.serve(async (req) => {
     const { error: leadError } = await admin.from('platform_business_leads').insert(leadRow);
     if (leadError) console.error('demo lead record failed:', leadError.message);
     await admin.rpc('platform_log', { p_actor: null, p_action: connect ? 'connect.self_signup' : 'demo.self_signup', p_tenant: result.tenant_id, p_payload: { slug: result.slug, plan: planCode, owner_email: ownerEmail } });
-    if (connect && chosen) {
-      return json(req, { ok: true, mode: 'connect', slug: result.slug, invite_sent: !invite.error, plan_name: chosen.name, price_kzt: chosen.price_kzt, period_months: chosen.period_months, trial_days: TRIAL_DAYS_CONNECT, trial_ends_at: trialEndsAt });
-    }
-    return json(req, { ok: true, mode: 'demo', slug: result.slug, invite_sent: !invite.error });
+    return json(req, ACCEPTED);
   }
 
   if (action === 'public_plans') {

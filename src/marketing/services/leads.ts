@@ -12,7 +12,7 @@ export interface LeadPayload {
 
 export interface LeadResult {
   /** demo — демо создано; connect — организация подключена на пробный период; lead — заявка сохранена для менеджера */
-  mode: 'demo' | 'connect' | 'lead';
+  mode: 'demo' | 'connect' | 'lead' | 'accepted';
   slug?: string;
   inviteSent?: boolean;
   /** Только для connect: сколько и когда платить после пробного периода. */
@@ -33,7 +33,7 @@ export async function submitLead(payload: LeadPayload): Promise<LeadResult> {
   });
   const result = await response.json().catch(() => ({}));
   if (!response.ok || result?.error) throw new Error(String(result?.error ?? 'lead_submit_failed'));
-  const mode = result?.mode === 'demo' ? 'demo' : result?.mode === 'connect' ? 'connect' : 'lead';
+  const mode = result?.mode === 'demo' ? 'demo' : result?.mode === 'connect' ? 'connect' : result?.mode === 'accepted' ? 'accepted' : 'lead';
   return {
     mode,
     slug: typeof result?.slug === 'string' ? result.slug : undefined,

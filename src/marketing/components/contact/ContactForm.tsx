@@ -61,6 +61,18 @@ export function ContactForm() {
   };
 
   if (status === 'sent') {
+    if (result?.mode === 'accepted') {
+      return (
+        <div className="contact-form contact-form--success" role="status">
+          <h2>{connecting ? 'Заявка на подключение принята' : 'Заявка на демо принята'}</h2>
+          <p>
+            Проверьте почту {form.ownerEmail}: если для неё можно создать организацию, мы отправили письмо со ссылкой для установки пароля и входа в кабинет.
+            Не пришло в течение нескольких минут — загляните в «Спам». Если автоматически подключить не получилось, наша команда свяжется с вами.
+          </p>
+          {connecting && selectedPlan && <p>Тариф: <b>{selectedPlan.name}</b>. Пробный период — {TRIAL_DAYS} дня, оплата после него по согласованию с менеджером.</p>}
+        </div>
+      );
+    }
     if (result?.mode === 'demo' && result.slug) {
       const bookingUrl = `${window.location.origin}/s/${result.slug}`;
       return (
