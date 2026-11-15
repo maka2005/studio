@@ -1,3 +1,4 @@
+import { BUSINESS_TYPES } from '../../lib/businessTypes';
 import { daysText, trialFreeText } from '../lib/trial';
 // Все тексты основаны на описании продукта из ТЗ. Новые функции не добавлялись.
 
@@ -89,7 +90,7 @@ export const fallbackPlans: Plan[] = [
 
 export const plans = fallbackPlans;
 
-export const businessTypes = ['СТО / автосервис', 'Детейлинг-студия', 'Автомойка', 'Шиномонтаж', 'Другое'];
+export const businessTypes: string[] = BUSINESS_TYPES.map((t) => t.label);
 
 export const seo = {
   home: {

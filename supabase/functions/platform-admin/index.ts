@@ -65,6 +65,13 @@ async function findUserByEmail(admin: ReturnType<typeof createClient>, email: st
 
 
 const ACCEPTED = { ok: true, mode: 'accepted' };
+// Название типа бизнеса из формы → стабильный код для config.business_type. Словарь продублирован в src/lib/businessTypes.ts.
+const BUSINESS_TYPE_CODES: Record<string, string> = { 'сто / автосервис': 'autoservice', 'детейлинг-студия': 'detailing', 'автомойка': 'carwash', 'шиномонтаж': 'tires', 'другое': 'other' };
+const businessTypeCode = (label: string): string => {
+  const v = label.trim().toLowerCase();
+  return BUSINESS_TYPE_CODES[v] ?? (Object.values(BUSINESS_TYPE_CODES).includes(v) ? v : 'other');
+};
+
 // Срок пробного периода хранится в platform_settings.trial_days (меняется в админке). Это единственный источник правды для сайта и для подписок.
 async function getTrialDays(admin: ReturnType<typeof createClient>): Promise<number> {
   const { data, error } = await admin.from('platform_settings').select('value').eq('key', 'trial_days').maybeSingle();
@@ -174,7 +181,7 @@ Deno.serve(async (req) => {
       const slug = `${base.slice(0, 40 - suffix.length)}${suffix}`;
       const { data, error } = await admin.rpc('platform_create_tenant_system', {
         p_key: `${connect ? 'connect' : 'demo'}:${(await sha256Hex(ownerEmail)).slice(0, 32)}:${attempt}`,
-        p: { name: businessName, slug, owner_user_id: owner.id, owner_email: ownerEmail, owner_name: ownerName, phone, business_type: 'autoservice', plan_code: planCode, trial: true, services: [] },
+        p: { name: businessName, slug, owner_user_id: owner.id, owner_email: ownerEmail, owner_name: ownerName, phone, business_type: businessTypeCode(businessType), plan_code: planCode, trial: true, services: [] },
       });
       if (!error) { result = data as { tenant_id?: string; slug?: string }; break; }
       if (error.message?.includes('slug_taken')) continue;
