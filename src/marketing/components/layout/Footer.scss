@@ -14,9 +14,13 @@
   }
 
   &__brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
     margin-bottom: 8px;
-    font-size: 20px;
-    font-weight: 800;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
   }
 
   &__text,

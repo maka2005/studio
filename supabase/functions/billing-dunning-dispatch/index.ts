@@ -14,7 +14,7 @@ function emailContent(kind:string,payload:Record<string,unknown>,siteUrl:string,
   const endsAt=payload.ends_at?new Date(String(payload.ends_at)):null;
   const endDate=endsAt&&!Number.isNaN(endsAt.getTime())?new Intl.DateTimeFormat('ru-RU',{dateStyle:'long',timeZone:timezone}).format(endsAt):'';
   const days=kind==='ending_7d'?7:3;
-  const subject=kind==='ending_7d'?`Servio: до окончания подписки ${days} дней`:kind==='ending_3d'?`Servio: подписка закончится через ${days} дня`:kind==='payment_failed'?'Servio: платёж не подтверждён':'Servio: подписка приостановлена';
+  const subject=kind==='ending_7d'?`Renvio: до окончания подписки ${days} дней`:kind==='ending_3d'?`Renvio: подписка закончится через ${days} дня`:kind==='payment_failed'?'Renvio: платёж не подтверждён':'Renvio: подписка приостановлена';
   let message='';
   if(kind==='ending_7d'||kind==='ending_3d'){
     message=`Срок подписки организации «${organization}» заканчивается ${endDate?`<b>${escapeHtml(endDate)}</b>`:`через ${days} дн.`}. Тариф: <b>${escapeHtml(plan)}</b>; стоимость продления — <b>${amount} ₸</b>. Чтобы сохранить доступ без перерыва, свяжитесь с поддержкой и запросите продление.`;
@@ -23,11 +23,11 @@ function emailContent(kind:string,payload:Record<string,unknown>,siteUrl:string,
     message=`Платёж на <b>${amount} ₸</b> для организации «${organization}» не был подтверждён. Если оплата уже отправлена, напишите в поддержку и приложите подтверждение перевода.${reason?`<br><br>Комментарий: ${escapeHtml(reason)}`:''}`;
   }else{
     const reason=String(payload.reason??'');
-    message=`Подписка организации «${organization}» приостановлена. Онлайн-запись и уведомления отключены, данные организации сохранены. Для восстановления доступа свяжитесь с поддержкой Servio и запросите реквизиты для оплаты тарифа «${escapeHtml(plan)}» (${amount} ₸).${reason?`<br><br>Причина приостановки: ${escapeHtml(reason)}`:''}`;
+    message=`Подписка организации «${organization}» приостановлена. Онлайн-запись и уведомления отключены, данные организации сохранены. Для восстановления доступа свяжитесь с поддержкой Renvio и запросите реквизиты для оплаты тарифа «${escapeHtml(plan)}» (${amount} ₸).${reason?`<br><br>Причина приостановки: ${escapeHtml(reason)}`:''}`;
   }
   const cabinetUrl=`${siteUrl.replace(/\/+$/,'')}/s/${encodeURIComponent(slug)}/owner`;
-  const html=`<!doctype html><html lang="ru"><body style="margin:0;background:#f4f6fa;color:#172033;font:16px/1.55 Arial,sans-serif"><main style="max-width:600px;margin:32px auto;padding:32px;background:#fff;border:1px solid #e2e7ef;border-radius:16px"><p style="margin:0 0 16px;color:#3976ef;font-weight:700">SERVIO · ПОДПИСКА</p><h1 style="margin:0 0 20px;font-size:24px">${escapeHtml(subject.replace('Servio: ',''))}</h1><p>${message}</p><p style="margin:24px 0"><a href="${escapeHtml(cabinetUrl)}" style="display:inline-block;padding:12px 18px;background:#3976ef;color:#fff;text-decoration:none;border-radius:9px;font-weight:700">Открыть кабинет организации</a></p><p>Если вопрос касается оплаты или приостановки, напишите в поддержку: <a href="mailto:${escapeHtml(supportEmail)}">${escapeHtml(supportEmail)}</a>.</p><hr style="border:0;border-top:1px solid #e2e7ef;margin:24px 0"><p style="color:#68758a;font-size:13px">Это автоматическое уведомление о состоянии подписки Servio.</p></main></body></html>`;
-  const text=[subject,'',`${organization} · тариф ${plan} · ${amount} ₸`,'',kind==='ending_7d'||kind==='ending_3d'?`Срок подписки заканчивается ${endDate||`через ${days} дн.`}. Чтобы не потерять доступ, свяжитесь с поддержкой и запросите продление.`:kind==='payment_failed'?`Платёж не подтверждён. Если вы уже оплатили, напишите в поддержку и приложите подтверждение перевода.${payload.reason?` Причина: ${String(payload.reason)}`:''}`:`Подписка приостановлена. Онлайн-запись и уведомления отключены, данные сохранены. Для восстановления доступа свяжитесь с поддержкой Servio.${payload.reason?` Причина: ${String(payload.reason)}`:''}`,'',`Поддержка: ${supportEmail}`,`Кабинет организации: ${cabinetUrl}`].join('\n');
+  const html=`<!doctype html><html lang="ru"><body style="margin:0;background:#f4f6fa;color:#172033;font:16px/1.55 Arial,sans-serif"><main style="max-width:600px;margin:32px auto;padding:32px;background:#fff;border:1px solid #e2e7ef;border-radius:16px"><p style="margin:0 0 16px;color:#3976ef;font-weight:700">RENVIO · ПОДПИСКА</p><h1 style="margin:0 0 20px;font-size:24px">${escapeHtml(subject.replace('Renvio: ',''))}</h1><p>${message}</p><p style="margin:24px 0"><a href="${escapeHtml(cabinetUrl)}" style="display:inline-block;padding:12px 18px;background:#3976ef;color:#fff;text-decoration:none;border-radius:9px;font-weight:700">Открыть кабинет организации</a></p><p>Если вопрос касается оплаты или приостановки, напишите в поддержку: <a href="mailto:${escapeHtml(supportEmail)}">${escapeHtml(supportEmail)}</a>.</p><hr style="border:0;border-top:1px solid #e2e7ef;margin:24px 0"><p style="color:#68758a;font-size:13px">Это автоматическое уведомление о состоянии подписки Renvio.</p></main></body></html>`;
+  const text=[subject,'',`${organization} · тариф ${plan} · ${amount} ₸`,'',kind==='ending_7d'||kind==='ending_3d'?`Срок подписки заканчивается ${endDate||`через ${days} дн.`}. Чтобы не потерять доступ, свяжитесь с поддержкой и запросите продление.`:kind==='payment_failed'?`Платёж не подтверждён. Если вы уже оплатили, напишите в поддержку и приложите подтверждение перевода.${payload.reason?` Причина: ${String(payload.reason)}`:''}`:`Подписка приостановлена. Онлайн-запись и уведомления отключены, данные сохранены. Для восстановления доступа свяжитесь с поддержкой Renvio.${payload.reason?` Причина: ${String(payload.reason)}`:''}`,'',`Поддержка: ${supportEmail}`,`Кабинет организации: ${cabinetUrl}`].join('\n');
   return {subject,html,text};
 }
 
@@ -40,7 +40,7 @@ Deno.serve(async(req)=>{
   const smtpPass=env('SMTP_PASS');
   const useSmtp=Boolean(smtpUser&&smtpPass);
   const apiKey=env('RESEND_API_KEY');
-  const from=env('BILLING_EMAIL_FROM')||(useSmtp?`Servio <${smtpUser}>`:'');
+  const from=env('BILLING_EMAIL_FROM')||(useSmtp?`Renvio <${smtpUser}>`:'');
   const supportEmail=env('BILLING_SUPPORT_EMAIL')||(useSmtp?smtpUser:'');
   const siteUrl=env('SITE_URL');
   if((!useSmtp&&!apiKey)||!from||!supportEmail||!siteUrl||!/^\S+@\S+\.\S+$/.test(supportEmail))return Response.json({enabled:false,reason:'email_provider_not_configured'});

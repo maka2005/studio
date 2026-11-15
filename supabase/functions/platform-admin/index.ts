@@ -28,7 +28,7 @@ const obj = (v: unknown) => (v && typeof v === 'object' && !Array.isArray(v) ? v
 const CYR: Record<string, string> = { а:'a',б:'b',в:'v',г:'g',д:'d',е:'e',ё:'e',ж:'zh',з:'z',и:'i',й:'y',к:'k',л:'l',м:'m',н:'n',о:'o',п:'p',р:'r',с:'s',т:'t',у:'u',ф:'f',х:'h',ц:'ts',ч:'ch',ш:'sh',щ:'sch',ъ:'',ы:'y',ь:'',э:'e',ю:'yu',я:'ya',қ:'k',ғ:'g',ң:'n',ө:'o',ү:'u',ұ:'u',һ:'h',ә:'a',і:'i' };
 const slugBase = (name: string) => {
   const s = [...name.toLowerCase()].map((c) => CYR[c] ?? c).join('').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 28).replace(/-+$/g, '');
-  return s.length >= 2 ? s : 'servio';
+  return s.length >= 2 ? s : 'renvio';
 };
 const sha256Hex = async (v: string) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(v)))).map((x) => x.toString(16).padStart(2, '0')).join('');
 const PRIVACY_VERSION = '2026-11-15';

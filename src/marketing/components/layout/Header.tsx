@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import { Button } from '../ui/Button';
+import { BrandMark } from '../../../components/BrandMark';
 import './Header.scss';
 
 const navItems = [
@@ -16,8 +17,9 @@ export function Header() {
   return (
     <header className="header">
       <div className="container header__inner">
-        <Link to="/" className="header__logo" aria-label="Servio — на главную" onClick={closeMenu}>
-          Servio
+        <Link to="/" className="header__logo" aria-label="Renvio — на главную" onClick={closeMenu}>
+          <BrandMark size={26} />
+          <span>RENVIO</span>
         </Link>
 
         <nav
@@ -32,7 +34,7 @@ export function Header() {
           ))}
           <div className="header__actions">
             <Button variant="secondary" to="/contact?type=demo">Попробовать демо</Button>
-            <Button to="/contact">Подключить Servio</Button>
+            <Button to="/contact">Подключить Renvio</Button>
           </div>
         </nav>
 

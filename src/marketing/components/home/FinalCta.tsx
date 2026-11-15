@@ -47,7 +47,7 @@ export function FinalCta() {
         {error && <p className="final-cta__error" role="alert">Введите номер полностью: {PHONE_PLACEHOLDER}</p>}
 
         <div className="final-cta__actions">
-          <Button variant="secondary" to="/contact">Подключить Servio</Button>
+          <Button variant="secondary" to="/contact">Подключить Renvio</Button>
         </div>
       </div>
     </section>

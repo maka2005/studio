@@ -12,7 +12,7 @@ export function PricingPage() {
     <>
       <header className="page-intro">
         <div className="container">
-          <h1>Тарифы Servio</h1>
+          <h1>Тарифы Renvio</h1>
           <p>Прозрачная стоимость подписки. Все цены указаны в тенге за месяц.</p>
         </div>
       </header>

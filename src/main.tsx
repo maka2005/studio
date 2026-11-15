@@ -43,7 +43,7 @@ window.addEventListener('error', (event) => {
   try {
     const path = new URL(target.href, window.location.href).pathname;
     if (!path.startsWith('/assets/')) return;
-    const key = 'servio-stale-style-reload-at';
+    const key = 'renvio-stale-style-reload-at';
     const previous = Number(sessionStorage.getItem(key) ?? 0);
     if (Date.now() - previous < 60_000) return;
     sessionStorage.setItem(key, String(Date.now()));

@@ -39,7 +39,7 @@ export function ContactInfo() {
         </dl>
       )}
 
-      <p className="contact-info__note">Заявка попадает команде Servio. Данные используются только для связи с вами.</p>
+      <p className="contact-info__note">Заявка попадает команде Renvio. Данные используются только для связи с вами.</p>
     </aside>
   );
 }

@@ -1,4 +1,4 @@
--- Servio platform, stage 1: tables, RLS, access-state logic.
+-- Renvio platform, stage 1: tables, RLS, access-state logic.
 -- Единственное изменение существующей таблицы — необязательная дата создания.
 
 alter table public.tenants add column if not exists created_at timestamptz;

@@ -9,7 +9,7 @@ export function PricingPreview() {
       <SectionHeader
         eyebrow="Тарифы"
         title="Понятная стоимость без скрытых платежей"
-        description="Два тарифа в месяц. Выберите подходящий и подключите Servio."
+        description="Два тарифа в месяц. Выберите подходящий и подключите Renvio."
         align="center"
       />
       <PricingCards showFeatures={false} />

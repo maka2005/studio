@@ -12,7 +12,7 @@ export function ContactPage() {
     <>
       <header className="page-intro">
         <div className="container">
-          <h1>Подключите Servio или запишитесь на демонстрацию</h1>
+          <h1>Подключите Renvio или запишитесь на демонстрацию</h1>
           <p>Оставьте заявку — мы свяжемся с вами, покажем систему и поможем начать работу.</p>
         </div>
       </header>

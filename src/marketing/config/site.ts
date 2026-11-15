@@ -1,5 +1,5 @@
 export const SITE = {
-  name: 'Servio',
+  name: 'Renvio',
   url: 'https://servio.kz',
   /**
    * Контакты для страницы «Контакты» и подвала. Пустые поля не показываются.

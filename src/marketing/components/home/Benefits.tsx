@@ -8,7 +8,7 @@ export function Benefits() {
       <SectionHeader
         eyebrow="Преимущества"
         title="Меньше рутины — больше времени на клиентов"
-        description="Servio собирает работу сервиса в одно место: от первой записи до итогового отчёта."
+        description="Renvio собирает работу сервиса в одно место: от первой записи до итогового отчёта."
       />
       <div className="grid-4">
         {benefits.map((b) => (

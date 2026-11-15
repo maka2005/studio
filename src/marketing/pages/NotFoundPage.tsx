@@ -5,8 +5,8 @@ import './NotFoundPage.scss';
 export function NotFoundPage() {
   useDocumentMeta({
     path: '/404',
-    title: 'Страница не найдена — Servio',
-    description: 'Такой страницы нет. Вернитесь на главную Servio.',
+    title: 'Страница не найдена — Renvio',
+    description: 'Такой страницы нет. Вернитесь на главную Renvio.',
   });
 
   return (

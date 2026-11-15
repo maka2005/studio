@@ -14,7 +14,7 @@ export function PricingComparison() {
   return (
     <div className="comparison">
       <table className="comparison__table">
-        <caption className="visually-hidden">Сравнение тарифов Servio</caption>
+        <caption className="visually-hidden">Сравнение тарифов Renvio</caption>
         <thead>
           <tr>
             <th scope="col">Параметр</th>

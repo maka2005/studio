@@ -54,7 +54,7 @@ export function RecoveryPassword({ failed, signIn, onDone }: { failed: boolean; 
     <div className="page admin-login-page"><form className="login-wrap admin-login" onSubmit={(e) => void submit(e)}>
       <div className="login-ico"><Lock /></div>
       <h1>Задайте пароль</h1>
-      <p className="muted">Придумайте пароль для входа в Servio. Он должен быть не короче 10 символов.</p>
+      <p className="muted">Придумайте пароль для входа в Renvio. Он должен быть не короче 10 символов.</p>
       <label className="muted small" htmlFor="np1">Новый пароль</label>
       <PasswordInput id="np1" className="field" minLength={10} autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
       <label className="muted small" htmlFor="np2">Повторите пароль</label>

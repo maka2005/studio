@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { SITE } from '../../config/site';
+import { BrandMark } from '../../../components/BrandMark';
 import './Footer.scss';
 
 type Health = 'loading' | 'operational' | 'degraded' | 'outage' | 'unknown';
@@ -39,7 +40,7 @@ export function Footer() {
     <footer className="footer">
       <div className="container footer__grid">
         <div>
-          <p className="footer__brand">Servio</p>
+          <p className="footer__brand"><BrandMark size={22} /><span>RENVIO</span></p>
           <p className="footer__text">
             Облачная система управления автосервисами и сервисными предприятиями в Казахстане.
           </p>
@@ -55,14 +56,14 @@ export function Footer() {
 
         <div className="footer__contacts">
           <b>Для автосервисов и СТО</b>
-          <span>Оставьте заявку — команда Servio поможет с подключением.</span>
+          <span>Оставьте заявку — команда Renvio поможет с подключением.</span>
           <Link to="/contact">Оставить заявку</Link>
           {SITE.contacts.phone && <a href={`tel:${SITE.contacts.phone.replace(/[^+\d]/g, '')}`}>{SITE.contacts.phone}</a>}
           {SITE.contacts.email && <a href={`mailto:${SITE.contacts.email}`}>{SITE.contacts.email}</a>}
         </div>
       </div>
       <div className="container footer__bottom">
-        <span>© {new Date().getFullYear()} Servio. Все права защищены.</span>
+        <span>© {new Date().getFullYear()} Renvio. Все права защищены.</span>
         <a className="footer__status" href="/status">
           <span className={`footer__status-dot is-${health}`} aria-hidden="true" />
           {STATUS_TEXT[health]}

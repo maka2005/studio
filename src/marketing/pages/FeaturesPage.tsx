@@ -11,7 +11,7 @@ export function FeaturesPage() {
     <>
       <header className="page-intro">
         <div className="container">
-          <h1>Возможности Servio</h1>
+          <h1>Возможности Renvio</h1>
           <p>Десять модулей для управления записями, расписанием, сотрудниками и аналитикой в одной системе.</p>
         </div>
       </header>

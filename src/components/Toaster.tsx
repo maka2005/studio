@@ -4,7 +4,7 @@ import './toaster.css'
 type Kind = 'ok' | 'warn' | 'err'
 type Toast = { id: number; text: string; kind: Kind }
 
-const EVENT = 'servio-toast'
+const EVENT = 'renvio-toast'
 let counter = 0
 
 /** Показать всплывающее уведомление (в правом верхнем углу). */

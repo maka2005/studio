@@ -14,12 +14,12 @@ export function Hero() {
             Онлайн-запись и управление автосервисом <span>в одной системе</span>
           </h1>
           <p className="hero__lead">
-            Servio принимает записи клиентов 24/7, собирает расписание сотрудников, напоминает клиентам в Telegram
+            Renvio принимает записи клиентов 24/7, собирает расписание сотрудников, напоминает клиентам в Telegram
             и показывает аналитику — вместо звонков, тетрадей и разрозненных таблиц.
           </p>
 
           <div className="hero__actions">
-            <Button to="/contact">Подключить Servio</Button>
+            <Button to="/contact">Подключить Renvio</Button>
             <Button variant="secondary" to="/contact?type=demo">Попробовать демо</Button>
           </div>
 

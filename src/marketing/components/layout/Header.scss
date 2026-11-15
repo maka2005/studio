@@ -17,22 +17,14 @@
   }
 
   &__logo {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
     color: $color-text;
-    font-size: 22px;
-    font-weight: 800;
-    letter-spacing: -0.02em;
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
     text-decoration: none;
-
-    &::after {
-      content: '';
-      display: inline-block;
-      width: 8px;
-      height: 8px;
-      margin-left: 4px;
-      vertical-align: super;
-      border-radius: 50%;
-      background: $color-accent;
-    }
   }
 
   &__nav {

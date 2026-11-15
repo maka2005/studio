@@ -1,4 +1,4 @@
--- Servio platform: серверные функции админки. Вызываются только Edge Function platform-admin
+-- Renvio platform: серверные функции админки. Вызываются только Edge Function platform-admin
 -- через service_role; каждая функция сама проверяет, что p_actor есть в platform_admins.
 
 create or replace function public.platform_log(p_actor uuid,p_action text,p_tenant uuid,p_payload jsonb)

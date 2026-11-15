@@ -10,7 +10,7 @@ export function Audiences() {
     <Section id="audience">
       <SectionHeader
         eyebrow="Для кого"
-        title="Servio подходит любому сервису с записью по времени"
+        title="Renvio подходит любому сервису с записью по времени"
         description="Выберите свой тип бизнеса — покажем, как система закрывает его ежедневные задачи."
         align="center"
       />

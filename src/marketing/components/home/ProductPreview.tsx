@@ -8,10 +8,10 @@ const staff = [
   { name: 'Мастер 3', slots: [{ top: 4, h: 30, t: 'Химчистка салона', c: 'teal' }, { top: 48, h: 36, t: 'Керамика', c: 'blue' }] },
 ];
 
-/** Иллюстрация интерфейса Servio: календарь, показатели и всплывающие уведомления. Данные вымышленные. */
+/** Иллюстрация интерфейса Renvio: календарь, показатели и всплывающие уведомления. Данные вымышленные. */
 export function ProductPreview() {
   return (
-    <div className="preview" role="img" aria-label="Иллюстрация: календарь записей Servio с загрузкой мастеров и уведомлением о новой записи">
+    <div className="preview" role="img" aria-label="Иллюстрация: календарь записей Renvio с загрузкой мастеров и уведомлением о новой записи">
       <div className="preview__window" aria-hidden="true">
         <div className="preview__bar">
           <span /><span /><span />
@@ -20,7 +20,7 @@ export function ProductPreview() {
 
         <div className="preview__body">
           <aside className="preview__side">
-            <b>Servio</b>
+            <b>Renvio</b>
             <i className="is-active">Календарь</i>
             <i>Записи</i>
             <i>Услуги</i>

@@ -80,7 +80,7 @@ export function ContactForm() {
         <div className="contact-form contact-form--success" role="status">
           <h2>Демо-версия готова</h2>
           <p>
-            Мы создали вашу организацию в Servio.{' '}
+            Мы создали вашу организацию в Renvio.{' '}
             {result.inviteSent
               ? `Письмо для установки пароля отправлено на ${form.ownerEmail}. Откройте его, задайте пароль и войдите в кабинет.`
               : 'Письмо с доступом отправить не удалось — наша команда свяжется с вами и поможет войти.'}
@@ -112,7 +112,7 @@ export function ContactForm() {
       const trialEndsAt = result.trialEndsAt ? new Date(result.trialEndsAt) : trialEnd;
       return (
         <div className="contact-form contact-form--success" role="status">
-          <h2>Servio подключён</h2>
+          <h2>Renvio подключён</h2>
           <p>
             {result.inviteSent
               ? `Письмо для установки пароля отправлено на ${form.ownerEmail}. Откройте его, задайте пароль и войдите в кабинет.`
@@ -155,7 +155,7 @@ export function ContactForm() {
         <h2>Заявка отправлена</h2>
         <p>
           {result?.mode === 'lead' && form.requestType === 'connect'
-            ? 'Для этой почты или телефона пробный период уже использовался либо аккаунт уже существует, поэтому автоматически подключить не получилось. Мы свяжемся с вами и подключим Servio вручную.'
+            ? 'Для этой почты или телефона пробный период уже использовался либо аккаунт уже существует, поэтому автоматически подключить не получилось. Мы свяжемся с вами и подключим Renvio вручную.'
             : form.requestType === 'demo'
             ? 'Для этой почты уже есть аккаунт, поэтому демо автоматически не создавалось. Мы свяжемся с вами и подключим демонстрацию вручную.'
             : 'Мы свяжемся с вами в ближайшее время, чтобы уточнить детали.'}
@@ -200,7 +200,7 @@ export function ContactForm() {
         <div className="contact-form__field">
           <label htmlFor="requestType">Цель обращения</label>
           <select id="requestType" name="requestType" value={form.requestType} onChange={update('requestType')}>
-            <option value="connect">Подключить Servio ({TRIAL_DAYS} дня бесплатно)</option>
+            <option value="connect">Подключить Renvio ({TRIAL_DAYS} дня бесплатно)</option>
             <option value="demo">Демонстрация системы</option>
           </select>
         </div>
@@ -261,7 +261,7 @@ export function ContactForm() {
         <p className="contact-form__error" role="alert">
           {status === 'validation-error' && 'Укажите название бизнеса, имя и почту владельца, а также корректный номер телефона.'}
           {status === 'consent-error' && 'Чтобы отправить заявку, подтвердите согласие на обработку персональных данных.'}
-          {status === 'trial-used' && 'Для этой почты или телефона демо уже использовалось. Выберите «Подключение к Servio» — мы свяжемся с вами.'}
+          {status === 'trial-used' && 'Для этой почты или телефона демо уже использовалось. Выберите «Подключение к Renvio» — мы свяжемся с вами.'}
           {status === 'limited' && 'Слишком много попыток. Попробуйте позже.'}
           {status === 'error' && 'Не удалось отправить заявку. Проверьте подключение и попробуйте ещё раз.'}
         </p>
