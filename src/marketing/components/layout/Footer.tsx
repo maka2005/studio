@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { SITE } from '../../config/site';
-import { BrandMark, Wordmark } from '../../../components/BrandMark';
+import { Logo } from '../../../components/BrandMark';
 import './Footer.scss';
 
 type Health = 'loading' | 'operational' | 'degraded' | 'outage' | 'unknown';
@@ -40,7 +40,7 @@ export function Footer() {
     <footer className="footer">
       <div className="container footer__grid">
         <div>
-          <p className="footer__brand"><BrandMark size={22} /><Wordmark height={14} /></p>
+          <p className="footer__brand"><Logo height={16} /></p>
           <p className="footer__text">
             Облачная система управления автосервисами и сервисными предприятиями в Казахстане.
           </p>

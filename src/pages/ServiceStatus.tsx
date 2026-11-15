@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { BrandMark, Wordmark } from '../components/BrandMark'
+import { Logo } from '../components/BrandMark'
 import '../styles.css'
 import './platform.css'
 
@@ -33,7 +33,7 @@ export function ServiceStatus(){
   const report=health.data
   const summary=report?STATUS[report.status]:null
   return <main className="page pf-wide service-status-page">
-    <header className="pf-app-header"><div className="pf-brand"><span className="pf-brand-mark"><BrandMark size={15} /></span><div><b className="pf-wordmark"><Wordmark height={11} /></b><span>Статус сервиса</span></div></div><a className="pf-action-secondary" href="/">На главную</a></header>
+    <header className="pf-app-header"><div className="pf-brand"><div><b className="pf-wordmark"><Logo height={12} /></b><span>Статус сервиса</span></div></div><a className="pf-action-secondary" href="/">На главную</a></header>
     <section className="service-status-wrap">
       <div className="service-status-heading"><div><span className="pf-kicker">СОСТОЯНИЕ ПЛАТФОРМЫ</span><h1>Статус сервиса</h1><p className="muted">Состояние обновляется автоматически.</p></div></div>
       {health.isPending?<section className="service-status-summary"><span className="service-status-indicator is-loading"/><div><h2>Проверяем системы</h2><p className="muted">Получаем свежие ответы компонентов.</p></div></section>:health.isError?<section className="service-status-summary is-down"><span className="service-status-indicator"/><div><h2>Не удалось получить статус</h2><p className="muted">Мониторинг сейчас не отвечает. Попробуйте обновить проверку.</p></div><button className="link" onClick={()=>void health.refetch()}>Повторить</button></section>:report&&<>
