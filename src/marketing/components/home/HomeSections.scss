@@ -5,12 +5,12 @@
   background: $color-dark;
   color: #fff;
 
-  &__list {
+  .trust__list {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 8px 24px;
-    padding-top: 28px;
-    padding-bottom: 28px;
+    gap: 8px 32px;
+    padding-top: 36px;
+    padding-bottom: 36px;
   }
 
   &__item {
@@ -32,13 +32,18 @@
   }
 
   @media (max-width: 1023px) {
-    &__list {
+    .trust__list {
       grid-template-columns: repeat(2, 1fr);
-      gap: 20px 16px;
+      gap: 24px 20px;
     }
   }
 
   @include mobile {
+    .trust__list {
+      padding-top: 28px;
+      padding-bottom: 28px;
+    }
+
     &__item b {
       font-size: 20px;
     }
@@ -67,20 +72,24 @@
     }
 
     h3 {
-      margin: 16px 0 8px;
+      margin: 20px 0 10px;
       font-size: 20px;
     }
 
     p {
       color: $color-text-muted;
       font-size: 15px;
+      line-height: 1.55;
     }
 
     ul {
       flex: 1;
-      margin: 16px 0 20px;
+      margin: 18px 0 24px;
+      padding-top: 18px;
+      border-top: 1px solid $color-border;
       display: grid;
-      gap: 8px;
+      align-content: start;
+      gap: 10px;
     }
 
     li {

@@ -5,12 +5,12 @@
   background: $color-bg-alt;
   border-top: 1px solid $color-border;
 
-  &__grid {
+  .footer__grid {
     display: grid;
     grid-template-columns: 1.4fr 1fr 1fr;
     gap: 40px;
-    padding-top: 56px;
-    padding-bottom: 40px;
+    padding-top: 64px;
+    padding-bottom: 48px;
   }
 
   &__brand {
@@ -21,6 +21,20 @@
 
   &__text,
   &__bottom {
+    color: $color-text-muted;
+    font-size: 14px;
+  }
+
+  &__text {
+    max-width: 340px;
+    line-height: 1.6;
+  }
+
+  &__contacts > b {
+    margin-bottom: 2px;
+  }
+
+  &__contacts > span {
     color: $color-text-muted;
     font-size: 14px;
   }
@@ -41,14 +55,14 @@
     }
   }
 
-  &__bottom {
+  .footer__bottom {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding-top: 20px;
-    padding-bottom: 28px;
+    padding-top: 24px;
+    padding-bottom: 32px;
     border-top: 1px solid $color-border;
   }
 
@@ -76,10 +90,11 @@
   }
 
   @include mobile {
-    &__grid {
+    .footer__grid {
       grid-template-columns: 1fr;
       gap: 28px;
-      padding-top: 40px;
+      padding-top: 44px;
+      padding-bottom: 32px;
     }
   }
 }

@@ -1,5 +1,6 @@
 @use 'variables' as *;
 
+/* Сбросы через :where() имеют нулевую специфичность: отступы и цвета в классах блоков всегда побеждают. */
 *,
 *::before,
 *::after {
@@ -19,38 +20,38 @@ body:has(.marketing-site) {
   -webkit-font-smoothing: antialiased;
 }
 
-.marketing-site img {
+:where(.marketing-site) img {
   max-width: 100%;
   display: block;
 }
 
-.marketing-site h1,
-.marketing-site h2,
-.marketing-site h3 {
+:where(.marketing-site) h1,
+:where(.marketing-site) h2,
+:where(.marketing-site) h3 {
   margin: 0;
   line-height: 1.2;
   letter-spacing: -0.02em;
 }
 
-.marketing-site p {
+:where(.marketing-site) p {
   margin: 0;
 }
 
-.marketing-site a {
+:where(.marketing-site) a {
   color: $color-primary;
 }
 
-.marketing-site ul,
-.marketing-site ol {
+:where(.marketing-site) ul,
+:where(.marketing-site) ol {
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.marketing-site button,
-.marketing-site input,
-.marketing-site select,
-.marketing-site textarea {
+:where(.marketing-site) button,
+:where(.marketing-site) input,
+:where(.marketing-site) select,
+:where(.marketing-site) textarea {
   font: inherit;
 }
 
