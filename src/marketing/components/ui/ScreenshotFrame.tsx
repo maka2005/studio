@@ -6,7 +6,7 @@ interface ScreenshotFrameProps {
   ratio?: string;
 }
 
-/** Рамка браузера для скриншота интерфейса. Без src показывает место под реальный скриншот. */
+/** Рамка браузера. Без src рисует схематичный макет интерфейса; реальный скриншот подключается через src. */
 export function ScreenshotFrame({ label, src, ratio = '16 / 10' }: ScreenshotFrameProps) {
   return (
     <figure className="shot" style={{ aspectRatio: ratio }}>
@@ -18,9 +18,16 @@ export function ScreenshotFrame({ label, src, ratio = '16 / 10' }: ScreenshotFra
       {src ? (
         <img src={src} alt={label} loading="lazy" />
       ) : (
-        <div className="shot__placeholder">
-          <span>Место для скриншота</span>
-          <small>{label}</small>
+        <div className="shot__mock" role="img" aria-label={label}>
+          <div className="shot__side" aria-hidden="true">
+            <i /><i /><i /><i /><i />
+          </div>
+          <div className="shot__main" aria-hidden="true">
+            <div className="shot__stats"><b /><b /><b /></div>
+            <div className="shot__rows">
+              <u /><u /><u /><u /><u />
+            </div>
+          </div>
         </div>
       )}
     </figure>

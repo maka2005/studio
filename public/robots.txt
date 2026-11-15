@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /platform/
+Disallow: /s/
+
+Sitemap: https://servio.kz/sitemap.xml

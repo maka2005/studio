@@ -1,4 +1,5 @@
-import { features, plans } from '../../data/content';
+import { features } from '../../data/content';
+import { formatLimit, usePlans } from '../../hooks/usePlans';
 import { Button } from '../ui/Button';
 import './PricingCards.scss';
 
@@ -7,6 +8,8 @@ interface PricingCardsProps {
 }
 
 export function PricingCards({ showFeatures = true }: PricingCardsProps) {
+  const plans = usePlans();
+
   return (
     <div className="pricing-cards">
       {plans.map((plan) => (
@@ -21,6 +24,13 @@ export function PricingCards({ showFeatures = true }: PricingCardsProps) {
             <span className="plan__period">в месяц</span>
           </p>
 
+          <ul className="plan__list plan__list--limits">
+            <li>{formatLimit(plan.limits.employees, 'Сотрудники')}</li>
+            <li>{formatLimit(plan.limits.services, 'Услуги')}</li>
+            <li>{formatLimit(plan.limits.branches, 'Филиалы')}</li>
+            <li>{formatLimit(plan.limits.bookingsPerMonth, 'Записей в месяц')}</li>
+          </ul>
+
           {showFeatures && (
             <ul className="plan__list">
               {plan.included.map((id) => {
@@ -30,11 +40,7 @@ export function PricingCards({ showFeatures = true }: PricingCardsProps) {
             </ul>
           )}
 
-          <Button
-            to={`/contact?plan=${plan.id}`}
-            variant={plan.highlighted ? 'primary' : 'secondary'}
-            fullWidth
-          >
+          <Button to={`/contact?plan=${plan.id}`} variant={plan.highlighted ? 'primary' : 'secondary'} fullWidth>
             Подключить {plan.name}
           </Button>
         </article>

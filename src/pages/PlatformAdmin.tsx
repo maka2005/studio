@@ -151,6 +151,7 @@ const PLATFORM_ROLE_LABEL: Record<string, string> = { owner: 'Владелец',
 function Console({ onLogout, role, accountEmail }: { onLogout: () => void; onMfa: () => void; role: string; accountEmail: string }) {
   const [tab, setTab] = useState<Tab>(role === 'support' ? 'Поддержка' : 'Главная');
   const [openTenant, setOpenTenant] = useState<string | null>(null);
+  const [leadPrefill, setLeadPrefill] = useState<LeadPrefill | null>(null);
   const platformNotices=useLoad<Row[]>('notifications',{limit:200})
   // A new response is surfaced even when the administrator stays on another section.
   useEffect(()=>{const timer=window.setInterval(()=>void platformNotices.reload(),30_000);return()=>window.clearInterval(timer)},[platformNotices.reload])
@@ -174,8 +175,8 @@ function Console({ onLogout, role, accountEmail }: { onLogout: () => void; onMfa
         : tab === 'Главная' ? <Dashboard onOpen={setOpenTenant} onNavigate={setTab} />
         : tab === 'Организации' ? <Tenants onOpen={setOpenTenant} />
         : tab === 'Поддержка' ? <SupportQueue />
-        : tab === 'Заявки с сайта' ? <BusinessLeads />
-        : tab === 'Новая организация' ? <CreateTenant onCreated={(id) => setOpenTenant(id)} />
+        : tab === 'Заявки с сайта' ? <BusinessLeads canConnect={role === 'owner'} onConnect={(lead) => { setLeadPrefill(lead); setTab('Новая организация'); }} />
+        : tab === 'Новая организация' ? <CreateTenant key={leadPrefill?.id ?? 'new'} prefill={leadPrefill} onCreated={(id) => { setLeadPrefill(null); setOpenTenant(id); }} />
         : tab === 'Подписки' ? <Subscriptions onOpen={setOpenTenant} />
         : tab === 'Тарифы' ? <Plans />
         : tab === 'Платежи' ? <Payments />
@@ -396,9 +397,13 @@ function TenantCard({ id, role, onBack }: { id: string; role: string; onBack: ()
 }
 
 /* ----------------------------------------------------------------------------------- создание организации */
-function CreateTenant({ onCreated }: { onCreated: (id: string) => void }) {
+const CYR_MAP:Record<string,string>={а:'a',б:'b',в:'v',г:'g',д:'d',е:'e',ё:'e',ж:'zh',з:'z',и:'i',й:'y',к:'k',л:'l',м:'m',н:'n',о:'o',п:'p',р:'r',с:'s',т:'t',у:'u',ф:'f',х:'h',ц:'ts',ч:'ch',ш:'sh',щ:'sch',ъ:'',ы:'y',ь:'',э:'e',ю:'yu',я:'ya',қ:'k',ғ:'g',ң:'n',ө:'o',ү:'u',ұ:'u',һ:'h',ә:'a',і:'i'};
+const slugFromName=(name:string)=>{const v=[...name.toLowerCase()].map(c=>CYR_MAP[c]??c).join('').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,40).replace(/-+$/g,'');return v.length>=2?v:''};
+type LeadPrefill={id:string,name:string,slug:string,owner_name:string,owner_email:string,phone:string,plan_code:string,trial:boolean};
+
+function CreateTenant({ onCreated, prefill }: { onCreated: (id: string) => void; prefill?: LeadPrefill | null }) {
   const today = new Date().toISOString().slice(0, 10);
-  const [f, setF] = useState<Row>({ name: '', slug: '', business_type: 'autoservice', owner_name: '', owner_email: '', phone: '', bin_iin:'', address: '', timezone: 'Asia/Aqtobe', currency: '₸', plan_code: 'START', start: today, months: 1, trial: true, services: '' });
+  const [f, setF] = useState<Row>({ name: prefill?.name ?? '', slug: prefill?.slug ?? '', business_type: 'autoservice', owner_name: prefill?.owner_name ?? '', owner_email: prefill?.owner_email ?? '', phone: prefill?.phone ?? '', bin_iin:'', address: '', timezone: 'Asia/Aqtobe', currency: '₸', plan_code: prefill?.plan_code ?? 'START', start: today, months: 1, trial: prefill?.trial ?? true, services: '' });
   const [busy, setBusy] = useState(false); const [err, setErr] = useState(''); const [ok, setOk] = useState('');
   const key = useRef(newKey()); // один ключ на форму: повторный клик «Создать» не создаёт дубликат
   const set = (k: string, v: unknown) => setF((p) => ({ ...p, [k]: v }));
@@ -408,12 +413,13 @@ function CreateTenant({ onCreated }: { onCreated: (id: string) => void }) {
     try {
       const r = await call<Row>('create_tenant', { idempotency_key: key.current, tenant: { ...f, start: iso(f.start), months: Number(f.months), services } });
       setOk(r.replayed ? 'Организация уже была создана этим запросом.' : r.invite_sent ? 'Организация создана, приглашение отправлено владельцу.' : 'Организация создана. Приглашение не отправлено — отправьте его из карточки.');
+      if(prefill?.id){try{await call('business_lead_update',{lead_id:prefill.id,status:'converted',tenant_id:r.tenant_id,tenant_slug:r.slug??f.slug})}catch{setOk(x=>x+' Заявку не удалось отметить подключённой — сделайте это вручную.')}}
       key.current = newKey(); onCreated(r.tenant_id);
     } catch (e2) { setErr(errText(e2)); } finally { setBusy(false); }
   };
   const input = (label: string, k: string, type = 'text', ph = '') => <label className="pf-label">{label}<input className="field" type={type} placeholder={ph} value={f[k]} onChange={(e) => set(k, e.target.value)} required={['name', 'slug', 'owner_email'].includes(k)} /></label>;
   return (
-    <form className="card col pf-form" onSubmit={submit}><h2>Новая организация</h2>
+    <form className="card col pf-form" onSubmit={submit}><h2>Новая организация</h2>{prefill&&<p className="muted small">Данные подставлены из заявки с сайта. Проверьте их и нажмите «Создать»: заявка станет «Подключён», владелец получит письмо для установки пароля.</p>}
       {input('Название студии или компании', 'name')}{input('Адрес страницы', 'slug', 'text', 'my-studio')}{input('Чем занимается организация', 'business_type')}
       {input('Имя владельца', 'owner_name')}{input('Почта владельца', 'owner_email', 'email')}{input('Телефон', 'phone', 'tel')}{input('БИН/ИИН', 'bin_iin')}{input('Адрес организации', 'address')}
       {input('Часовой пояс', 'timezone')}{input('Валюта', 'currency')}
@@ -634,7 +640,7 @@ function SupportQueue(){
 }
 
 const LEAD_STATUS:Record<string,string>={new:'Новая',contacted:'Связались',converted:'Подключён',closed:'Закрыта'};
-function BusinessLeads(){
+function BusinessLeads({canConnect,onConnect}:{canConnect:boolean;onConnect:(lead:LeadPrefill)=>void}){
   const [status,setStatus]=useState(''),[page,setPage]=useState(0),[msg,setMsg]=useState('');
   const q=useLoad<Row>('business_leads',{status,limit:25,offset:page*25},[status,page]);
   const rows:Row[]=q.data?.rows??[],count=Number(q.data?.count??0),pages=Math.max(1,Math.ceil(count/25));
@@ -642,7 +648,7 @@ function BusinessLeads(){
   return <div className="col"><div className="admin-subheading"><div><h2>Заявки с сайта</h2><p className="muted small">Запросы на подключение и демонстрацию Servio. Свяжитесь с человеком и обновите состояние заявки.</p></div><button className="btn ghost mini" onClick={()=>void q.reload()} disabled={q.loading}>Обновить</button></div>
     <div className="support-queue-filters"><select className="field" value={status} onChange={e=>{setStatus(e.target.value);setPage(0)}}><option value="">Все заявки</option>{Object.entries(LEAD_STATUS).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></div>
     <State err={q.err} loading={q.loading}/>{!q.loading&&!q.err&&!rows.length&&<p className="muted">Заявок пока нет.</p>}
-    <div className="support-queue-list">{rows.map(lead=><article className="card support-queue-item" key={lead.id}><div className="row between wrap"><div><b>{lead.name}</b><p className="muted small">{lead.business_type} · {lead.request_type==='demo'?'Демонстрация':'Подключение'}{lead.plan?` · тариф ${lead.plan}`:''}</p></div><span className={`pf-badge pf-${lead.status}`}>{LEAD_STATUS[lead.status]??lead.status}</span></div><div className="row between wrap"><a href={`tel:${String(lead.phone).replace(/[^+\d]/g,'')}`}>{lead.phone}</a><time className="muted small">Поступила {fmtDateTime(lead.created_at)}</time></div>{lead.comment&&<p className="muted small">{lead.comment}</p>}<label className="muted small">Состояние заявки<select className="field" value={lead.status} onChange={e=>void change(String(lead.id),e.target.value)}>{Object.entries(LEAD_STATUS).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label></article>)}</div>
+    <div className="support-queue-list">{rows.map(lead=><article className="card support-queue-item" key={lead.id}><div className="row between wrap"><div><b>{lead.business_name??lead.name}</b><p className="muted small">{lead.owner_name?`${lead.owner_name} · `:''}{lead.business_type} · {lead.request_type==='demo'?'Демонстрация':'Подключение'}{lead.plan?` · тариф ${lead.plan}`:''}</p></div><span className={`pf-badge pf-${lead.status}`}>{LEAD_STATUS[lead.status]??lead.status}</span></div><div className="row between wrap"><span className="col"><a href={`tel:${String(lead.phone).replace(/[^+\d]/g,'')}`}>{lead.phone}</a>{lead.owner_email&&<a href={`mailto:${lead.owner_email}`}>{lead.owner_email}</a>}</span><time className="muted small">Поступила {fmtDateTime(lead.created_at)}</time></div>{lead.comment&&<p className="muted small">{lead.comment}</p>}{lead.consent_at?<p className="muted small">Согласие на обработку данных: {fmtDateTime(lead.consent_at)}</p>:null}{lead.tenant_slug?<p className="small">Организация создана: <a href={`/s/${lead.tenant_slug}`} target="_blank" rel="noopener noreferrer">/s/{lead.tenant_slug}</a></p>:null}{canConnect&&!lead.tenant_id&&lead.status!=='closed'&&<button className="btn mini" onClick={()=>onConnect({id:String(lead.id),name:String(lead.business_name??''),slug:slugFromName(String(lead.business_name??'')),owner_name:String(lead.owner_name??''),owner_email:String(lead.owner_email??''),phone:String(lead.phone??''),plan_code:String(lead.plan||'').toUpperCase()==='PRO'?'PRO':'START',trial:lead.request_type==='demo'})}>Подключить организацию</button>}<label className="muted small">Состояние заявки<select className="field" value={lead.status} onChange={e=>void change(String(lead.id),e.target.value)}>{Object.entries(LEAD_STATUS).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label></article>)}</div>
     <div className="row between wrap"><span className="muted small">{count} заявок · страница {page+1} из {pages}</span><div className="row"><button className="btn ghost mini" disabled={page===0||q.loading} onClick={()=>setPage(p=>p-1)}>Назад</button><button className="btn ghost mini" disabled={page+1>=pages||q.loading} onClick={()=>setPage(p=>p+1)}>Далее</button></div></div>{msg&&<p className="err" role="alert">{msg}</p>}
   </div>
 }

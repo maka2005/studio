@@ -25,6 +25,14 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const str = (v: unknown, max = 200) => typeof v === 'string' ? v.trim().slice(0, max) : '';
 const obj = (v: unknown) => (v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {});
 
+const CYR: Record<string, string> = { а:'a',б:'b',в:'v',г:'g',д:'d',е:'e',ё:'e',ж:'zh',з:'z',и:'i',й:'y',к:'k',л:'l',м:'m',н:'n',о:'o',п:'p',р:'r',с:'s',т:'t',у:'u',ф:'f',х:'h',ц:'ts',ч:'ch',ш:'sh',щ:'sch',ъ:'',ы:'y',ь:'',э:'e',ю:'yu',я:'ya',қ:'k',ғ:'g',ң:'n',ө:'o',ү:'u',ұ:'u',һ:'h',ә:'a',і:'i' };
+const slugBase = (name: string) => {
+  const s = [...name.toLowerCase()].map((c) => CYR[c] ?? c).join('').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 28).replace(/-+$/g, '');
+  return s.length >= 2 ? s : 'servio';
+};
+const sha256Hex = async (v: string) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(v)))).map((x) => x.toString(16).padStart(2, '0')).join('');
+const PRIVACY_VERSION = '2026-11-15';
+
 const aalOf = (token: string): string => {
   try {
     const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
@@ -41,7 +49,7 @@ const KNOWN = [
   'forbidden', 'not_found', 'slug_taken', 'bad_slug', 'bad_name', 'bad_timezone', 'owner_missing', 'plan_not_found', 'bad_duration',
   'bad_dates', 'bad_status', 'bad_action', 'bad_setting', 'bad_value', 'reason_required', 'subscription_exists', 'idempotency_conflict',
   'no_paid_payment', 'unlimited_subscription', 'bad_limits', 'bad_features',
-  'plan_limit_employees', 'plan_limit_services', 'plan_limit_bookings_per_month','trial_already_used','trial_identity_required',
+  'plan_limit_employees', 'plan_limit_services', 'plan_limit_bookings_per_month','trial_already_used','trial_identity_required','consent_required',
 ];
 
 async function findUserByEmail(admin: ReturnType<typeof createClient>, email: string) {
@@ -67,20 +75,77 @@ Deno.serve(async (req) => {
   const action = str(body.action, 40);
   if (!action) return json(req, { error: 'bad_request' }, 400);
 
-  if (action === 'public_lead_submit') {
-    const source=req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()||req.headers.get('cf-connecting-ip')||'unknown';
-    const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(source));
-    const ipKey=Array.from(new Uint8Array(digest)).map(x=>x.toString(16).padStart(2,'0')).join('');
+  if (action === 'public_lead_submit' || action === 'public_demo_start') {
+    const demo = action === 'public_demo_start';
+    const source = req.headers.get('x-client-ip')?.trim() || req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || req.headers.get('cf-connecting-ip') || 'unknown';
+    const ipKey = await sha256Hex(source);
+    const admin = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } });
+    const limit = await admin.rpc('consume_platform_rate', { p_scope: 'platform_lead', p_key: `${demo ? 'demo:' : ''}ip:${ipKey}`, p_limit: demo ? 3 : 5, p_window: 3600 });
+    if (limit.error) return json(req, { error: 'temporarily_unavailable' }, 503);
+    if (limit.data !== true) return json(req, { error: 'rate_limited' }, 429);
+    const lead = obj(body.lead), businessName = str(lead.businessName, 120), ownerName = str(lead.ownerName, 120), ownerEmail = str(lead.ownerEmail, 254).toLowerCase(), phone = str(lead.phone, 32), businessType = str(lead.businessType, 80);
+    const plan = str(lead.plan, 40), comment = str(lead.comment, 2000);
+    const requestType = demo ? 'demo' : (lead.requestType === 'demo' ? 'demo' : 'connect');
+    if (businessName.length < 2 || ownerName.length < 2 || !EMAIL.test(ownerEmail) || phone.replace(/\D/g, '').length < 10 || businessType.length < 2) return json(req, { error: 'bad_request' }, 400);
+    if (lead.consent !== true) return json(req, { error: 'consent_required' }, 400);
+    const row = { business_name: businessName, owner_name: ownerName, owner_email: ownerEmail, phone, business_type: businessType, request_type: requestType, plan, comment, consent_at: new Date().toISOString(), consent_version: PRIVACY_VERSION };
+
+    if (!demo) {
+      const { error } = await admin.from('platform_business_leads').insert(row);
+      if (error) { console.error('public lead save failed:', error.message); return json(req, { error: 'temporarily_unavailable' }, 503); }
+      return json(req, { ok: true, mode: 'lead' });
+    }
+
+    // Демо: организация создаётся сразу. Если почта уже зарегистрирована, организацию к чужому аккаунту не привязываем — сохраняем обычную заявку.
+    const existing = await findUserByEmail(admin, ownerEmail);
+    if (existing) {
+      const { error } = await admin.from('platform_business_leads').insert(row);
+      if (error) { console.error('demo lead save failed:', error.message); return json(req, { error: 'temporarily_unavailable' }, 503); }
+      return json(req, { ok: true, mode: 'lead' });
+    }
+    const emailRate = await admin.rpc('consume_platform_rate', { p_scope: 'platform_lead', p_key: `demo:email:${await sha256Hex(ownerEmail)}`, p_limit: 2, p_window: 86400 });
+    if (emailRate.error) return json(req, { error: 'temporarily_unavailable' }, 503);
+    if (emailRate.data !== true) return json(req, { error: 'rate_limited' }, 429);
+
+    const planCode = plan.toUpperCase() === 'PRO' ? 'PRO' : 'START';
+    const created = await admin.auth.admin.createUser({ email: ownerEmail, email_confirm: true, user_metadata: { full_name: ownerName } });
+    if (created.error || !created.data.user) { console.error('demo owner create failed:', created.error?.message); return json(req, { error: 'temporarily_unavailable' }, 502); }
+    const owner = created.data.user;
+    const base = slugBase(businessName);
+    let result: { tenant_id?: string; slug?: string } | null = null;
+    let failure = '';
+    for (let attempt = 0; attempt < 6 && !result; attempt++) {
+      const suffix = attempt === 0 ? '' : `-${crypto.randomUUID().replace(/-/g, '').slice(0, 4)}`;
+      const slug = `${base.slice(0, 40 - suffix.length)}${suffix}`;
+      const { data, error } = await admin.rpc('platform_create_tenant_system', {
+        p_key: `demo:${(await sha256Hex(ownerEmail)).slice(0, 32)}:${attempt}`,
+        p: { name: businessName, slug, owner_user_id: owner.id, owner_email: ownerEmail, owner_name: ownerName, phone, business_type: 'autoservice', plan_code: planCode, trial: true, services: [] },
+      });
+      if (!error) { result = data as { tenant_id?: string; slug?: string }; break; }
+      if (error.message?.includes('slug_taken')) continue;
+      failure = KNOWN.find((k) => error.message?.includes(k)) ?? 'operation_failed';
+      console.error('demo create failed:', error.message);
+      break;
+    }
+    if (!result?.tenant_id || !result.slug) {
+      await admin.auth.admin.deleteUser(owner.id).catch(() => undefined);
+      if (failure === 'trial_already_used') return json(req, { error: 'trial_already_used' }, 409);
+      return json(req, { error: failure ? 'operation_failed' : 'slug_taken' }, 500);
+    }
+    const anonClient = createClient(url, anon, { auth: { persistSession: false, autoRefreshToken: false } });
+    const invite = site ? await anonClient.auth.resetPasswordForEmail(ownerEmail, { redirectTo: `${site.replace(/\/$/, '')}/s/${result.slug}/owner` }) : { error: new Error('no_site') };
+    if (invite.error) console.error('demo invite failed:', invite.error.message);
+    const { error: leadError } = await admin.from('platform_business_leads').insert({ ...row, status: 'converted', tenant_id: result.tenant_id, tenant_slug: result.slug });
+    if (leadError) console.error('demo lead record failed:', leadError.message);
+    await admin.rpc('platform_log', { p_actor: null, p_action: 'demo.self_signup', p_tenant: result.tenant_id, p_payload: { slug: result.slug, plan: planCode, owner_email: ownerEmail } });
+    return json(req, { ok: true, mode: 'demo', slug: result.slug, invite_sent: !invite.error });
+  }
+
+  if (action === 'public_plans') {
     const admin=createClient(url,service,{auth:{persistSession:false,autoRefreshToken:false}});
-    const limit=await admin.rpc('consume_platform_rate',{p_scope:'platform_lead',p_key:`ip:${ipKey}`,p_limit:5,p_window:3600});
-    if(limit.error)return json(req,{error:'temporarily_unavailable'},503);
-    if(limit.data!==true)return json(req,{error:'rate_limited'},429);
-    const lead=obj(body.lead),name=str(lead.name,120),phone=str(lead.phone,32),businessType=str(lead.businessType,80);
-    const requestType=lead.requestType==='demo'?'demo':'connect',plan=str(lead.plan,40),comment=str(lead.comment,2000);
-    if(name.length<2||phone.replace(/\D/g,'').length<10||businessType.length<2||!['demo','connect'].includes(requestType))return json(req,{error:'bad_request'},400);
-    const {error}=await admin.from('platform_business_leads').insert({name,phone,business_type:businessType,request_type:requestType,plan,comment});
-    if(error){console.error('public lead save failed:',error.message);return json(req,{error:'temporarily_unavailable'},503)}
-    return json(req,{ok:true});
+    const {data,error}=await admin.from('plans').select('code,name,description,price_kzt,period_months,limits').eq('is_active',true).neq('code','LEGACY').order('sort_order',{ascending:true});
+    if(error){console.error('public plans failed:',error.message);return json(req,{error:'temporarily_unavailable'},503)}
+    return json(req,{data:data??[]});
   }
 
   // --- 1. аутентификация
@@ -153,9 +218,12 @@ Deno.serve(async (req) => {
       if(!['owner','support'].includes(role))return json(req,{error:'forbidden'},403);
       const id=uuidOf(body.lead_id),status=str(body.status,20);
       if(!id||!['new','contacted','converted','closed'].includes(status))return json(req,{error:'bad_request'},400);
-      const {error}=await admin.from('platform_business_leads').update({status,updated_at:new Date().toISOString(),updated_by:actor}).eq('id',id);
+      const tenantId=uuidOf(body.tenant_id),tenantSlug=str(body.tenant_slug,40).toLowerCase();
+      const patch:Record<string,unknown>={status,updated_at:new Date().toISOString(),updated_by:actor};
+      if(tenantId){patch.tenant_id=tenantId;patch.tenant_slug=/^[a-z0-9-]{2,40}$/.test(tenantSlug)?tenantSlug:''}
+      const {error}=await admin.from('platform_business_leads').update(patch).eq('id',id);
       if(error)throw error;
-      await admin.rpc('platform_log',{p_actor:actor,p_action:'business_lead.update',p_tenant:null,p_payload:{lead_id:id,status}});
+      await admin.rpc('platform_log',{p_actor:actor,p_action:'business_lead.update',p_tenant:null,p_payload:{lead_id:id,status,tenant_id:tenantId||null}});
       return json(req,{data:{ok:true}});
     }
     if (action === 'support_tickets') {

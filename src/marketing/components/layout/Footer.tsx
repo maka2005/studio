@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { SITE } from '../../config/site';
 import './Footer.scss';
 
 export function Footer() {
@@ -17,12 +18,15 @@ export function Footer() {
           <Link to="/features">Возможности</Link>
           <Link to="/pricing">Тарифы</Link>
           <Link to="/contact">Контакты</Link>
+          <Link to="/privacy">Политика конфиденциальности</Link>
         </nav>
 
         <div className="footer__contacts">
           <b>Для автосервисов и СТО</b>
           <span>Оставьте заявку — команда Servio поможет с подключением.</span>
           <Link to="/contact">Оставить заявку</Link>
+          {SITE.contacts.phone && <a href={`tel:${SITE.contacts.phone.replace(/[^+\d]/g, '')}`}>{SITE.contacts.phone}</a>}
+          {SITE.contacts.email && <a href={`mailto:${SITE.contacts.email}`}>{SITE.contacts.email}</a>}
         </div>
       </div>
       <div className="container footer__bottom">

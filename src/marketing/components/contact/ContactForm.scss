@@ -80,3 +80,20 @@
     }
   }
 }
+
+.contact-form__consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 14px;
+  color: $color-text-muted;
+
+  input {
+    margin-top: 4px;
+    flex: none;
+  }
+
+  a {
+    color: $color-primary;
+  }
+}

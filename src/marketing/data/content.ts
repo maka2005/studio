@@ -40,24 +40,33 @@ export const faq = [
   { question: 'Чем отличаются тарифы START и PRO?', answer: 'Актуальный состав тарифов и сравнение собраны на странице «Тарифы».' },
 ];
 
+export interface PlanLimits {
+  employees: number | null;
+  services: number | null;
+  branches: number | null;
+  bookingsPerMonth: number | null;
+}
+
 export interface Plan {
-  id: 'start' | 'pro';
+  id: string;
   name: string;
   price: number;
   description: string;
   highlighted?: boolean;
-  /** TODO: состав тарифов в ТЗ не разделён — уточнить и задать реальный список для каждого тарифа. */
+  limits: PlanLimits;
   included: string[];
 }
 
 const allFeatureIds = features.map((f) => f.id);
 
-export const plans: Plan[] = [
+/** Запасные значения на случай, если тарифы из базы не загрузились. Актуальные берутся из админки (/api/platform?action=plans). */
+export const fallbackPlans: Plan[] = [
   {
     id: 'start',
     name: 'START',
     price: 15000,
     description: 'Для бизнеса, который переводит записи и управление в одну систему.',
+    limits: { employees: 3, services: 20, branches: 1, bookingsPerMonth: 300 },
     included: allFeatureIds,
   },
   {
@@ -66,9 +75,12 @@ export const plans: Plan[] = [
     price: 20000,
     description: 'Для бизнеса, которому нужен полный набор возможностей Servio.',
     highlighted: true,
+    limits: { employees: 15, services: 100, branches: 5, bookingsPerMonth: 3000 },
     included: allFeatureIds,
   },
 ];
+
+export const plans = fallbackPlans;
 
 export const businessTypes = ['СТО / автосервис', 'Детейлинг-студия', 'Автомойка', 'Шиномонтаж', 'Другое'];
 
@@ -89,12 +101,17 @@ export const seo = {
     path: '/pricing',
     title: 'Тарифы Servio — START и PRO для автосервиса в Казахстане',
     description:
-      'Прозрачные тарифы Servio: START — 15 000 ₸ и PRO — 20 000 ₸ в месяц. Подключите управление записями и расписанием.',
+      'Прозрачные тарифы Servio для автосервисов: START и PRO с ежемесячной оплатой. Подключите управление записями и расписанием.',
+  },
+  privacy: {
+    path: '/privacy',
+    title: 'Политика конфиденциальности — Servio',
+    description: 'Как Servio обрабатывает персональные данные, оставленные в заявке на подключение или демонстрацию.',
   },
   contact: {
     path: '/contact',
     title: 'Заявка на подключение и демонстрация Servio',
     description:
-      'Оставьте заявку на подключение Servio или запишитесь на демонстрацию. Ответим в WhatsApp и по телефону.',
+      'Оставьте заявку на подключение Servio или запишитесь на демонстрацию. Свяжемся с вами в ближайшее время.',
   },
 };

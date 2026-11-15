@@ -72,6 +72,16 @@
     }
   }
 
+  &__list--limits {
+    flex: none;
+    padding-bottom: 20px;
+    border-bottom: 1px solid $color-border;
+  }
+
+  > .btn {
+    margin-top: auto;
+  }
+
   @include mobile {
     padding: 28px 24px;
   }
