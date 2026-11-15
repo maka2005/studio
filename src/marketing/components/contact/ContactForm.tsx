@@ -1,17 +1,18 @@
 import { maskPhone } from '../../../lib/phone';
-import { useState, type ChangeEvent, type FormEvent } from 'react';
+import { useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { businessTypes } from '../../data/content';
 import { submitLead, type LeadPayload, type LeadResult } from '../../services/leads';
 import { usePlans } from '../../hooks/usePlans';
 import { Button } from '../ui/Button';
+import { Turnstile, turnstileEnabled } from './Turnstile';
 import './ContactForm.scss';
 
 const TRIAL_DAYS = 3;
 const money = (n: number) => `${n.toLocaleString('ru-RU')} ₸`;
 const dateRu = (d: Date) => new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long' }).format(d);
 
-type Status = 'idle' | 'sending' | 'sent' | 'validation-error' | 'consent-error' | 'error' | 'trial-used' | 'limited';
+type Status = 'idle' | 'sending' | 'sent' | 'validation-error' | 'consent-error' | 'error' | 'trial-used' | 'limited' | 'captcha-error';
 
 export function ContactForm() {
   const [params] = useSearchParams();
@@ -30,9 +31,12 @@ export function ContactForm() {
   });
   const [result, setResult] = useState<LeadResult | null>(null);
   const [copied, setCopied] = useState(false);
+  const openedAt = useRef(Date.now());
+  const [captchaToken, setCaptchaToken] = useState('');
+  const [captchaReset, setCaptchaReset] = useState(0);
 
   const update =
-    (field: Exclude<keyof LeadPayload, 'consent'>) =>
+    (field: Exclude<keyof LeadPayload, 'consent' | 'elapsedMs'>) =>
     (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
       setForm((prev) => ({ ...prev, [field]: e.target.value }));
 
@@ -51,13 +55,26 @@ export function ContactForm() {
       setStatus('consent-error');
       return;
     }
+    if (turnstileEnabled && !captchaToken) {
+      setStatus('captcha-error');
+      return;
+    }
     setStatus('sending');
     try {
-      setResult(await submitLead(connecting && selectedPlan ? { ...form, plan: selectedPlan.id } : form));
+      const payload: LeadPayload = {
+        ...(connecting && selectedPlan ? { ...form, plan: selectedPlan.id } : form),
+        elapsedMs: Date.now() - openedAt.current,
+        ...(captchaToken ? { turnstileToken: captchaToken } : {}),
+      };
+      setResult(await submitLead(payload));
       setStatus('sent');
     } catch (err) {
       const code = err instanceof Error ? err.message : '';
-      setStatus(code === 'trial_already_used' ? 'trial-used' : code === 'rate_limited' ? 'limited' : 'error');
+      setStatus(code === 'trial_already_used' ? 'trial-used' : code === 'rate_limited' ? 'limited' : code === 'captcha_failed' ? 'captcha-error' : 'error');
+    } finally {
+      // Токен Turnstile одноразовый: после любой попытки нужен новый.
+      setCaptchaToken('');
+      setCaptchaReset((n) => n + 1);
     }
   };
 
@@ -243,6 +260,11 @@ export function ContactForm() {
         <textarea id="comment" name="comment" rows={4} value={form.comment} onChange={update('comment')} />
       </div>
 
+      <div aria-hidden="true" style={{ position: 'absolute', left: '-10000px', width: 1, height: 1, overflow: 'hidden' }}>
+        <label htmlFor="hp_field">Не заполняйте это поле</label>
+        <input id="hp_field" name="hp_field" type="text" tabIndex={-1} autoComplete="off" value={form.hp ?? ''} onChange={update('hp')} />
+      </div>
+
       <div className="contact-form__consent">
         <input
           id="consent"
@@ -257,9 +279,12 @@ export function ContactForm() {
         </label>
       </div>
 
+      <Turnstile onToken={setCaptchaToken} resetKey={captchaReset} />
+
       {status !== 'idle' && status !== 'sending' && (
         <p className="contact-form__error" role="alert">
           {status === 'validation-error' && 'Укажите название бизнеса, имя и почту владельца, а также корректный номер телефона.'}
+          {status === 'captcha-error' && 'Не удалось пройти проверку «Я не робот». Подождите секунду и попробуйте ещё раз.'}
           {status === 'consent-error' && 'Чтобы отправить заявку, подтвердите согласие на обработку персональных данных.'}
           {status === 'trial-used' && 'Для этой почты или телефона демо уже использовалось. Выберите «Подключение к Renvio» — мы свяжемся с вами.'}
           {status === 'limited' && 'Слишком много попыток. Попробуйте позже.'}

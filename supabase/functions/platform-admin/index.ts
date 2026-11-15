@@ -65,6 +65,24 @@ async function findUserByEmail(admin: ReturnType<typeof createClient>, email: st
 
 
 const ACCEPTED = { ok: true, mode: 'accepted' };
+// Источник IP для публичных форм. x-client-ip принимается только от нашего прокси (общий секрет), иначе берём IP, который выставляет сам шлюз Supabase.
+const PROXY_SECRET = Deno.env.get('PLATFORM_PROXY_SECRET') ?? '';
+const safeEqual = (a: string, b: string) => { if (a.length !== b.length) return false; let d = 0; for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i); return d === 0; };
+const viaProxy = (req: Request) => PROXY_SECRET.length >= 16 && safeEqual(req.headers.get('x-proxy-secret') ?? '', PROXY_SECRET);
+const clientIp = (req: Request) => (viaProxy(req) ? req.headers.get('x-client-ip')?.trim() : '') || req.headers.get('cf-connecting-ip')?.trim() || 'unknown';
+async function turnstileOk(token: string, ip: string): Promise<boolean> {
+  const secret = Deno.env.get('TURNSTILE_SECRET_KEY') ?? '';
+  if (!secret) return true; // капча не настроена — проверка отключена
+  if (!token || token.length > 2048) return false;
+  const form = new URLSearchParams({ secret, response: token });
+  if (ip && ip !== 'unknown') form.set('remoteip', ip);
+  try {
+    const r = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', { method: 'POST', body: form, signal: AbortSignal.timeout(5000) });
+    const j = await r.json().catch(() => ({}));
+    return j?.success === true;
+  } catch { return false; }
+}
+
 
 // Гарантия: владелец записан в tenant_members сразу при создании организации (на случай сбоя/расхождения в RPC).
 async function ensureOwnerMembership(admin: ReturnType<typeof createClient>, tenantId: string, userId: string): Promise<boolean> {
@@ -91,12 +109,18 @@ Deno.serve(async (req) => {
     const demo = action === 'public_demo_start';
     const connect = action === 'public_connect_start';
     const instant = demo || connect; // организация создаётся сразу, без участия менеджера
-    const source = req.headers.get('x-client-ip')?.trim() || req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || req.headers.get('cf-connecting-ip') || 'unknown';
+    // Если секрет прокси задан, публичные формы принимаются только через /api/platform: прямые вызовы с публичным anon-ключом отклоняются.
+    if (PROXY_SECRET && !viaProxy(req)) return json(req, { error: 'forbidden' }, 403);
+    const pre = obj(body.lead);
+    // Ловушка для ботов: скрытое поле заполнено или форма отправлена быстрее 1,5 с — молча «принимаем», ничего не создавая.
+    if (str(pre.hp, 200) !== '' || (typeof pre.elapsedMs === 'number' && pre.elapsedMs < 1500)) return json(req, ACCEPTED);
+    const source = clientIp(req);
     const ipKey = await sha256Hex(source);
     const admin = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } });
     const limit = await admin.rpc('consume_platform_rate', { p_scope: 'platform_lead', p_key: `${demo ? 'demo:' : connect ? 'connect:' : ''}ip:${ipKey}`, p_limit: instant ? 3 : 5, p_window: 3600 });
     if (limit.error) return json(req, { error: 'temporarily_unavailable' }, 503);
     if (limit.data !== true) return json(req, { error: 'rate_limited' }, 429);
+    if (!(await turnstileOk(str(pre.turnstileToken, 2048), source))) return json(req, { error: 'captcha_failed' }, 400);
     const lead = obj(body.lead), businessName = str(lead.businessName, 120), ownerName = str(lead.ownerName, 120), ownerEmail = str(lead.ownerEmail, 254).toLowerCase(), phone = str(lead.phone, 32), businessType = str(lead.businessType, 80);
     const plan = str(lead.plan, 40), comment = str(lead.comment, 2000);
     const requestType = demo ? 'demo' : connect ? 'connect' : (lead.requestType === 'demo' ? 'demo' : 'connect');

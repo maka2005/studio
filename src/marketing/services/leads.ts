@@ -8,6 +8,11 @@ export interface LeadPayload {
   plan: string;
   comment: string;
   consent: boolean;
+  /** Ловушка для ботов: должно оставаться пустым. */
+  hp?: string;
+  /** Сколько мс форма была открыта до отправки. */
+  elapsedMs?: number;
+  turnstileToken?: string;
 }
 
 export interface LeadResult {

@@ -11,6 +11,13 @@ const getConfig = () => ({
   url: (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').replace(/\/$/, ''),
   anon: process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '',
 });
+const clientIp = req => String(req.headers['x-real-ip'] || req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+// Секрет прокси: Edge Function доверяет x-client-ip только вместе с ним (иначе IP подделать может любой, anon-ключ публичный).
+const publicHeaders = (cfg, req) => ({
+  apikey: cfg.anon, Authorization: `Bearer ${cfg.anon}`, 'Content-Type': 'application/json',
+  'x-client-ip': clientIp(req),
+  ...(process.env.PLATFORM_PROXY_SECRET ? { 'x-proxy-secret': process.env.PLATFORM_PROXY_SECRET } : {}),
+});
 const send = (res, status, body, headers = {}) => {
   res.statusCode = status;
   res.setHeader('Cache-Control', 'no-store');
@@ -72,17 +79,17 @@ export default async function handler(req,res) {
   const action=String(req.query?.action||'');
   try {
     if(req.method==='POST'&&action==='demo') {
-      const r=await fetch(`${cfg.url}/functions/v1/platform-admin`,{method:'POST',headers:{apikey:cfg.anon,Authorization:`Bearer ${cfg.anon}`,'Content-Type':'application/json','x-client-ip':String(req.headers['x-forwarded-for']||'').split(',')[0].trim()},body:JSON.stringify({action:'public_demo_start',lead:body})});
+      const r=await fetch(`${cfg.url}/functions/v1/platform-admin`,{method:'POST',headers:publicHeaders(cfg,req),body:JSON.stringify({action:'public_demo_start',lead:body})});
       const result=await r.json().catch(()=>({}));
       return send(res,r.status,result);
     }
     if(req.method==='POST'&&action==='connect') {
-      const r=await fetch(`${cfg.url}/functions/v1/platform-admin`,{method:'POST',headers:{apikey:cfg.anon,Authorization:`Bearer ${cfg.anon}`,'Content-Type':'application/json','x-client-ip':String(req.headers['x-forwarded-for']||'').split(',')[0].trim()},body:JSON.stringify({action:'public_connect_start',lead:body})});
+      const r=await fetch(`${cfg.url}/functions/v1/platform-admin`,{method:'POST',headers:publicHeaders(cfg,req),body:JSON.stringify({action:'public_connect_start',lead:body})});
       const result=await r.json().catch(()=>({}));
       return send(res,r.status,result);
     }
     if(req.method==='POST'&&action==='lead') {
-      const r=await fetch(`${cfg.url}/functions/v1/platform-admin`,{method:'POST',headers:{apikey:cfg.anon,Authorization:`Bearer ${cfg.anon}`,'Content-Type':'application/json','x-client-ip':String(req.headers['x-forwarded-for']||'').split(',')[0].trim()},body:JSON.stringify({action:'public_lead_submit',lead:body})});
+      const r=await fetch(`${cfg.url}/functions/v1/platform-admin`,{method:'POST',headers:publicHeaders(cfg,req),body:JSON.stringify({action:'public_lead_submit',lead:body})});
       const result=await r.json().catch(()=>({}));
       return send(res,r.status,result);
     }
