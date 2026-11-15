@@ -13,6 +13,7 @@ import './platform.css';
 type Row = Record<string, any>;
 
 const ERR: Record<string, string> = {
+  last_owner: 'Нельзя удалить последнего владельца платформы.',
   forbidden: 'Нет доступа к этому разделу.', unauthorized: 'Срок входа истёк. Войдите ещё раз.', mfa_required: 'Подтвердите вход кодом из приложения.', rate_limited: 'Слишком много запросов. Попробуйте чуть позже.',
   slug_taken: 'Этот адрес организации уже занят.', bad_slug: 'Укажите адрес латинскими буквами, цифрами и дефисом.', bad_name: 'Название должно содержать от 2 до 80 символов.', bad_request: 'Проверьте заполненные поля.',
   bad_timezone: 'Неизвестный часовой пояс.', plan_not_found: 'Тариф не найден или выключен.', subscription_exists: 'У организации уже есть действующая подписка.',
@@ -138,7 +139,7 @@ function Login({ msg, onDone }: { msg: string; onDone: () => void }) {
       <PasswordInput className="field" autoComplete="current-password" placeholder="Пароль" value={password} onChange={(e) => setPassword(e.target.value)} required />
       {err && <p className="err">{err}</p>}{info && <p className="muted small" role="status">{info}</p>}
       <button className="btn" disabled={busy}>Войти</button>
-      <button type="button" className="link" onClick={() => void forgot()}>Забыли пароль? Отправить ссылку на почту</button></form></main>);
+      <button type="button" className="link forgot-link" onClick={() => void forgot()}>Забыли пароль?</button></form></main>);
 }
 
 function MfaVerify({ onDone }: { onDone: () => void }) {
@@ -151,7 +152,7 @@ function MfaVerify({ onDone }: { onDone: () => void }) {
     try{await platformAuth('mfa_verify',{factor_id:factor.id,code:code.trim()});onDone()}catch{setErr('Неверный код.')}
   };
   return (
-    <main className="page pf-login-page"><form className="card col pf-narrow" onSubmit={submit}><div className="pf-login-brand"><span className="pf-brand-mark">S</span><span><b>Servio</b><small>Дополнительная проверка</small></span></div><h1>Подтвердите вход</h1><p className="muted small">Введите шестизначный код из приложения для подтверждения входа.</p>
+    <main className="page pf-login-page"><form className="card col pf-narrow" onSubmit={submit}><div className="pf-login-brand"><span className="pf-brand-mark">S</span><span><b>Servio</b><small>Google Authenticator</small></span></div><h1>Подтвердите вход</h1><p className="muted small">Откройте Google Authenticator и введите шестизначный код для сервиса Servio.</p>
       <input className="field" inputMode="numeric" autoComplete="one-time-code" maxLength={6} placeholder="6 цифр" value={code} onChange={(e) => setCode(e.target.value)} required />
       {err && <p className="err">{err}</p>}<button className="btn">Подтвердить</button></form></main>);
 }
@@ -404,12 +405,45 @@ function TenantCard({ id, role, onBack }: { id: string; role: string; onBack: ()
   return (<>
     <button className="back" onClick={onBack}>← Назад</button>
     {subModal&&<SubscriptionActionModal type={subModal.type} subscription={subModal.subscription} initialPlan={cur?.plan_code??'START'} initialDate={cur?.ends_at?.slice(0,10)??''} onClose={()=>setSubModal(null)} onSubmit={async values=>{await act(()=>runSubAction(subModal.subscription.id,subModal.type,values));setSubModal(null)}}/>}
-    <section className="card"><div className="row between wrap"><div><h2>{t.config?.name ?? t.slug}</h2><p className="muted small">{t.slug} · {t.timezone} · создана {fmtDate(t.created_at)} · доступ: {d.access_state}</p>{t.archived_at&&<p className="err small">В архиве с {fmtDate(t.archived_at)}{t.deletion_requested_at?` · удаление запрошено, хранение до ${fmtDate(new Date(new Date(t.deletion_requested_at).getTime()+30*86400000).toISOString())}`:''}</p>}</div>
-      <div className="row wrap"><a className="btn ghost inline" href={`/s/${t.slug}/`} target="_blank" rel="noreferrer">Публичная страница</a>{t.owner_email&&<button className="btn ghost inline" onClick={()=>void act(()=>resendInvite(t.owner_email, t.slug))}>Отправить приглашение владельцу</button>}<button className="btn ghost inline" onClick={exportData}>Экспорт данных</button></div></div>
+    <section className="card pf-org">
+      <div className="pf-org__head">
+        <div className="pf-org__avatar" aria-hidden="true">{String(t.config?.name ?? t.slug).trim().charAt(0).toUpperCase()}</div>
+        <div className="pf-org__title">
+          <h2>{t.config?.name ?? t.slug}</h2>
+          <div className="pf-org__chips">
+            {cur && <Badge phase={cur.phase} />}
+            {cur?.plan_code && <span className="pf-chip">Тариф {cur.plan_code}</span>}
+            <span className="pf-chip">/s/{t.slug}</span>
+            <span className="pf-chip">{t.timezone}</span>
+            <span className="pf-chip">Создана {fmtDate(t.created_at)}</span>
+            <span className="pf-chip">Доступ: {d.access_state}</span>
+          </div>
+          {t.owner_email && <p className="pf-org__owner">Владелец: <b>{t.owner_email}</b></p>}
+          {t.archived_at && <p className="err small">В архиве с {fmtDate(t.archived_at)}{t.deletion_requested_at ? ` · удаление запрошено, хранение до ${fmtDate(new Date(new Date(t.deletion_requested_at).getTime()+30*86400000).toISOString())}` : ''}</p>}
+        </div>
+      </div>
+      <div className="pf-org__stats">
+        <div className="pf-stat"><b>{d.counters.staff}</b><span>Сотрудники</span></div>
+        <div className="pf-stat"><b>{d.counters.services}</b><span>Услуги</span></div>
+        <div className="pf-stat"><b>{d.counters.bookings_30d}</b><span>Записи за 30 дней</span></div>
+      </div>
+      <div className="pf-org__actions">
+        <a className="pf-action-secondary" href={`/s/${t.slug}/`} target="_blank" rel="noreferrer">Публичная страница</a>
+        {t.owner_email && <button className="pf-action-secondary" onClick={()=>void act(()=>resendInvite(t.owner_email, t.slug))}>Отправить приглашение владельцу</button>}
+        <button className="pf-action-secondary" onClick={exportData}>Экспорт данных</button>
+      </div>
       {msg && <p className="err">{msg}</p>}
-      {role==='owner'&&<div className="col"><label className="pf-label">Причина действия с организацией<input className="field" minLength={5} maxLength={500} value={lifeReason} onChange={e=>setLifeReason(e.target.value)} placeholder="Обязательная причина (не менее 5 символов)"/></label><div className="row wrap"><button className="btn ghost" disabled={lifeReason.trim().length<5} onClick={()=>void act(()=>call('tenant_lifecycle',{tenant_id:id,lifecycle_action:t.archived_at?'restore':'archive',reason:lifeReason.trim()}))}>{t.archived_at?'Восстановить':'В архив'}</button><button className="btn danger" disabled={lifeReason.trim().length<5||!!t.deletion_requested_at} onClick={()=>{if(window.confirm('Удаление будет запрошено с 30-дневным сроком хранения. Данные сейчас не стираются. Продолжить?'))void act(()=>call('tenant_lifecycle',{tenant_id:id,lifecycle_action:'delete_request',reason:lifeReason.trim()}))}}>Запросить удаление (30 дней)</button></div></div>}
-      <p className="muted small">Сотрудники: {d.counters.staff} · Услуги: {d.counters.services} · Записи за 30 дней: {d.counters.bookings_30d}</p></section>
-    {['owner','support'].includes(role) && <form className="card col" onSubmit={(e)=>void startImpersonation(e)}><h3>Режим поддержки</h3><p className="muted small">Вход в кабинет владельца на 30 минут. Причина обязательна; действия будут записаны в журнал.</p><label className="pf-label">Причина доступа<textarea className="field" minLength={5} maxLength={500} rows={2} value={reason} onChange={e=>setReason(e.target.value)} placeholder="Например: воспроизведение ошибки при создании записи" required /></label><button className="pf-action-primary" disabled={impBusy||reason.trim().length<5}>{impBusy?'Открываем кабинет…':'Войти в кабинет организации'}</button></form>}
+      {role==='owner' && <div className="pf-zone pf-zone--danger">
+        <h3>Архив и удаление</h3>
+        <p className="muted small">Действия записываются в журнал. Удаление не стирает данные сразу: они хранятся 30 дней.</p>
+        <label className="pf-label">Причина<input className="field" minLength={5} maxLength={500} value={lifeReason} onChange={e=>setLifeReason(e.target.value)} placeholder="Обязательная причина (не менее 5 символов)"/></label>
+        <div className="pf-zone__row">
+          <button className="pf-action-secondary" disabled={lifeReason.trim().length<5} onClick={()=>void act(()=>call('tenant_lifecycle',{tenant_id:id,lifecycle_action:t.archived_at?'restore':'archive',reason:lifeReason.trim()}))}>{t.archived_at?'Восстановить':'В архив'}</button>
+          <button className="pf-danger-btn" disabled={lifeReason.trim().length<5||!!t.deletion_requested_at} onClick={()=>{if(window.confirm('Удаление будет запрошено с 30-дневным сроком хранения. Данные сейчас не стираются. Продолжить?'))void act(()=>call('tenant_lifecycle',{tenant_id:id,lifecycle_action:'delete_request',reason:lifeReason.trim()}))}}>Запросить удаление (30 дней)</button>
+        </div>
+      </div>}
+    </section>
+    {['owner','support'].includes(role) && <form className="card col pf-support" onSubmit={(e)=>void startImpersonation(e)}><h3>Режим поддержки</h3><p className="muted small">Вход в кабинет владельца на 30 минут. Причина обязательна; действия будут записаны в журнал.</p><label className="pf-label">Причина доступа<textarea className="field" minLength={5} maxLength={500} rows={2} value={reason} onChange={e=>setReason(e.target.value)} placeholder="Например: воспроизведение ошибки при создании записи" required /></label><button className="pf-action-primary" disabled={impBusy||reason.trim().length<5}>{impBusy?'Открываем кабинет…':'Войти в кабинет организации'}</button></form>}
       <section className="card"><h3>Текущая подписка</h3>
       {cur ? <><p><Badge phase={cur.phase} /> {cur.plan_code} · {fmtDate(cur.starts_at)} — {cur.ends_at ? fmtDate(cur.ends_at) : 'бессрочно'}{cur.grace_ends_at ? ` (grace до ${fmtDate(cur.grace_ends_at)})` : ''}</p>
         <div className="pf-actions">
@@ -574,8 +608,10 @@ function PlatformServiceAdmin(){
   const tenants=useAllTenants();
   const [title,setTitle]=useState('');const [body,setBody]=useState('');const [audience,setAudience]=useState('all');const [tenantIds,setTenantIds]=useState<string[]>([]);const [startsAt,setStartsAt]=useState('');const [endsAt,setEndsAt]=useState('');const [msg,setMsg]=useState('');
   const saveAnnouncement=async(e:FormEvent)=>{e.preventDefault();setMsg('');try{await call('announcement_save',{announcement:{title,body,audience,tenant_ids:tenantIds,starts_at:startsAt?new Date(startsAt).toISOString():new Date().toISOString(),ends_at:endsAt?new Date(endsAt).toISOString():null,is_active:true}});setTitle('');setBody('');setMsg('Объявление опубликовано.');await announcements.reload()}catch(e){setMsg(errText(e))}};
+  const toggleAnnouncement=async(a:Row)=>{setMsg('');try{await call('announcement_save',{announcement:{id:a.id,title:a.title,body:a.body,audience:a.audience,tenant_ids:a.tenant_ids??[],starts_at:a.starts_at,ends_at:a.ends_at,is_active:!a.is_active}});notify(a.is_active?'Объявление снято с показа.':'Объявление снова показывается организациям.');await announcements.reload()}catch(e){setMsg(errText(e))}};
+  const removeAnnouncement=async(a:Row)=>{if(!window.confirm(`Удалить объявление «${a.title}»? Организации перестанут его видеть, восстановить его нельзя.`))return;setMsg('');try{await call('announcement_delete',{id:a.id});notify('Объявление удалено.');await announcements.reload()}catch(e){setMsg(errText(e))}};
   return <div className="col"><section className="card col"><div className="row between wrap"><div><h2>Автоматический статус</h2><p className="muted small">Сайт, API, база данных, авторизация и серверные функции проверяются автоматически каждые 30 секунд. Изменить эти статусы вручную нельзя.</p></div><a className="pf-action-secondary" href="/status" target="_blank" rel="noreferrer">Открыть страницу статуса</a></div></section>
-  <section className="card col"><h2>Объявления</h2><p className="muted small">Сообщите организациям о важных изменениях или плановых работах.</p><form className="col" onSubmit={saveAnnouncement}><input className="field" minLength={3} maxLength={180} value={title} onChange={e=>setTitle(e.target.value)} placeholder="Заголовок" required/><textarea className="field" rows={4} maxLength={5000} value={body} onChange={e=>setBody(e.target.value)} placeholder="Текст объявления" required/><select className="field" value={audience} onChange={e=>setAudience(e.target.value)}><option value="all">Всем организациям</option><option value="selected">Выбранным организациям</option></select>{audience==='selected'&&<select className="field" multiple size={6} value={tenantIds} onChange={e=>setTenantIds(Array.from(e.target.selectedOptions,o=>o.value))}>{tenants.data?.map(t=><option key={t.id} value={t.id}>{t.name??t.slug}</option>)}</select>}<div className="row wrap"><label className="pf-label">Начало<input className="field" type="datetime-local" value={startsAt} onChange={e=>setStartsAt(e.target.value)}/></label><label className="pf-label">Окончание<input className="field" type="datetime-local" value={endsAt} onChange={e=>setEndsAt(e.target.value)}/></label></div><button className="btn" disabled={audience==='selected'&&!tenantIds.length}>Опубликовать</button></form>{msg&&<p className="muted small" role="status">{msg}</p>}<State err={announcements.err} loading={announcements.loading&&!announcements.data}/>{announcements.data?.map(a=><article className="pf-event" key={a.id}><div className="row between wrap"><b>{a.title}</b><span className="pf-badge">{a.is_active?'Активно':'Выключено'}</span></div><p>{a.body}</p><p className="muted small">{a.audience==='all'?'Все организации':'Выбрано: '+(a.tenant_ids??[]).length} · {fmtDateTime(a.starts_at)}{a.ends_at?' — '+fmtDateTime(a.ends_at):''}</p></article>)}</section></div>
+  <section className="card col"><h2>Объявления</h2><p className="muted small">Сообщите организациям о важных изменениях или плановых работах.</p><form className="col" onSubmit={saveAnnouncement}><input className="field" minLength={3} maxLength={180} value={title} onChange={e=>setTitle(e.target.value)} placeholder="Заголовок" required/><textarea className="field" rows={4} maxLength={5000} value={body} onChange={e=>setBody(e.target.value)} placeholder="Текст объявления" required/><select className="field" value={audience} onChange={e=>setAudience(e.target.value)}><option value="all">Всем организациям</option><option value="selected">Выбранным организациям</option></select>{audience==='selected'&&<select className="field" multiple size={6} value={tenantIds} onChange={e=>setTenantIds(Array.from(e.target.selectedOptions,o=>o.value))}>{tenants.data?.map(t=><option key={t.id} value={t.id}>{t.name??t.slug}</option>)}</select>}<div className="row wrap"><label className="pf-label">Начало<input className="field" type="datetime-local" value={startsAt} onChange={e=>setStartsAt(e.target.value)}/></label><label className="pf-label">Окончание<input className="field" type="datetime-local" value={endsAt} onChange={e=>setEndsAt(e.target.value)}/></label></div><button className="btn" disabled={audience==='selected'&&!tenantIds.length}>Опубликовать</button></form>{msg&&<p className="muted small" role="status">{msg}</p>}<State err={announcements.err} loading={announcements.loading&&!announcements.data}/>{announcements.data?.map(a=><article className="pf-event" key={a.id}><div className="row between wrap"><b>{a.title}</b><span className="pf-badge">{a.is_active?'Активно':'Выключено'}</span></div><p>{a.body}</p><p className="muted small">{a.audience==='all'?'Все организации':'Выбрано: '+(a.tenant_ids??[]).length} · {fmtDateTime(a.starts_at)}{a.ends_at?' — '+fmtDateTime(a.ends_at):''}</p><div className="pf-actions"><button type="button" onClick={()=>void toggleAnnouncement(a)}>{a.is_active?'Снять с показа':'Показать снова'}</button><button type="button" className="pf-danger-btn" onClick={()=>void removeAnnouncement(a)}>Удалить</button></div></article>)}</section></div>
 }
 /* ----------------------------------------------------------------------------------- журнал, настройки */
 const ADMIN_ROLE: Record<string, string> = { owner: 'Владелец', support: 'Поддержка', finance: 'Финансы', read_only: 'Только чтение' };
@@ -599,7 +635,7 @@ function Admins() {
     {data && <Table head={['Администратор','Роль','Статус','Добавлен','Действия']}>{data.map((a)=><tr key={a.user_id}>
       <td>{a.email}</td><td><select className="field" value={a.role} disabled={busy || !a.is_active} onChange={(e)=>void act('admin_update',{user_id:a.user_id,role:e.target.value})}>{Object.entries(ADMIN_ROLE).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></td>
       <td><Badge phase={a.is_active?'active':'suspended'} /></td><td>{fmtDate(a.created_at)}</td>
-      <td className="pf-actions">{a.is_active && <><button className="pf-action-secondary" disabled={busy} onClick={()=>{if(window.confirm(`Сбросить дополнительную проверку входа для ${a.email}?`))void act('admin_reset_mfa',{user_id:a.user_id})}}>Сбросить проверку входа</button><button className="pf-action-secondary" disabled={busy} onClick={()=>{if(window.confirm(`Отключить доступ для ${a.email}?`))void act('admin_disable',{user_id:a.user_id})}}>Отключить</button></>}</td>
+      <td className="pf-actions">{a.is_active && <><button className="pf-action-secondary" disabled={busy} onClick={()=>{if(window.confirm(`Сбросить дополнительную проверку входа для ${a.email}?`))void act('admin_reset_mfa',{user_id:a.user_id})}}>Сбросить проверку входа</button><button className="pf-action-secondary" disabled={busy} onClick={()=>{if(window.confirm(`Отключить доступ для ${a.email}?`))void act('admin_disable',{user_id:a.user_id})}}>Отключить</button></>}<button className="pf-danger-btn" disabled={busy} onClick={()=>{if(window.confirm(`Удалить администратора ${a.email} из команды? Доступ к платформе будет закрыт, настройка Google Authenticator сбросится. Сам аккаунт (почта) останется.`))void act('admin_delete',{user_id:a.user_id}).then(r=>{if(r)notify(`Администратор ${a.email} удалён.`)})}}>Удалить</button></td>
     </tr>)}</Table>}
     <section className="card col"><h3>Последние входы в аккаунты команды</h3><State err={logins.err} loading={logins.loading&&!logins.data}/>{logins.data&&<Table head={['Время','Администратор','Адрес сети','Устройство']}>{logins.data.map(item=><tr key={item.id}><td>{fmtDateTime(item.signed_in_at)}</td><td>{item.email}</td><td>{item.ip_address??'—'}</td><td>{item.user_agent||'—'}</td></tr>)}</Table>}</section>
   </>;
@@ -626,7 +662,7 @@ const PLATFORM_MUTATIONS=new Set(['owner_set_status','staff_set_status','owner_c
 const PLATFORM_ACTION_LABELS:Record<string,string>={
   'impersonation.start':'Начал работу в кабинете организации','impersonation.end':'Завершил работу в кабинете организации','impersonation.expired':'Завершилось время доступа к кабинету','impersonation.action':'Изменил данные в кабинете организации',
   'admin.add':'Добавил администратора','admin.role_update':'Изменил роль администратора','admin.disable':'Отключил администратора','admin.mfa_reset':'Сбросил MFA администратора','admin.owner_recovery':'Восстановил доступ владельцу платформы',
-  'owner.resend_invite':'Повторно отправил приглашение владельцу','tenant.create':'Создал организацию','plan.upsert':'Изменил тариф','settings.update':'Изменил настройки платформы',
+  'owner.resend_invite':'Повторно отправил приглашение владельцу','admin.delete':'Удалил администратора','announcement.delete':'Удалил объявление','tenant.create':'Создал организацию','plan.upsert':'Изменил тариф','settings.update':'Изменил настройки платформы',
   'subscription.create':'Подключил тариф организации','subscription.extend':'Продлил подписку','subscription.change_plan':'Изменил тариф организации','subscription.set_dates':'Изменил даты подписки','subscription.suspend':'Приостановил подписку','subscription.resume':'Возобновил подписку','subscription.cancel':'Отменил подписку',
   'payment.create':'Добавил платёж','payment.confirm':'Подтвердил оплату','payment.refund':'Оформил возврат','payment.fail':'Отметил платёж как неуспешный',
   'price_change.accepted':'Организация согласилась с новой ценой','price_change.declined':'Организация отклонила новую цену','platform.bootstrap':'Назначил первого администратора платформы','tenant.export':'Выгрузил данные организации'

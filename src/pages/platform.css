@@ -144,3 +144,32 @@
 .pf-wide select.field,.admin-shell select.field{color:#f1f3f6!important;background-color:#101216!important;color-scheme:dark}
 .pf-wide select.field option,.admin-shell select.field option{color:#f1f3f6;background-color:#101216}
 .pf-wide input.field,.pf-wide textarea.field,.admin-shell input.field,.admin-shell textarea.field{color:#f1f3f6}
+
+/* Карточка организации */
+.pf-org{padding:24px;display:grid;gap:20px}
+.pf-org__head{display:flex;gap:16px;align-items:flex-start}
+.pf-org__avatar{flex:none;width:56px;height:56px;border-radius:16px;display:grid;place-items:center;font-size:24px;font-weight:800;color:#fff;background:linear-gradient(135deg,#4690ff,#2a5bd7)}
+.pf-org__title{min-width:0;display:grid;gap:10px}
+.pf-org__title h2{margin:0;font-size:26px;letter-spacing:-.02em;word-break:break-word}
+.pf-org__chips{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.pf-chip{display:inline-flex;align-items:center;padding:5px 10px;border:1px solid #2c3340;border-radius:999px;background:#ffffff06;color:#b7bfcc;font-size:12px}
+.pf-org__owner{margin:0;color:#a8b0bd;font-size:14px}
+.pf-org__owner b{color:#edf0f5;font-weight:650}
+.pf-org__stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.pf-stat{padding:14px 16px;border:1px solid #272d37;border-radius:14px;background:#ffffff04}
+.pf-stat b{display:block;font-size:26px;line-height:1.15;color:#edf0f5}
+.pf-stat span{color:#8e98a8;font-size:12px}
+.pf-org__actions{display:flex;flex-wrap:wrap;gap:10px}
+.pf-zone{display:grid;gap:12px;padding:16px;border:1px solid #272d37;border-radius:14px;background:#ffffff03}
+.pf-zone h3{margin:0;font-size:15px}
+.pf-zone p{margin:0}
+.pf-zone--danger{border-color:#5a2a2e;background:#ef44440a}
+.pf-zone__row{display:flex;flex-wrap:wrap;gap:10px}
+.pf-danger-btn{padding:9px 14px;border:1px solid #7a343a;border-radius:10px;background:#7a343a33;color:#ff9aa2;font:inherit;font-size:13px;font-weight:650;cursor:pointer}
+.pf-danger-btn:hover:not(:disabled){background:#7a343a66}
+.pf-danger-btn:disabled{opacity:.45;cursor:not-allowed}
+.pf-actions .pf-danger-btn{padding:6px 9px;font-size:12px;border-radius:9px}
+.pf-support .pf-action-primary{width:100%;padding:12px 16px;border-radius:12px;font-weight:700}
+.pf-support h3{margin:0}
+.pf-org__actions a.pf-action-secondary,.pf-org__actions button.pf-action-secondary,.pf-zone__row .pf-action-secondary{padding:10px 14px;border-radius:10px;text-decoration:none;font-size:13px}
+@media(max-width:640px){.pf-org__stats{grid-template-columns:1fr}.pf-org__head{flex-direction:column}.pf-org{padding:18px}}

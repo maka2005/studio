@@ -287,7 +287,7 @@ Deno.serve(async (req) => {
       await admin.rpc('platform_log',{p_actor:actor,p_action:'support.ticket.update',p_tenant:current.tenant_id,p_payload:{ticket_id:ticketId,status,message_added:!!message}});
       return json(req,{ok:true});
     }
-    if(['announcements','announcement_save','tenant_flags_get','tenant_flags_set','admin_logins'].includes(action)&&role!=='owner')
+    if(['announcements','announcement_save','announcement_delete','tenant_flags_get','tenant_flags_set','admin_logins'].includes(action)&&role!=='owner')
       return json(req,{error:'forbidden'},403);
     if(action==='announcements'){
       const {data,error}=await admin.from('platform_announcements').select('id,title,body,audience,tenant_ids,starts_at,ends_at,is_active,created_at').order('created_at',{ascending:false}).limit(300);
@@ -302,6 +302,12 @@ Deno.serve(async (req) => {
       const query=id?admin.from('platform_announcements').update(payload).eq('id',id):admin.from('platform_announcements').insert(payload);
       const {error}=await query;if(error)throw error;
       await admin.rpc('platform_log',{p_actor:actor,p_action:'announcement.save',p_tenant:null,p_payload:{audience:payload.audience}});
+      return json(req,{ok:true});
+    }
+    if(action==='announcement_delete'){
+      const id=uuidOf(body.id);if(!id)return json(req,{error:'bad_request'},400);
+      const {error}=await admin.from('platform_announcements').delete().eq('id',id);if(error)throw error;
+      await admin.rpc('platform_log',{p_actor:actor,p_action:'announcement.delete',p_tenant:null,p_payload:{id}});
       return json(req,{ok:true});
     }
     if(action==='tenant_flags_get'){
@@ -437,7 +443,7 @@ Deno.serve(async (req) => {
       }));
       return json(req, { ok: true, data });
     }
-    if (action === 'admin_add' || action === 'admin_update' || action === 'admin_disable' || action === 'admin_reset_mfa') {
+    if (action === 'admin_add' || action === 'admin_update' || action === 'admin_disable' || action === 'admin_delete' || action === 'admin_reset_mfa') {
       if (role !== 'owner') return json(req, { error: 'forbidden' }, 403);
       const targetId = str(body.user_id, 40);
       const targetRole = str(body.role, 20);
@@ -469,6 +475,19 @@ Deno.serve(async (req) => {
         const { error } = await admin.from('platform_admins').update({ is_active: false }).eq('user_id', targetId);
         if (error) return json(req, { error: 'operation_failed' }, 500);
         await admin.rpc('platform_log', { p_actor: actor, p_action: 'admin.disable', p_tenant: null, p_payload: { target_user_id: targetId, target_email: targetEmail } });
+      } else if (action === 'admin_delete') {
+        const { data: targetRow } = await admin.from('platform_admins').select('role,is_active').eq('user_id', targetId).maybeSingle();
+        if (!targetRow) return json(req, { error: 'not_found' }, 404);
+        if (targetRow.role === 'owner' && targetRow.is_active) {
+          const { count } = await admin.from('platform_admins').select('user_id', { count: 'exact', head: true }).eq('role', 'owner').eq('is_active', true).neq('user_id', targetId);
+          if (!count) return json(req, { error: 'last_owner' }, 409);
+        }
+        // Убираем и подтверждения входа (Google Authenticator), чтобы при повторном добавлении настройка началась заново.
+        const { data: oldFactors } = await admin.auth.admin.mfa.listFactors({ userId: targetId });
+        for (const factor of oldFactors?.factors ?? []) await admin.auth.admin.mfa.deleteFactor({ id: factor.id, userId: targetId }).catch(() => undefined);
+        const { error } = await admin.from('platform_admins').delete().eq('user_id', targetId);
+        if (error) return json(req, { error: 'operation_failed' }, 500);
+        await admin.rpc('platform_log', { p_actor: actor, p_action: 'admin.delete', p_tenant: null, p_payload: { target_user_id: targetId, target_email: targetEmail } });
       } else {
         const { data: factors, error: factorsError } = await admin.auth.admin.mfa.listFactors({ userId: targetId });
         if (factorsError) return json(req, { error: 'operation_failed' }, 500);

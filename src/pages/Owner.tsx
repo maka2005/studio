@@ -177,8 +177,8 @@ function Login() {
         >
           {busy ? 'Входим…' : 'Войти'}
         </button>
-        <button type="button" className="link" onClick={()=>{setRecovering(!recovering);setMailMessage('');if(!recovering&&email&&!recoveryEmail)setRecoveryEmail(email)}}>{recovering?'Назад ко входу':'Забыли пароль?'}</button>
-        {recovering&&<div className="col"><p className="muted small">Укажите почту аккаунта — мы отправим на неё ссылку для установки нового пароля.</p><input className="field" type="email" required autoComplete="email" placeholder="Почта аккаунта" value={recoveryEmail} onChange={e=>setRecoveryEmail(e.target.value)}/><button type="button" onClick={()=>void sendResetMail()} className="btn" disabled={!recoveryEmail||mailBusy}>{mailBusy?'Отправляем…':'Отправить ссылку на почту'}</button>{mailMessage&&<p className="muted small" role="status">{mailMessage}</p>}</div>}
+        <button type="button" className="link forgot-link" onClick={()=>{setRecovering(!recovering);setMailMessage('');if(!recovering&&email&&!recoveryEmail)setRecoveryEmail(email)}}>{recovering?'← Назад ко входу':'Забыли пароль?'}</button>
+        {recovering&&<div className="col reset-panel"><p className="muted small">Укажите почту аккаунта — мы отправим на неё ссылку для установки нового пароля.</p><input className="field" type="email" required autoComplete="email" placeholder="Почта аккаунта" value={recoveryEmail} onChange={e=>setRecoveryEmail(e.target.value)}/><button type="button" onClick={()=>void sendResetMail()} className="btn" disabled={!recoveryEmail||mailBusy}>{mailBusy?'Отправляем…':'Отправить ссылку на почту'}</button>{mailMessage&&<p className="muted small" role="status">{mailMessage}</p>}</div>}
       </form>
     </div>
   )
