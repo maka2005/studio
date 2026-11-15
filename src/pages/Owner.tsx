@@ -8,6 +8,7 @@ import { downloadOwnerExport, ownerRequest, type OwnerUser } from '../lib/ownerS
 import { recoveryLink, supabase } from '../lib/supabase'
 import { errText, fetchServices, fetchSlots, owner, type OwnerBooking, type OwnerNotificationSettings, type OwnerAuditEvent, type OwnerBillingNotification } from '../lib/api'
 import { duration, money, telHref } from '../lib/format'
+import { isFullPhone, maskPhone, PHONE_PLACEHOLDER } from '../lib/phone'
 import { assetUrl, type Business, type Ctx } from '../lib/tenant'
 import { prepareImage, removeByUrl, uploadImage } from '../lib/media'
 import { Sheet } from '../components/Sheet'
@@ -970,7 +971,7 @@ const Contact = z.object({
   phone: z
     .string()
     .trim()
-    .regex(/^\+?[0-9\s()-]{10,18}$/),
+    .refine(isFullPhone),
   car: z.string().trim().min(2).max(60),
 })
 function AddBooking({
@@ -1015,9 +1016,12 @@ function AddBooking({
         <input
           key={k}
           className="field"
-          placeholder={{ name: 'Имя', phone: 'Телефон', car: 'Автомобиль' }[k]}
+          placeholder={{ name: 'Имя', phone: PHONE_PLACEHOLDER, car: 'Автомобиль' }[k]}
+          type={k === 'phone' ? 'tel' : 'text'}
+          inputMode={k === 'phone' ? 'tel' : undefined}
+          maxLength={k === 'phone' ? 18 : undefined}
           value={f[k]}
-          onChange={(e) => setF({ ...f, [k]: e.target.value })}
+          onChange={(e) => setF({ ...f, [k]: k === 'phone' ? maskPhone(e.target.value, f.phone) : e.target.value })}
         />
       ))}
       <button
@@ -1249,7 +1253,7 @@ function Settings({ b }: { b: Business }) {
   const [msg, setMsg] = useState<string | null>(null)
   const [ok, setOk] = useState(false)
   const [f, setF] = useState({
-    phone: b.phone,
+    phone: maskPhone(b.phone ?? ''),
     address: b.address,
     route_url: b.route_url ?? '',
     description: b.description,
@@ -1281,9 +1285,9 @@ function Settings({ b }: { b: Business }) {
       setMsg('Ссылка 2ГИС должна начинаться с https://')
       return
     }
-    if (!/^\+?[0-9\s()-]{7,20}$/.test(f.phone.trim())) {
+    if (!isFullPhone(f.phone)) {
       setOk(false)
-      setMsg('Проверьте номер телефона, например +7 700 000 00 00.')
+      setMsg('Проверьте номер телефона, например +7 (700) 000-00-00.')
       return
     }
     if (!f.address.trim()) {
@@ -1331,8 +1335,12 @@ function Settings({ b }: { b: Business }) {
       <input
         id="ph"
         className="field"
+        type="tel"
+        inputMode="tel"
+        maxLength={18}
+        placeholder={PHONE_PLACEHOLDER}
         value={f.phone}
-        onChange={(e) => setF({ ...f, phone: e.target.value })}
+        onChange={(e) => setF({ ...f, phone: maskPhone(e.target.value, f.phone) })}
       />
       <label className="muted small" htmlFor="ad">
         Адрес

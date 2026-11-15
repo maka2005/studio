@@ -1,3 +1,4 @@
+import { maskPhone } from '../../../lib/phone';
 import { useState, type ChangeEvent, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { businessTypes } from '../../data/content';
@@ -42,7 +43,7 @@ export function ContactForm() {
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const digits = form.phone.replace(/\D/g, '');
-    if (!form.businessName.trim() || !form.ownerName.trim() || !form.ownerEmail.trim() || digits.length < 10) {
+    if (!form.businessName.trim() || !form.ownerName.trim() || !form.ownerEmail.trim() || digits.length !== 11) {
       setStatus('validation-error');
       return;
     }
@@ -187,9 +188,11 @@ export function ContactForm() {
           name="phone"
           type="tel"
           autoComplete="tel"
-          placeholder="+7 777 000 00 00"
+          placeholder="+7 (777) 123-45-67"
+          inputMode="tel"
+          maxLength={18}
           value={form.phone}
-          onChange={update('phone')}
+          onChange={(e) => setForm((prev) => ({ ...prev, phone: maskPhone(e.target.value, prev.phone) }))}
         />
       </div>
 

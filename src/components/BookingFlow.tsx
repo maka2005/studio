@@ -8,6 +8,7 @@ import { formatInTimeZone } from 'date-fns-tz';
 import type { Business } from '../lib/tenant';
 import { createBooking, fetchBookingOpen, fetchServices, fetchSlots, joinWaitlist } from '../lib/api';
 import { duration, money, randomToken } from '../lib/format';
+import { isFullPhone, maskPhone, PHONE_PLACEHOLDER } from '../lib/phone';
 import { ArrowLeft, ArrowRight } from '../lib/icons';
 import { Sheet } from './Sheet';
 import { LEGAL_VERSION } from '../lib/legal';
@@ -18,7 +19,7 @@ import { ALL_SERVICES_CATEGORY, filterServices, serviceCategories } from '../lib
 
 const Contact = z.object({
   name: z.string().trim().min(1, 'Введите имя').max(80),
-  phone: z.string().trim().regex(/^\+?[0-9\s()-]{10,18}$/, 'Проверьте номер телефона'),
+  phone: z.string().trim().refine(isFullPhone, 'Введите номер полностью: +7 (777) 123-45-67'),
   car: z.string().trim().min(2, 'Укажите автомобиль').max(60),
 });
 const TITLES = ['Выберите услугу', 'Выберите время', 'Ваши контакты', 'Проверьте запись'];
@@ -137,8 +138,9 @@ export function BookingFlow({ b, initialService, onClose }: { b: Business; initi
 
       {step === 3 && (['name', 'phone', 'car'] as const).map((f) => (
         <div key={f}><label className="muted small" htmlFor={f}>{{ name: 'Имя', phone: 'Телефон', car: 'Автомобиль' }[f]}</label>
-          <input id={f} className="field" value={form[f]} inputMode={f === 'phone' ? 'tel' : 'text'} autoComplete={{ name: 'name', phone: 'tel', car: 'off' }[f]}
-            onChange={(e) => setForm({ ...form, [f]: e.target.value })} aria-invalid={!!errs[f]} />
+          <input id={f} className="field" value={form[f]} type={f === 'phone' ? 'tel' : 'text'} inputMode={f === 'phone' ? 'tel' : 'text'} autoComplete={{ name: 'name', phone: 'tel', car: 'off' }[f]}
+            placeholder={f === 'phone' ? PHONE_PLACEHOLDER : undefined} maxLength={f === 'phone' ? 18 : undefined}
+            onChange={(e) => setForm({ ...form, [f]: f === 'phone' ? maskPhone(e.target.value, form.phone) : e.target.value })} aria-invalid={!!errs[f]} />
           {errs[f] && <p className="err small">{errs[f]}</p>}</div>))}
 
       {step === 3 && (<label className="check"><input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
@@ -168,10 +170,10 @@ function WaitlistForm({ slug, service, day }: { slug: string; service: string; d
   if (done) return <p className="note" role="status">Заявка принята. Если появится свободное время, студия свяжется с вами.</p>;
   return <div className="card col"><b>Оставить заявку на свободное время</b>
     <input className="field" aria-label="Имя для листа ожидания" placeholder="Ваше имя" maxLength={80} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-    <input className="field" aria-label="Телефон для листа ожидания" placeholder="Телефон" inputMode="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+    <input className="field" aria-label="Телефон для листа ожидания" placeholder={PHONE_PLACEHOLDER} type="tel" maxLength={18} autoComplete="tel" inputMode="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: maskPhone(e.target.value, form.phone) })} />
     <input className="field" aria-label="Автомобиль для листа ожидания" placeholder="Автомобиль" maxLength={60} value={form.car} onChange={(e) => setForm({ ...form, car: e.target.value })} />
     <label className="check"><input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} /><span className="small">Разрешаю студии связаться со мной и согласен(на) на обработку данных. <a href={`/s/${slug}/legal/privacy`} target="_blank" rel="noreferrer">Политика конфиденциальности</a></span></label>
     {message && <p className="err small" role="alert">{message}</p>}
-    <button className="btn" disabled={m.isPending || !agree || !form.name.trim() || !form.phone.trim() || !form.car.trim()} onClick={() => m.mutate()}>{m.isPending ? 'Отправляем…' : 'Оставить заявку'}</button>
+    <button className="btn" disabled={m.isPending || !agree || !form.name.trim() || !isFullPhone(form.phone) || !form.car.trim()} onClick={() => m.mutate()}>{m.isPending ? 'Отправляем…' : 'Оставить заявку'}</button>
   </div>;
 }

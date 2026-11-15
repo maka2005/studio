@@ -1,3 +1,4 @@
+import { maskPhone, PHONE_PLACEHOLDER } from '../lib/phone';
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { recoveryLink, supabase } from '../lib/supabase';
 import { PasswordInput } from '../components/PasswordInput';
@@ -470,7 +471,7 @@ type LeadPrefill={id:string,name:string,slug:string,owner_name:string,owner_emai
 
 function CreateTenant({ onCreated, prefill }: { onCreated: (id: string) => void; prefill?: LeadPrefill | null }) {
   const today = new Date().toISOString().slice(0, 10);
-  const [f, setF] = useState<Row>({ name: prefill?.name ?? '', slug: prefill?.slug ?? '', business_type: 'autoservice', owner_name: prefill?.owner_name ?? '', owner_email: prefill?.owner_email ?? '', phone: prefill?.phone ?? '', bin_iin:'', address: '', timezone: 'Asia/Aqtobe', currency: '₸', plan_code: prefill?.plan_code ?? 'START', start: today, months: 1, trial: prefill?.trial ?? true, services: '' });
+  const [f, setF] = useState<Row>({ name: prefill?.name ?? '', slug: prefill?.slug ?? '', business_type: 'autoservice', owner_name: prefill?.owner_name ?? '', owner_email: prefill?.owner_email ?? '', phone: maskPhone(prefill?.phone ?? ''), bin_iin:'', address: '', timezone: 'Asia/Aqtobe', currency: '₸', plan_code: prefill?.plan_code ?? 'START', start: today, months: 1, trial: prefill?.trial ?? true, services: '' });
   const [busy, setBusy] = useState(false); const [err, setErr] = useState(''); const [ok, setOk] = useState('');
   const key = useRef(newKey()); // один ключ на форму: повторный клик «Создать» не создаёт дубликат
   const set = (k: string, v: unknown) => setF((p) => ({ ...p, [k]: v }));
@@ -484,7 +485,7 @@ function CreateTenant({ onCreated, prefill }: { onCreated: (id: string) => void;
       key.current = newKey(); onCreated(r.tenant_id);
     } catch (e2) { setErr(errText(e2)); } finally { setBusy(false); }
   };
-  const input = (label: string, k: string, type = 'text', ph = '') => <label className="pf-label">{label}<input className="field" type={type} placeholder={ph} value={f[k]} onChange={(e) => set(k, e.target.value)} required={['name', 'slug', 'owner_email'].includes(k)} /></label>;
+  const input = (label: string, k: string, type = 'text', ph = '') => <label className="pf-label">{label}<input className="field" type={type} placeholder={type==='tel'?PHONE_PLACEHOLDER:ph} maxLength={type==='tel'?18:undefined} value={f[k]} onChange={(e) => set(k, type==='tel'?maskPhone(e.target.value,String(f[k]??'')):e.target.value)} required={['name', 'slug', 'owner_email'].includes(k)} /></label>;
   return (
     <form className="card col pf-form" onSubmit={submit}><h2>Новая организация</h2>{prefill&&<p className="muted small">Данные подставлены из заявки с сайта. Проверьте их и нажмите «Создать»: заявка станет «Подключён», владелец получит письмо для установки пароля.</p>}
       {input('Название студии или компании', 'name')}{input('Адрес страницы', 'slug', 'text', 'my-studio')}{input('Чем занимается организация', 'business_type')}
