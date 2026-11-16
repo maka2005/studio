@@ -140,9 +140,15 @@ export function Settings() {
     try { await call('settings_set', { key: 'trial_days', value: Number(trial) }); await call('settings_set', { key: 'grace_days', value: Number(grace) }); await reload(); setMsg('Сохранено. Новые значения действуют для новых подписок и продлений.'); }
     catch (e2) { setMsg(errText(e2)); }
   };
-  return (<><State err={err} loading={loading && !data} />
-    <form className="card col pf-form" onSubmit={save}><h2>Настройки</h2>
+  return (
+    <>
+      <State err={err} loading={loading && !data} />
+      <form className="card col pf-form" onSubmit={save}><h2>Настройки</h2>
       <label className="pf-label">Пробный период, дней (1–90)<input className="field" type="number" min={1} max={90} value={trial} onChange={(e) => setTrial(e.target.value)} /></label>
       <label className="pf-label">Grace-период, дней (0–30)<input className="field" type="number" min={0} max={30} value={grace} onChange={(e) => setGrace(e.target.value)} /></label>
-      {msg && <p>{msg}</p>}<button className="btn">Сохранить</button></form>);
+      {msg && <p>{msg}</p>}
+      <button className="btn">Сохранить</button>
+    </form>
+    </>
+  );
 }
