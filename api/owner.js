@@ -272,7 +272,10 @@ export default async function handler(req, res) {
       return send(res, result.status, await result.json().catch(() => ({ error: 'request_failed' })));
     }
     return send(res, 404, { error: 'not_found' });
-  } catch {
-    return send(res, 400, { error: 'bad_request' });
+  } catch (error) {
+    const message = error instanceof SyntaxError ? 'bad_request' : 'internal_error';
+    const status = message === 'bad_request' ? 400 : 500;
+    if (status === 500) console.error('owner api error:', error?.message || error);
+    return send(res, status, { error: message });
   }
 }

@@ -4,13 +4,14 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/tenant.mjs build && vite",
-    "build": "node scripts/tenant.mjs build && tsc --noEmit && vite build",
+    "build": "node scripts/tenant.mjs build && tsc --noEmit && vite build && node scripts/prerender-marketing.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "tenant:new": "node scripts/tenant.mjs new",
     "tenant:validate": "node scripts/tenant.mjs validate",
     "tenant:build": "node scripts/tenant.mjs build",
-    "tenant:sql": "node scripts/tenant.mjs sql"
+    "tenant:sql": "node scripts/tenant.mjs sql",
+    "prerender": "node scripts/prerender-marketing.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",

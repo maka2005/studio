@@ -2,6 +2,7 @@ import { StrictMode, Suspense, lazy } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { initObservability } from './lib/observability';
 
 // A tab can outlive a Vercel deployment and keep importing chunks from the
 // previous build. Reload once so Vite picks up the current HTML manifest.
@@ -52,6 +53,8 @@ window.addEventListener('error', (event) => {
     // Private browsing can disable sessionStorage; the page still remains usable.
   }
 }, true);
+
+initObservability();
 
 // Стили приложения записи (styles.css) подключаются только внутри Shell, админки и страницы статуса:
 // их общие классы (.btn, .card, .hero, h1, body) иначе ломают вёрстку маркетингового сайта.

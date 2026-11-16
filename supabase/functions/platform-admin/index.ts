@@ -53,12 +53,23 @@ const KNOWN = [
 ];
 
 async function findUserByEmail(admin: ReturnType<typeof createClient>, email: string) {
+  const normalized = email.trim().toLowerCase();
+  if (!normalized) return null;
+  const { data, error } = await admin.rpc('platform_find_auth_user_by_email', { p_email: normalized });
+  if (!error) {
+    const row = Array.isArray(data) ? data[0] : data;
+    if (row?.id) return { id: String(row.id), email: String(row.email ?? normalized) };
+    if (data === null || (Array.isArray(data) && data.length === 0)) return null;
+  } else {
+    console.warn('platform_find_auth_user_by_email rpc failed, falling back to admin lookup:', error.message);
+  }
+  // Fallback for environments where the RPC migration is not applied yet.
   for (let page = 1; page <= 20; page++) {
-    const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 1000 });
-    if (error) throw error;
-    const hit = data.users.find((u) => u.email?.toLowerCase() === email);
-    if (hit) return hit;
-    if (data.users.length < 1000) break;
+    const listed = await admin.auth.admin.listUsers({ page, perPage: 1000 });
+    if (listed.error) throw listed.error;
+    const hit = listed.data.users.find((u) => u.email?.toLowerCase() === normalized);
+    if (hit) return { id: hit.id, email: hit.email ?? normalized };
+    if (listed.data.users.length < 1000) break;
   }
   return null;
 }
