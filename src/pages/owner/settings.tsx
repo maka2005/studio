@@ -118,7 +118,7 @@ export function Settings({ b }: { b: Business }) {
     if (hErr) { setOk(false); setMsg(hErr); return }
     const bErr = validateBreaks(f.breaks, f.hours)
     if (bErr) { setOk(false); setMsg(bErr); return }
-    if (f.route_url && !/^https:///.test(f.route_url)) { setOk(false); setMsg('Ссылка 2ГИС должна начинаться с https://'); return }
+    if (f.route_url && !/^https:\/\//.test(f.route_url)) { setOk(false); setMsg('Ссылка 2ГИС должна начинаться с https://'); return }
     if (!isFullPhone(f.phone)) { setOk(false); setMsg('Введите корректный телефон в формате +7 (700) 000-00-00.'); return }
     if (!f.address.trim()) { setOk(false); setMsg('Укажите адрес.'); return }
     const nums = [Number(f.buffer_minutes), Number(f.slot_minutes), Number(f.cancel_hours), Number(f.reschedule_hours)]
