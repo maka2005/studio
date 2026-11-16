@@ -174,6 +174,12 @@ export const owner = {
   notificationSettings: async (slug: string) => (await rpc<OwnerNotificationSettings[]>('owner_notification_settings', { p_slug: slug }))[0]!,
   updateNotificationSettings: (slug: string, s: OwnerNotificationSettings) => rpc<void>('owner_update_notification_settings', { p_slug: slug, p_reminder_hours: s.reminder_hours_before, p_repeat_days: s.repeat_after_days, p_reminder_message: s.reminder_message, p_repeat_message: s.repeat_message }),
   updateConfig: (slug: string, patch: Record<string, unknown>) => rpc<void>('owner_update_config', { p_slug: slug, p_patch: patch }),
+  updateScheduleSettings: (slug: string, patch: Record<string, unknown>) => rpc<void>('owner_update_schedule_settings', { p_slug: slug, p_patch: patch }),
+  scheduleExceptions: (slug: string) => rpc<{ id: string; date_from: string; date_to: string; is_closed: boolean; hours: [string, string] | null; note: string }[]>('owner_schedule_exceptions', { p_slug: slug }),
+  upsertScheduleException: (slug: string, e: { id?: string | null; date_from: string; date_to: string; is_closed: boolean; hours: [string, string] | null; note?: string }) =>
+    rpc<string>('owner_upsert_schedule_exception', { p_slug: slug, p_id: e.id ?? null, p_date_from: e.date_from, p_date_to: e.date_to, p_is_closed: e.is_closed, p_hours: e.hours, p_note: e.note ?? '' }),
+  deleteScheduleException: (slug: string, id: string) => rpc<void>('owner_delete_schedule_exception', { p_slug: slug, p_id: id }),
+  unblock: (id: string) => rpc<void>('owner_unblock', { p_id: id }),
   updateLegal: (slug: string, legal: Record<string, unknown>) => rpc<void>('owner_update_legal', { p_slug: slug, p_legal: legal }),
   telegramCode: (slug: string) => rpc<string>('owner_telegram_code', { p_slug: slug }),
   telegramLinks: (slug: string) => rpc<{ id: string; created_at: string }[]>('owner_telegram_links', { p_slug: slug }),
@@ -197,5 +203,6 @@ const MSG: [string, string][] = [['slot_taken', 'Это время занято.
   ['forbidden', 'Нет прав для этого действия.'], ['rate_limited', 'Слишком много запросов. Попробуйте позже.'], ['bad_amount', 'Проверьте сумму.'],
   ['bad_name', 'Проверьте имя клиента.'], ['bad_phone', 'Проверьте номер телефона.'], ['bad_car', 'Укажите автомобиль.'],
   ['bad_config', 'Проверьте введённые настройки.'], ['bad_url', 'Ссылка должна начинаться с https://'],
+  ['bad_range', 'Неверный диапазон дат.'], ['bad_hours', 'Неверное время работы.'], ['not_found', 'Запись не найдена.'],
   ['consent_required', 'Нужно согласие на обработку данных.'], ['feature_disabled', 'Эта функция не входит в ваш тариф. Обратитесь к администратору платформы.'], ['plan_limit_employees', 'Достигнут лимит сотрудников по тарифу. Измените тариф или обратитесь в поддержку.'], ['plan_limit_services', 'Достигнут лимит услуг по тарифу. Измените тариф или обратитесь в поддержку.'], ['plan_limit_bookings_per_month', 'Достигнут лимит записей на этот месяц. Измените тариф или обратитесь в поддержку.'], ['service_in_use', 'Услуга уже используется в записи или заявке. Снимите отметку «Показывается клиентам», чтобы скрыть её.'], ['resource_in_use', 'У этого рабочего ресурса уже есть записи или блокировки. Его нельзя удалить, пока они с ним связаны.'], ['duplicate_resource', 'У этого рабочего ресурса уже есть записи или блокировки. Его нельзя удалить, пока они с ним связаны.'], ['bad_notification_settings', 'Проверьте время напоминания, период повторного визита и длину текста.']];
 export const errText = (e: unknown) => { const m = String((e as Error)?.message ?? e); return MSG.find(([k]) => m.includes(k))?.[1] ?? 'Не удалось выполнить действие. Повторите.'; };

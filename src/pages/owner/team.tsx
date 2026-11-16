@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { owner } from '../../lib/api'
 import { errText } from '../../lib/api'
+import { fromZonedTime } from 'date-fns-tz'
 import type { Business } from '../../lib/tenant'
 
 export function TeamAccess({ b, canManageManagers = true }: { b: Business; canManageManagers?: boolean }) {
@@ -32,13 +33,50 @@ function TeamMemberRow({member,resources,onSave,onRemove,onReset,canManageManage
 }
 
 export function TeamResources({b}:{b:Business}) {
-  const qc=useQueryClient();const q=useQuery({queryKey:['owner','resources',b.slug],queryFn:()=>owner.resources(b.slug)});
-  const [name,setName]=useState('');const [msg,setMsg]=useState<string|null>(null);const [saved,setSaved]=useState(false);
+  const qc=useQueryClient();
+  const q=useQuery({queryKey:['owner','resources',b.slug],queryFn:()=>owner.resources(b.slug)});
+  const [name,setName]=useState('');
+  const [msg,setMsg]=useState<string|null>(null);
+  const [saved,setSaved]=useState(false);
+  const [blockResource,setBlockResource]=useState('');
+  const [blockFrom,setBlockFrom]=useState('');
+  const [blockTo,setBlockTo]=useState('');
+  const [blockMsg,setBlockMsg]=useState<string|null>(null);
+  const [blockOk,setBlockOk]=useState(false);
   const refresh=()=>{void qc.invalidateQueries({queryKey:['owner','resources',b.slug]});void qc.invalidateQueries({queryKey:['owner','bookings',b.slug]});void qc.invalidateQueries({queryKey:['owner','report-bookings',b.slug]});void qc.invalidateQueries({queryKey:['slots',b.slug]})};
   const add=useMutation({mutationFn:()=>owner.upsertResource(b.slug,null,name.trim()),onSuccess:()=>{setName('');setMsg(null);setSaved(true);refresh()},onError:e=>{setSaved(false);setMsg(errText(e))}});
-  return <div className="col"><div className="admin-subheading"><div><h2>Команда и посты</h2><p className="muted small">Каждый мастер или пост получает отдельное расписание и учитывается при подборе свободного времени. Для ресурса с прошлыми записями можно изменить название, но удалить его нельзя.</p></div></div>
-    {q.isPending?<p className="muted">Загружаем…</p>:q.isError?<p className="err">Не удалось загрузить список. <button className="link" onClick={()=>void q.refetch()}>Повторить</button></p>:q.data.map((r)=><TeamResourceRow key={r.id} b={b} resource={r} onSaved={refresh}/>)}
-    <div className="card col"><b>Добавить мастера или пост</b><p className="muted small">Укажите рабочее место, например «Мастер Арман» или «Пост 2». Если запись занимает мастера и конкретный пост, объедините их в названии: «Арман — пост 2».</p><input className="field" maxLength={80} placeholder="Имя мастера или название поста" value={name} onChange={e=>{setName(e.target.value);setSaved(false);setMsg(null)}}/>{msg&&<p className="err small">{msg}</p>}{saved&&<p className="muted small" role="status">Добавлено.</p>}<button className="btn" disabled={add.isPending||!name.trim()} onClick={()=>add.mutate()}>{add.isPending?'Добавляем…':'Добавить'}</button></div>
+  const block=useMutation({mutationFn:()=>{
+    if(!blockResource||!blockFrom||!blockTo) throw new Error('bad_range');
+    const start=fromZonedTime(blockFrom,b.timezone).toISOString();
+    const end=fromZonedTime(blockTo,b.timezone).toISOString();
+    return owner.block(b.slug,blockResource,start,end);
+  },onSuccess:()=>{setBlockMsg(null);setBlockOk(true);setBlockFrom('');setBlockTo('');refresh()},onError:e=>{setBlockOk(false);setBlockMsg(errText(e))}});
+  return <div className="col">
+    <div className="admin-subheading"><div><h2>Команда и посты</h2><p className="muted small">Рабочие места/мастера, к которым привязываются записи и доступность.</p></div></div>
+    {q.isPending?<p className="muted">Загрузка…</p>:q.isError?<p className="err">Не удалось загрузить ресурсы. <button className="link" onClick={()=>void q.refetch()}>Повторить</button></p>:q.data.map((r)=><TeamResourceRow key={r.id} b={b} resource={r} onSaved={refresh}/>)}
+    <div className="card col">
+      <b>Добавить рабочее место</b>
+      <input className="field" maxLength={80} placeholder="Например: Мастер 1" value={name} onChange={e=>{setName(e.target.value);setSaved(false);setMsg(null)}}/>
+      {msg&&<p className="err small">{msg}</p>}
+      {saved&&<p className="muted small" role="status">Добавлено.</p>}
+      <button className="btn" disabled={add.isPending||!name.trim()} onClick={()=>add.mutate()}>{add.isPending?'Добавление…':'Добавить'}</button>
+    </div>
+    <div className="card col">
+      <b>Отпуск / блокировка времени мастера</b>
+      <p className="muted small">Заблокируйте период недоступности мастера/поста (отпуск, выходной, личное время). В это время слоты не предлагаются клиентам.</p>
+      <label className="muted small">Мастер / пост</label>
+      <select className="field" value={blockResource} onChange={e=>{setBlockResource(e.target.value);setBlockOk(false);setBlockMsg(null)}}>
+        <option value="">Выберите ресурс</option>
+        {(q.data??[]).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}
+      </select>
+      <div className="row wrap" style={{gap:8}}>
+        <label className="col muted small">Начало<input className="field" type="datetime-local" value={blockFrom} onChange={e=>{setBlockFrom(e.target.value);setBlockOk(false)}} /></label>
+        <label className="col muted small">Конец<input className="field" type="datetime-local" value={blockTo} onChange={e=>{setBlockTo(e.target.value);setBlockOk(false)}} /></label>
+      </div>
+      {blockMsg&&<p className="err small">{blockMsg}</p>}
+      {blockOk&&<p className="muted small" role="status">Блокировка добавлена.</p>}
+      <button className="btn ghost" disabled={block.isPending||!blockResource||!blockFrom||!blockTo} onClick={()=>block.mutate()}>{block.isPending?'Сохранение…':'Заблокировать время'}</button>
+    </div>
   </div>
 }
 

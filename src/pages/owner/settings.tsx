@@ -31,10 +31,38 @@ export function Settings({ b }: { b: Business }) {
     description: b.description,
     cards: b.cards,
     hours: b.hours,
+    breaks: b.breaks ?? {},
+    buffer_minutes: String(b.buffer_minutes ?? 15),
+    slot_minutes: String(b.slot_minutes ?? 60),
+    cancel_hours: String(b.cancel_hours ?? 24),
+    reschedule_hours: String(b.reschedule_hours ?? b.cancel_hours ?? 24),
+    client_reschedule_enabled: !!b.client_reschedule_enabled,
   })
+  const exceptions = useQuery({
+    queryKey: ['owner', 'schedule-exceptions', b.slug],
+    queryFn: () => owner.scheduleExceptions(b.slug),
+  })
+  const [exDraft, setExDraft] = useState({ id: null as string | null, date_from: '', date_to: '', is_closed: true, open: '09:00', close: '18:00', note: '' })
+
   const m = useMutation({
-    mutationFn: () =>
-      owner.updateConfig(b.slug, { ...f, phone: f.phone.trim(), address: f.address.trim() }),
+    mutationFn: async () => {
+      await owner.updateConfig(b.slug, {
+        phone: f.phone.trim(),
+        address: f.address.trim(),
+        route_url: f.route_url,
+        description: f.description,
+        cards: f.cards,
+        hours: f.hours,
+      })
+      await owner.updateScheduleSettings(b.slug, {
+        buffer_minutes: Number(f.buffer_minutes),
+        slot_minutes: Number(f.slot_minutes),
+        cancel_hours: Number(f.cancel_hours),
+        reschedule_hours: Number(f.reschedule_hours),
+        client_reschedule_enabled: f.client_reschedule_enabled,
+        breaks: f.breaks,
+      })
+    },
     onSuccess: () => {
       setMsg(null)
       setOk(true)
@@ -45,159 +73,190 @@ export function Settings({ b }: { b: Business }) {
       setMsg(errText(e))
     },
   })
-  const save = () => {
-    for (const [, h] of Object.entries(f.hours))
-      if (h && (!Time.safeParse(h[0]).success || !Time.safeParse(h[1]).success || h[0] >= h[1])) {
-        setOk(false)
-        setMsg('Проверьте часы работы: начало раньше конца, формат ЧЧ:ММ.')
-        return
+
+  const exSave = useMutation({
+    mutationFn: () => owner.upsertScheduleException(b.slug, {
+      id: exDraft.id,
+      date_from: exDraft.date_from,
+      date_to: exDraft.date_to || exDraft.date_from,
+      is_closed: exDraft.is_closed,
+      hours: exDraft.is_closed ? null : [exDraft.open, exDraft.close],
+      note: exDraft.note.trim(),
+    }),
+    onSuccess: () => {
+      setExDraft({ id: null, date_from: '', date_to: '', is_closed: true, open: '09:00', close: '18:00', note: '' })
+      setMsg(null)
+      void qc.invalidateQueries({ queryKey: ['owner', 'schedule-exceptions', b.slug] })
+    },
+    onError: (e) => setMsg(errText(e)),
+  })
+  const exDelete = useMutation({
+    mutationFn: (id: string) => owner.deleteScheduleException(b.slug, id),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['owner', 'schedule-exceptions', b.slug] }),
+    onError: (e) => setMsg(errText(e)),
+  })
+
+  const validateHours = (hours: typeof f.hours) => {
+    for (const [, h] of Object.entries(hours))
+      if (h && (!Time.safeParse(h[0]).success || !Time.safeParse(h[1]).success || h[0] >= h[1])) return 'Неверные часы работы: начало раньше конца, формат ЧЧ:ММ.'
+    return null
+  }
+  const validateBreaks = (breaks: typeof f.breaks, hours: typeof f.hours) => {
+    for (const [k, arr] of Object.entries(breaks || {})) {
+      if (!arr) continue
+      const h = hours[k]
+      for (const br of arr) {
+        if (!Time.safeParse(br[0]).success || !Time.safeParse(br[1]).success || br[0] >= br[1]) return 'Неверное время перерыва: формат ЧЧ:ММ, начало раньше конца.'
+        if (h && (br[0] < h[0] || br[1] > h[1])) return 'Перерыв должен быть внутри рабочего времени дня.'
       }
-    if (f.route_url && !/^https:\/\//.test(f.route_url)) {
-      setOk(false)
-      setMsg('Ссылка 2ГИС должна начинаться с https://')
-      return
     }
-    if (!isFullPhone(f.phone)) {
-      setOk(false)
-      setMsg('Проверьте номер телефона, например +7 (700) 000-00-00.')
-      return
-    }
-    if (!f.address.trim()) {
-      setOk(false)
-      setMsg('Укажите адрес.')
-      return
-    }
+    return null
+  }
+
+  const save = () => {
+    const hErr = validateHours(f.hours)
+    if (hErr) { setOk(false); setMsg(hErr); return }
+    const bErr = validateBreaks(f.breaks, f.hours)
+    if (bErr) { setOk(false); setMsg(bErr); return }
+    if (f.route_url && !/^https:///.test(f.route_url)) { setOk(false); setMsg('Ссылка 2ГИС должна начинаться с https://'); return }
+    if (!isFullPhone(f.phone)) { setOk(false); setMsg('Введите корректный телефон в формате +7 (700) 000-00-00.'); return }
+    if (!f.address.trim()) { setOk(false); setMsg('Укажите адрес.'); return }
+    const nums = [Number(f.buffer_minutes), Number(f.slot_minutes), Number(f.cancel_hours), Number(f.reschedule_hours)]
+    if (nums.some((n) => !Number.isFinite(n) || n < 0)) { setOk(false); setMsg('Проверьте числовые настройки расписания.'); return }
+    if (Number(f.slot_minutes) < 5 || Number(f.slot_minutes) > 240) { setOk(false); setMsg('Шаг слотов должен быть от 5 до 240 минут.'); return }
+    if (Number(f.buffer_minutes) > 240 || Number(f.cancel_hours) > 168 || Number(f.reschedule_hours) > 168) { setOk(false); setMsg('Проверьте лимиты настроек (буфер до 240 мин, окна отмены/переноса до 168 ч).'); return }
     m.mutate()
   }
+
+  const setHour = (k: string, v: [string, string] | null) => setF({ ...f, hours: { ...f.hours, [k]: v } })
+  const setBreaksForDay = (k: string, arr: [string, string][] | null) => setF({ ...f, breaks: { ...f.breaks, [k]: arr && arr.length ? arr : null } })
   const card = (k: 'booking' | 'catalog' | 'install', label: string): ReactNode => (
     <div className="card col">
       <b>{label}</b>
-      <input
-        aria-label={`${label}: заголовок`}
-        className="field"
-        value={f.cards[k].title}
-        onChange={(e) =>
-          setF({ ...f, cards: { ...f.cards, [k]: { ...f.cards[k], title: e.target.value } } })
-        }
-      />
-      <textarea
-        aria-label={`${label}: текст`}
-        className="field"
-        rows={2}
-        value={f.cards[k].text}
-        onChange={(e) =>
-          setF({ ...f, cards: { ...f.cards, [k]: { ...f.cards[k], text: e.target.value } } })
-        }
-      />
+      <input aria-label={`${label}: заголовок`} className="field" value={f.cards[k].title} onChange={(e) => setF({ ...f, cards: { ...f.cards, [k]: { ...f.cards[k], title: e.target.value } } })} />
+      <textarea aria-label={`${label}: текст`} className="field" rows={2} value={f.cards[k].text} onChange={(e) => setF({ ...f, cards: { ...f.cards, [k]: { ...f.cards[k], text: e.target.value } } })} />
     </div>
   )
+
   return (
     <>
-      <div className="admin-subheading"><div><h2>Настройки студии</h2><p className="muted small">Контакты, часы работы и текст главной страницы.</p></div></div>
+      <div className="admin-subheading"><div><h2>Настройки студии</h2><p className="muted small">Контакты, расписание, исключения, буферы и правила записи.</p></div></div>
       <Err m={msg} />
-      {ok && (
-        <p className="muted" role="status">
-          Сохранено.
-        </p>
-      )}
+      {ok && <p className="muted" role="status">Сохранено.</p>}
+
       <div className="card col admin-settings-card">
-      <label className="muted small" htmlFor="ph">
-        Телефон
-      </label>
-      <input
-        id="ph"
-        className="field"
-        type="tel"
-        inputMode="tel"
-        maxLength={18}
-        placeholder={PHONE_PLACEHOLDER}
-        value={f.phone}
-        onChange={(e) => setF({ ...f, phone: maskPhone(e.target.value, f.phone) })}
-      />
-      <label className="muted small" htmlFor="ad">
-        Адрес
-      </label>
-      <input
-        id="ad"
-        className="field"
-        value={f.address}
-        onChange={(e) => setF({ ...f, address: e.target.value })}
-      />
-      <label className="muted small" htmlFor="ru">
-        Ссылка 2ГИС для кнопки «Маршрут»
-      </label>
-      <input
-        id="ru"
-        className="field"
-        placeholder="https://go.2gis.com/…"
-        value={f.route_url}
-        onChange={(e) => setF({ ...f, route_url: e.target.value })}
-      />
-      <p className="muted small">
-        Найдите студию в 2ГИС, нажмите «Поделиться» и вставьте ссылку сюда. Без неё кнопка откроет
-        поиск 2ГИС по адресу.
-      </p>
-      <label className="muted small" htmlFor="ds">
-        Описание
-      </label>
-      <textarea
-        id="ds"
-        className="field"
-        rows={3}
-        value={f.description}
-        onChange={(e) => setF({ ...f, description: e.target.value })}
-      />
+        <label className="muted small" htmlFor="ph">Телефон</label>
+        <input id="ph" className="field" type="tel" inputMode="tel" maxLength={18} placeholder={PHONE_PLACEHOLDER} value={f.phone} onChange={(e) => setF({ ...f, phone: maskPhone(e.target.value, f.phone) })} />
+        <label className="muted small" htmlFor="ad">Адрес</label>
+        <input id="ad" className="field" value={f.address} onChange={(e) => setF({ ...f, address: e.target.value })} />
+        <label className="muted small" htmlFor="ru">Ссылка 2ГИС для маршрута</label>
+        <input id="ru" className="field" placeholder="https://go.2gis.com/..." value={f.route_url} onChange={(e) => setF({ ...f, route_url: e.target.value })} />
+        <label className="muted small" htmlFor="ds">Описание</label>
+        <textarea id="ds" className="field" rows={3} value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} />
       </div>
+
       <h3>Часы работы</h3>
       <div className="card col admin-hours">
-      {DAYS.map(([k, l]) => {
-        const h = f.hours[k] ?? null
-        const set = (v: [string, string] | null) => setF({ ...f, hours: { ...f.hours, [k]: v } })
-        return (
-          <div className="row wrap admin-hours-row" key={k}>
-            <b style={{ width: 28 }}>{l}</b>
-            <label className="row small">
-              <input
-                type="checkbox"
-                checked={!h}
-                onChange={(e) => set(e.target.checked ? null : ['09:00', '17:00'])}
-              />
-              выходной
-            </label>
-            {h && (
-              <>
-                <input
-                  aria-label={`${l} с`}
-                  className="field"
-                  style={{ width: 100 }}
-                  value={h[0]}
-                  onChange={(e) => set([e.target.value, h[1]])}
-                />
-                <input
-                  aria-label={`${l} до`}
-                  className="field"
-                  style={{ width: 100 }}
-                  value={h[1]}
-                  onChange={(e) => set([h[0], e.target.value])}
-                />
-              </>
-            )}
+        {DAYS.map(([k, l]) => {
+          const h = f.hours[k] ?? null
+          return (
+            <div className="row wrap admin-hours-row" key={k} style={{ gap: 8, alignItems: 'center' }}>
+              <b style={{ width: 28 }}>{l}</b>
+              <label className="row small"><input type="checkbox" checked={!h} onChange={(e) => setHour(k, e.target.checked ? null : ['09:00', '17:00'])} />Выходной</label>
+              {h && (<>
+                <input aria-label={`${l} с`} className="field" style={{ width: 100 }} value={h[0]} onChange={(e) => setHour(k, [e.target.value, h[1]])} />
+                <input aria-label={`${l} до`} className="field" style={{ width: 100 }} value={h[1]} onChange={(e) => setHour(k, [h[0], e.target.value])} />
+              </>)}
+            </div>
+          )
+        })}
+      </div>
+
+      <h3>Перерывы по дням</h3>
+      <div className="card col" style={{ gap: 10 }}>
+        <p className="muted small">Укажите перерыв (например, обед), чтобы слоты в это время не предлагались клиентам.</p>
+        {DAYS.map(([k, l]) => {
+          const dayHours = f.hours[k]
+          const brs = f.breaks[k] ?? []
+          const add = () => setBreaksForDay(k, [...brs, ['13:00', '14:00']])
+          const update = (i: number, idx: 0 | 1, val: string) => setBreaksForDay(k, brs.map((x, j) => j === i ? (idx === 0 ? [val, x[1]] : [x[0], val]) : x) as [string, string][])
+          const remove = (i: number) => setBreaksForDay(k, brs.filter((_, j) => j !== i) as [string, string][])
+          return (
+            <div key={k} className="col" style={{ gap: 6 }}>
+              <div className="row between wrap"><b>{l}</b>{dayHours ? <button type="button" className="btn ghost mini" onClick={add}>+ Перерыв</button> : <span className="muted small">Выходной</span>}</div>
+              {dayHours && brs.length === 0 && <span className="muted small">Перерывов нет</span>}
+              {dayHours && brs.map((br, i) => (
+                <div className="row wrap" key={i} style={{ gap: 8, alignItems: 'center' }}>
+                  <input aria-label={`${l} перерыв с`} className="field" style={{ width: 100 }} value={br[0]} onChange={(e) => update(i, 0, e.target.value)} />
+                  <span>—</span>
+                  <input aria-label={`${l} перерыв до`} className="field" style={{ width: 100 }} value={br[1]} onChange={(e) => update(i, 1, e.target.value)} />
+                  <button type="button" className="btn ghost mini" onClick={() => remove(i)}>Удалить</button>
+                </div>
+              ))}
+            </div>
+          )
+        })}
+      </div>
+
+      <h3>Слоты, буферы и правила отмены/переноса</h3>
+      <div className="card col admin-settings-card" style={{ gap: 10 }}>
+        <label className="muted small" htmlFor="slotm">Шаг слотов, минут</label>
+        <input id="slotm" className="field" type="number" min={5} max={240} value={f.slot_minutes} onChange={(e) => setF({ ...f, slot_minutes: e.target.value })} />
+        <label className="muted small" htmlFor="bufm">Буфер между записями, минут</label>
+        <input id="bufm" className="field" type="number" min={0} max={240} value={f.buffer_minutes} onChange={(e) => setF({ ...f, buffer_minutes: e.target.value })} />
+        <p className="muted small">Буфер автоматически резервирует время после каждой записи (подготовка/уборка), чтобы следующий слот не начинался вплотную.</p>
+        <label className="muted small" htmlFor="canch">Отмена клиентом: минимум за, часов</label>
+        <input id="canch" className="field" type="number" min={0} max={168} value={f.cancel_hours} onChange={(e) => setF({ ...f, cancel_hours: e.target.value })} />
+        <label className="row" style={{ gap: 8 }}><input type="checkbox" checked={f.client_reschedule_enabled} onChange={(e) => setF({ ...f, client_reschedule_enabled: e.target.checked })} /><span>Разрешить клиенту перенос записи (политика)</span></label>
+        <label className="muted small" htmlFor="resh">Перенос клиентом: минимум за, часов</label>
+        <input id="resh" className="field" type="number" min={0} max={168} value={f.reschedule_hours} onChange={(e) => setF({ ...f, reschedule_hours: e.target.value })} disabled={!f.client_reschedule_enabled} />
+        <p className="muted small">Текущая клиентская отмена работает по окну отмены. Настройка переноса сохраняется как политика для дальнейшего включения клиентского переноса в интерфейсе записи.</p>
+      </div>
+
+      <h3>Исключения расписания (выходные, праздники, особые часы)</h3>
+      <div className="card col" style={{ gap: 10 }}>
+        <p className="muted small">Исключение перекрывает обычное недельное расписание на выбранную дату или период.</p>
+        <div className="row wrap" style={{ gap: 8 }}>
+          <label className="col muted small">С даты<input className="field" type="date" value={exDraft.date_from} onChange={(e) => setExDraft({ ...exDraft, date_from: e.target.value })} /></label>
+          <label className="col muted small">По дату<input className="field" type="date" value={exDraft.date_to} onChange={(e) => setExDraft({ ...exDraft, date_to: e.target.value })} /></label>
+        </div>
+        <label className="row" style={{ gap: 8 }}><input type="checkbox" checked={exDraft.is_closed} onChange={(e) => setExDraft({ ...exDraft, is_closed: e.target.checked })} /><span>Закрыто весь день (выходной/праздник)</span></label>
+        {!exDraft.is_closed && (
+          <div className="row wrap" style={{ gap: 8 }}>
+            <label className="col muted small">Открыто с<input className="field" style={{ width: 120 }} value={exDraft.open} onChange={(e) => setExDraft({ ...exDraft, open: e.target.value })} /></label>
+            <label className="col muted small">Открыто до<input className="field" style={{ width: 120 }} value={exDraft.close} onChange={(e) => setExDraft({ ...exDraft, close: e.target.value })} /></label>
           </div>
-        )
-      })}
+        )}
+        <label className="col muted small">Комментарий<input className="field" maxLength={120} placeholder="Например: праздник / укороченный день" value={exDraft.note} onChange={(e) => setExDraft({ ...exDraft, note: e.target.value })} /></label>
+        <button type="button" className="btn ghost" disabled={exSave.isPending || !exDraft.date_from} onClick={() => exSave.mutate()}>{exSave.isPending ? 'Сохранение…' : (exDraft.id ? 'Обновить исключение' : 'Добавить исключение')}</button>
+        {exceptions.isPending ? <p className="muted small">Загрузка исключений…</p>
+          : exceptions.isError ? <p className="err small">Не удалось загрузить исключения. <button className="link" onClick={() => void exceptions.refetch()}>Повторить</button></p>
+          : (exceptions.data?.length ?? 0) === 0 ? <p className="muted small">Исключений пока нет.</p>
+          : <div className="col" style={{ gap: 8 }}>{exceptions.data!.map((ex) => (
+              <div key={ex.id} className="row between wrap" style={{ gap: 8 }}>
+                <div>
+                  <b>{ex.date_from}{ex.date_to !== ex.date_from ? ` — ${ex.date_to}` : ''}</b>
+                  <div className="muted small">{ex.is_closed ? 'Закрыто' : `Особые часы: ${ex.hours?.[0] ?? '?'}–${ex.hours?.[1] ?? '?'}`}{ex.note ? ` · ${ex.note}` : ''}</div>
+                </div>
+                <div className="row" style={{ gap: 6 }}>
+                  <button type="button" className="btn ghost mini" onClick={() => setExDraft({ id: ex.id, date_from: ex.date_from, date_to: ex.date_to, is_closed: ex.is_closed, open: ex.hours?.[0] ?? '09:00', close: ex.hours?.[1] ?? '18:00', note: ex.note ?? '' })}>Изменить</button>
+                  <button type="button" className="btn ghost mini" disabled={exDelete.isPending} onClick={() => { if (window.confirm('Удалить исключение расписания?')) exDelete.mutate(ex.id) }}>Удалить</button>
+                </div>
+              </div>
+            ))}</div>}
       </div>
-      <h3>Карточки на главной</h3>
+
+      <h3>Тексты на страницах</h3>
       <div className="admin-copy-grid">
-      {card('booking', 'Запись')}
-      {card('catalog', 'Каталог услуг')}
-      {card('install', 'Установка')}
+        {card('booking', 'Запись')}
+        {card('catalog', 'Каталог услуг')}
+        {card('install', 'Приложение')}
       </div>
+
       <button className="btn admin-save" disabled={m.isPending} onClick={save}>
-        {m.isPending ? 'Сохраняем…' : 'Сохранить'}
+        {m.isPending ? 'Сохранение…' : 'Сохранить'}
       </button>
-      <p className="muted small">
-        Логотип, главное фото и фотографии работ меняются на вкладке «Фото».
-      </p>
+      <p className="muted small">Логотип, обложка, фото и работы студии настраиваются в разделе «Фото».</p>
     </>
   )
 }

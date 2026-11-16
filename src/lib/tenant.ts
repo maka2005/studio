@@ -21,6 +21,12 @@ export const Business = z.object({
     install: Card.default(defaultCards.install),
   }).default(defaultCards),
   resources: z.array(z.string()).default([]),
+  buffer_minutes: z.number().int().min(0).max(240).optional(),
+  slot_minutes: z.number().int().min(5).max(240).optional(),
+  cancel_hours: z.number().int().min(0).max(168).optional(),
+  reschedule_hours: z.number().int().min(0).max(168).optional(),
+  client_reschedule_enabled: z.boolean().optional(),
+  breaks: z.record(z.string(), z.array(z.tuple([z.string(), z.string()])).nullable()).default({}),
   hours: z.record(z.string(), z.tuple([z.string(), z.string()]).nullable()).default({}),
   services: z.array(z.object({ name: z.string(), category: z.string().optional(), price: z.number(), duration_minutes: z.number(), price_from: z.boolean().optional() })).default([]),
 });
