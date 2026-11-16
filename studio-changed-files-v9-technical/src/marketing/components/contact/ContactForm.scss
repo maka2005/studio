@@ -1,0 +1,141 @@
+@use '../../styles/variables' as *;
+
+.contact-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 36px;
+  background: $color-bg;
+  border: 1px solid $color-border;
+  border-radius: $radius;
+  box-shadow: $shadow;
+
+  &__row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+
+  &__field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+
+    label {
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    input,
+    select,
+    textarea {
+      min-height: 48px;
+      padding: 12px 14px;
+      color: $color-text;
+      background: $color-bg;
+      border: 1px solid #cbd5e1;
+      border-radius: 10px;
+      font-size: 16px;
+
+      &:focus {
+        outline: none;
+        border-color: $color-primary;
+        box-shadow: 0 0 0 3px rgba(31, 79, 216, 0.15);
+      }
+    }
+
+    textarea {
+      resize: vertical;
+    }
+  }
+
+  &__hint {
+    color: $color-text-muted;
+    font-size: 14px;
+  }
+
+  &__error {
+    color: #b42318;
+    font-size: 14px;
+  }
+
+  &--success {
+    text-align: center;
+    gap: 12px;
+
+    h2 {
+      font-size: 26px;
+    }
+
+    p {
+      color: $color-text-muted;
+    }
+  }
+
+  @include mobile {
+    padding: 24px;
+
+    &__row {
+      grid-template-columns: 1fr;
+    }
+  }
+}
+
+.contact-form__consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 14px;
+  color: $color-text-muted;
+
+  input {
+    margin-top: 4px;
+    flex: none;
+  }
+
+  a {
+    color: $color-primary;
+  }
+}
+
+.contact-form__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 16px;
+}
+
+.order-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px;
+  text-align: left;
+  background: $color-bg-alt;
+  border: 1px solid $color-border;
+  border-radius: 12px;
+
+  &__row {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    font-size: 15px;
+    color: $color-text-muted;
+
+    b {
+      color: $color-text;
+      text-align: right;
+    }
+
+    &--total {
+      padding-top: 10px;
+      border-top: 1px dashed $color-border;
+      font-size: 17px;
+
+      b {
+        color: $color-primary;
+      }
+    }
+  }
+}

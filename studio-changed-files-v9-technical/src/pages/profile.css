@@ -1,0 +1,11 @@
+.profile-wrap{max-width:420px;margin:0 auto;padding:4px 0 24px}
+.back-link{display:inline-flex;gap:8px;align-items:center;color:var(--muted);margin:16px 0 24px}
+.profile-card{background:#0d0e11;border:1px solid var(--line);border-radius:28px;padding:24px}
+.profile-card h1{font-size:34px;margin:0 0 10px}
+.profile-ico{width:64px;height:64px;border-radius:20px;background:#17191e;display:grid;place-items:center;margin-bottom:20px}
+.owner-link{display:flex;gap:10px;align-items:center;margin-top:20px;color:var(--muted)}
+.owner-link a{color:var(--fg);text-decoration:underline;text-underline-offset:4px;font-weight:600}
+.bk-row{display:flex;flex-direction:column;gap:6px;margin:12px 0 0;padding:14px;border:1px solid var(--line);border-radius:20px;background:#101216}
+.head-row{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:6px}.head-row h1{font-size:38px;margin:0}
+.okcard{display:flex;align-items:center;gap:14px;margin:18px 0 0}.okcard p{margin:2px 0 0}
+.prof-foot{border-top:1px solid var(--line);margin-top:48px;padding:16px 0}

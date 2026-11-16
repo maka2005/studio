@@ -1,0 +1,3 @@
+.thumb{border-radius:16px;border:1px solid var(--line);object-fit:cover;background:#111}
+.thumb.sq{width:72px;height:72px}.thumb.wide{width:100%;aspect-ratio:16/10}
+.filebtn{cursor:pointer;display:inline-flex;align-items:center;justify-content:center}

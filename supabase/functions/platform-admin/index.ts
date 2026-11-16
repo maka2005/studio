@@ -1,4 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { withEdgeObservability } from '../_shared/observability.ts';
 
 // Единственная точка входа админки платформы. Правила:
 //  - JWT проверяется на сервере (auth.getUser), затем наличие user_id в platform_admins;
@@ -14,9 +15,9 @@ const corsFor = (req: Request) => {
   const origin = req.headers.get('origin') ?? '';
   return allowed.has(origin) ? { 'Access-Control-Allow-Origin': origin, 'Vary': 'Origin' } : { 'Vary': 'Origin' };
 };
-const json = (req: Request, body: unknown, status = 200) => new Response(JSON.stringify(body), {
+const makeJson = (req: Request, requestId: string) => (body: unknown, status = 200) => new Response(JSON.stringify(typeof body === 'object' && body && 'error' in (body as any) ? { request_id: requestId, ...(body as any) } : body), {
   status,
-  headers: { ...corsFor(req), 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Content-Type': 'application/json' },
+  headers: { ...corsFor(req), 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-request-id', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Content-Type': 'application/json', 'x-request-id': requestId },
 });
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -120,43 +121,43 @@ async function ensureOwnerMembership(admin: ReturnType<typeof createClient>, ten
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: { ...corsFor(req), 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' } });
-  if (req.method !== 'POST') return json(req, { error: 'method_not_allowed' }, 405);
+  if (req.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
   const origin = req.headers.get('origin');
-  if (origin && !allowed.has(origin)) return json(req, { error: 'forbidden' }, 403);
+  if (origin && !allowed.has(origin)) return json({ error: 'forbidden' }, 403);
 
   const url = Deno.env.get('SUPABASE_URL') ?? '', anon = Deno.env.get('SUPABASE_ANON_KEY') ?? '', service = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-  if (!url || !anon || !service) return json(req, { error: 'temporarily_unavailable' }, 503);
+  if (!url || !anon || !service) return json({ error: 'temporarily_unavailable' }, 503);
   const body = obj(await req.json().catch(() => null));
   const action = str(body.action, 40);
-  if (!action) return json(req, { error: 'bad_request' }, 400);
+  if (!action) return json({ error: 'bad_request' }, 400);
 
   if (action === 'public_lead_submit' || action === 'public_demo_start' || action === 'public_connect_start') {
     const demo = action === 'public_demo_start';
     const connect = action === 'public_connect_start';
     const instant = demo || connect; // организация создаётся сразу, без участия менеджера
     // Если секрет прокси задан, публичные формы принимаются только через /api/platform: прямые вызовы с публичным anon-ключом отклоняются.
-    if (PROXY_SECRET && !viaProxy(req)) return json(req, { error: 'forbidden' }, 403);
+    if (PROXY_SECRET && !viaProxy(req)) return json({ error: 'forbidden' }, 403);
     const pre = obj(body.lead);
     // Ловушка для ботов: скрытое поле заполнено или форма отправлена быстрее 1,5 с — молча «принимаем», ничего не создавая.
-    if (str(pre.hp, 200) !== '' || (typeof pre.elapsedMs === 'number' && pre.elapsedMs < 1500)) return json(req, ACCEPTED);
+    if (str(pre.hp, 200) !== '' || (typeof pre.elapsedMs === 'number' && pre.elapsedMs < 1500)) return json(ACCEPTED);
     const source = clientIp(req);
     const ipKey = await sha256Hex(source);
     const admin = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } });
     const limit = await admin.rpc('consume_platform_rate', { p_scope: 'platform_lead', p_key: `${demo ? 'demo:' : connect ? 'connect:' : ''}ip:${ipKey}`, p_limit: instant ? 3 : 5, p_window: 3600 });
-    if (limit.error) return json(req, { error: 'temporarily_unavailable' }, 503);
-    if (limit.data !== true) return json(req, { error: 'rate_limited' }, 429);
-    if (!(await turnstileOk(str(pre.turnstileToken, 2048), source))) return json(req, { error: 'captcha_failed' }, 400);
+    if (limit.error) return json({ error: 'temporarily_unavailable' }, 503);
+    if (limit.data !== true) return json({ error: 'rate_limited' }, 429);
+    if (!(await turnstileOk(str(pre.turnstileToken, 2048), source))) return json({ error: 'captcha_failed' }, 400);
     const lead = obj(body.lead), businessName = str(lead.businessName, 120), ownerName = str(lead.ownerName, 120), ownerEmail = str(lead.ownerEmail, 254).toLowerCase(), phone = str(lead.phone, 32), businessType = str(lead.businessType, 80);
     const plan = str(lead.plan, 40), comment = str(lead.comment, 2000);
     const requestType = demo ? 'demo' : connect ? 'connect' : (lead.requestType === 'demo' ? 'demo' : 'connect');
-    if (businessName.length < 2 || ownerName.length < 2 || !EMAIL.test(ownerEmail) || phone.replace(/\D/g, '').length < 10 || businessType.length < 2) return json(req, { error: 'bad_request' }, 400);
-    if (lead.consent !== true) return json(req, { error: 'consent_required' }, 400);
+    if (businessName.length < 2 || ownerName.length < 2 || !EMAIL.test(ownerEmail) || phone.replace(/\D/g, '').length < 10 || businessType.length < 2) return json({ error: 'bad_request' }, 400);
+    if (lead.consent !== true) return json({ error: 'consent_required' }, 400);
     const row = { business_name: businessName, owner_name: ownerName, owner_email: ownerEmail, phone, business_type: businessType, request_type: requestType, plan, comment, consent_at: new Date().toISOString(), consent_version: PRIVACY_VERSION };
 
     if (!instant) {
       const { error } = await admin.from('platform_business_leads').insert(row);
-      if (error) { console.error('public lead save failed:', error.message); return json(req, { error: 'temporarily_unavailable' }, 503); }
-      return json(req, { ok: true, mode: 'lead' });
+      if (error) { console.error('public lead save failed:', error.message); return json({ error: 'temporarily_unavailable' }, 503); }
+      return json({ ok: true, mode: 'lead' });
     }
 
     // Подключение: тариф обязателен и берётся из базы (цена не приходит от клиента).
@@ -164,7 +165,7 @@ Deno.serve(async (req) => {
     let chosen: { code: string; name: string; price_kzt: number; period_months: number } | null = null;
     if (connect) {
       const { data: planRow } = await admin.from('plans').select('code,name,price_kzt,period_months').eq('code', plan.toUpperCase()).eq('is_active', true).neq('code', 'LEGACY').maybeSingle();
-      if (!planRow) return json(req, { error: 'bad_request' }, 400);
+      if (!planRow) return json({ error: 'bad_request' }, 400);
       chosen = planRow as typeof chosen;
     }
     const fmtKzt = (n: number) => `${n.toLocaleString('ru-RU')} ₸`;
@@ -173,16 +174,16 @@ Deno.serve(async (req) => {
     const existing = await findUserByEmail(admin, ownerEmail);
     if (existing) {
       const { error } = await admin.from('platform_business_leads').insert(row);
-      if (error) { console.error('demo lead save failed:', error.message); return json(req, { error: 'temporarily_unavailable' }, 503); }
-      return json(req, ACCEPTED); // одинаковый ответ для новых и уже зарегистрированных почт — иначе можно перебором узнать, кто в системе
+      if (error) { console.error('demo lead save failed:', error.message); return json({ error: 'temporarily_unavailable' }, 503); }
+      return json(ACCEPTED); // одинаковый ответ для новых и уже зарегистрированных почт — иначе можно перебором узнать, кто в системе
     }
     const emailRate = await admin.rpc('consume_platform_rate', { p_scope: 'platform_lead', p_key: `${connect ? 'connect' : 'demo'}:email:${await sha256Hex(ownerEmail)}`, p_limit: 2, p_window: 86400 });
-    if (emailRate.error) return json(req, { error: 'temporarily_unavailable' }, 503);
-    if (emailRate.data !== true) return json(req, ACCEPTED);
+    if (emailRate.error) return json({ error: 'temporarily_unavailable' }, 503);
+    if (emailRate.data !== true) return json(ACCEPTED);
 
     const planCode = chosen ? chosen.code : (plan.toUpperCase() === 'PRO' ? 'PRO' : 'START');
     const created = await admin.auth.admin.createUser({ email: ownerEmail, email_confirm: true, user_metadata: { full_name: ownerName } });
-    if (created.error || !created.data.user) { console.error('demo owner create failed:', created.error?.message); return json(req, { error: 'temporarily_unavailable' }, 502); }
+    if (created.error || !created.data.user) { console.error('demo owner create failed:', created.error?.message); return json({ error: 'temporarily_unavailable' }, 502); }
     const owner = created.data.user;
     const base = slugBase(businessName);
     let result: { tenant_id?: string; slug?: string } | null = null;
@@ -205,11 +206,11 @@ Deno.serve(async (req) => {
       if (failure === 'trial_already_used') {
         // Пробный период для этой почты/телефона уже использован — сохраняем заявку, менеджер подключит вручную.
         await admin.from('platform_business_leads').insert({ ...row, comment: `${connect ? `Самостоятельное подключение: тариф ${chosen?.name}, к оплате ${chosen ? fmtKzt(chosen.price_kzt) : ''}. ` : 'Демо: '}пробный период уже использован. ${comment}`.trim().slice(0, 2000) });
-        return json(req, ACCEPTED);
+        return json(ACCEPTED);
       }
-      return json(req, { error: failure ? 'operation_failed' : 'slug_taken' }, 500);
+      return json({ error: failure ? 'operation_failed' : 'slug_taken' }, 500);
     }
-    if (!(await ensureOwnerMembership(admin, result.tenant_id, owner.id))) return json(req, { error: 'operation_failed' }, 500);
+    if (!(await ensureOwnerMembership(admin, result.tenant_id, owner.id))) return json({ error: 'operation_failed' }, 500);
     const anonClient = createClient(url, anon, { auth: { persistSession: false, autoRefreshToken: false } });
     const invite = site ? await anonClient.auth.resetPasswordForEmail(ownerEmail, { redirectTo: `${site.replace(/\/$/, '')}/s/${result.slug}/owner` }) : { error: new Error('no_site') };
     if (invite.error) console.error('demo invite failed:', invite.error.message);
@@ -226,68 +227,68 @@ Deno.serve(async (req) => {
     const { error: leadError } = await admin.from('platform_business_leads').insert(leadRow);
     if (leadError) console.error('demo lead record failed:', leadError.message);
     await admin.rpc('platform_log', { p_actor: null, p_action: connect ? 'connect.self_signup' : 'demo.self_signup', p_tenant: result.tenant_id, p_payload: { slug: result.slug, plan: planCode, owner_email: ownerEmail } });
-    return json(req, ACCEPTED);
+    return json(ACCEPTED);
   }
 
   if (action === 'public_plans') {
     const admin=createClient(url,service,{auth:{persistSession:false,autoRefreshToken:false}});
     const {data,error}=await admin.from('plans').select('code,name,description,price_kzt,period_months,limits').eq('is_active',true).neq('code','LEGACY').order('sort_order',{ascending:true});
-    if(error){console.error('public plans failed:',error.message);return json(req,{error:'temporarily_unavailable'},503)}
-    return json(req,{data:data??[],trial_days:await getTrialDays(admin)});
+    if(error){console.error('public plans failed:',error.message);return json({error:'temporarily_unavailable'},503)}
+    return json({data:data??[],trial_days:await getTrialDays(admin)});
   }
 
   // --- 1. аутентификация
   const token = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '');
-  if (!token) return json(req, { error: 'unauthorized' }, 401);
+  if (!token) return json({ error: 'unauthorized' }, 401);
   const caller = createClient(url, anon, { auth: { persistSession: false, autoRefreshToken: false } });
   const { data: { user }, error: authError } = await caller.auth.getUser(token);
-  if (authError || !user) return json(req, { error: 'unauthorized' }, 401);
+  if (authError || !user) return json({ error: 'unauthorized' }, 401);
   const admin = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } });
 
   // --- 2. первоначальная настройка: первый суперадмин (только пока таблица пуста и email совпал)
   if (action === 'bootstrap') {
     const expected = (Deno.env.get('PLATFORM_SUPERADMIN_EMAIL') ?? '').trim().toLowerCase();
-    if (!expected || user.email?.toLowerCase() !== expected) return json(req, { error: 'forbidden' }, 403);
+    if (!expected || user.email?.toLowerCase() !== expected) return json({ error: 'forbidden' }, 403);
     const { count, error } = await admin.from('platform_admins').select('user_id', { count: 'exact', head: true });
-    if (error) return json(req, { error: 'operation_failed' }, 500);
-    if ((count ?? 0) > 0) return json(req, { error: 'forbidden' }, 403);
+    if (error) return json({ error: 'operation_failed' }, 500);
+    if ((count ?? 0) > 0) return json({ error: 'forbidden' }, 403);
     const { error: insertError } = await admin.from('platform_admins').insert({ user_id: user.id, role: 'owner', is_active: true });
-    if (insertError) return json(req, { error: 'operation_failed' }, 500);
+    if (insertError) return json({ error: 'operation_failed' }, 500);
     await admin.rpc('platform_log', { p_actor: user.id, p_action: 'platform.bootstrap', p_tenant: null, p_payload: {} });
-    return json(req, { ok: true });
+    return json({ ok: true });
   }
 
   // Configured platform owner can restore the owner role after a mistaken role change.
   if (action === 'recover_owner') {
     const expected = (Deno.env.get('PLATFORM_SUPERADMIN_EMAIL') ?? '').trim().toLowerCase();
-    if (!expected || user.email?.toLowerCase() !== expected) return json(req, { error: 'forbidden' }, 403);
+    if (!expected || user.email?.toLowerCase() !== expected) return json({ error: 'forbidden' }, 403);
     const { error } = await admin.from('platform_admins').upsert({ user_id: user.id, role: 'owner', is_active: true });
-    if (error) return json(req, { error: 'operation_failed' }, 500);
+    if (error) return json({ error: 'operation_failed' }, 500);
     await admin.rpc('platform_log', { p_actor: user.id, p_action: 'admin.owner_recovery', p_tenant: null, p_payload: { email: user.email } });
-    return json(req, { ok: true });
+    return json({ ok: true });
   }
 
   // --- 3. роль проверяется на сервере по таблице platform_admins
   const { data: adminRow, error: roleError } = await admin.from('platform_admins').select('role,is_active').eq('user_id', user.id).maybeSingle();
-  if (roleError) return json(req, { error: 'temporarily_unavailable' }, 503);
-  if (!adminRow?.is_active) return json(req, { error: 'forbidden' }, 403);
+  if (roleError) return json({ error: 'temporarily_unavailable' }, 503);
+  if (!adminRow?.is_active) return json({ error: 'forbidden' }, 403);
   const role = String(adminRow.role ?? 'owner');
   const mfaNeeded = Deno.env.get('PLATFORM_REQUIRE_MFA') === 'true' && aalOf(token) !== 'aal2';
-  if (action === 'whoami') return json(req, { ok: true, email: user.email, role, aal: aalOf(token), mfa_required: mfaNeeded });
-  if (mfaNeeded) return json(req, { error: 'mfa_required' }, 403);
+  if (action === 'whoami') return json({ ok: true, email: user.email, role, aal: aalOf(token), mfa_required: mfaNeeded });
+  if (mfaNeeded) return json({ error: 'mfa_required' }, 403);
 
   const readActions = new Set(['whoami','admin_login_event','dashboard','tenants','tenant','tenant_events','subscriptions','plans','payments','audit','notifications','settings','admins','billing_documents']);
   const financeActions = new Set(['whoami','admin_login_event','payments','payment_create','payment_confirm','payment_refund','payment_fail','subscriptions','dashboard','audit','notifications','tenants','tenant','tenant_events','plans','billing_documents','billing_document_save']);
   const supportActions = new Set(['whoami','admin_login_event','tenants','tenant','tenant_events','tenant_support','tenant_note_add','tenant_case_create','tenant_case_update','support_tickets','support_ticket_detail','support_ticket_update','business_leads','business_lead_update','resend_invite','impersonation_start','impersonation_check','impersonation_end','impersonation_log']);
   const allowedByRole = role === 'owner' ? null : role === 'read_only' ? readActions : role === 'finance' ? financeActions : supportActions;
   if (!['owner','support','finance','read_only'].includes(role) || (allowedByRole && !allowedByRole.has(action)))
-    return json(req, { error: 'forbidden' }, 403);
+    return json({ error: 'forbidden' }, 403);
 
   // --- 4. лимиты запросов
   const actor = user.id;
   const rate = await admin.rpc('consume_platform_rate', { p_scope: 'platform_admin', p_key: `actor:${actor}`, p_limit: 240, p_window: 60 });
-  if (rate.error) return json(req, { error: 'temporarily_unavailable' }, 503);
-  if (rate.data !== true) return json(req, { error: 'rate_limited' }, 429);
+  if (rate.error) return json({ error: 'temporarily_unavailable' }, 503);
+  if (rate.data !== true) return json({ error: 'rate_limited' }, 429);
 
   const idem = str(body.idempotency_key, 128);
   const needKey = () => KEY.test(idem);
@@ -295,46 +296,46 @@ Deno.serve(async (req) => {
 
   try {
     if(action==='business_leads'){
-      if(!['owner','support'].includes(role))return json(req,{error:'forbidden'},403);
+      if(!['owner','support'].includes(role))return json({error:'forbidden'},403);
       const status=str(body.status,20),limit=Math.max(1,Math.min(50,Number(body.limit)||25)),offset=Math.max(0,Number(body.offset)||0);
       let query=admin.from('platform_business_leads').select('*',{count:'exact'}).order('created_at',{ascending:false}).range(offset,offset+limit-1);
       if(['new','contacted','converted','closed'].includes(status))query=query.eq('status',status);
       const {data,error,count}=await query;if(error)throw error;
-      return json(req,{data:{rows:data??[],count:count??0,limit,offset}});
+      return json({data:{rows:data??[],count:count??0,limit,offset}});
     }
     if(action==='business_lead_update'){
-      if(!['owner','support'].includes(role))return json(req,{error:'forbidden'},403);
+      if(!['owner','support'].includes(role))return json({error:'forbidden'},403);
       const id=uuidOf(body.lead_id),status=str(body.status,20);
-      if(!id||!['new','contacted','converted','closed'].includes(status))return json(req,{error:'bad_request'},400);
+      if(!id||!['new','contacted','converted','closed'].includes(status))return json({error:'bad_request'},400);
       const tenantId=uuidOf(body.tenant_id),tenantSlug=str(body.tenant_slug,40).toLowerCase();
       const patch:Record<string,unknown>={status,updated_at:new Date().toISOString(),updated_by:actor};
       if(tenantId){patch.tenant_id=tenantId;patch.tenant_slug=/^[a-z0-9-]{2,40}$/.test(tenantSlug)?tenantSlug:''}
       const {error}=await admin.from('platform_business_leads').update(patch).eq('id',id);
       if(error)throw error;
       await admin.rpc('platform_log',{p_actor:actor,p_action:'business_lead.update',p_tenant:null,p_payload:{lead_id:id,status,tenant_id:tenantId||null}});
-      return json(req,{data:{ok:true}});
+      return json({data:{ok:true}});
     }
     if (action === 'support_tickets') {
-      if (!['owner','support'].includes(role)) return json(req,{error:'forbidden'},403);
+      if (!['owner','support'].includes(role)) return json({error:'forbidden'},403);
       const status=str(body.status,20),category=str(body.category,30),severity=str(body.severity,20),search=str(body.search,100);
       const limit=Math.max(1,Math.min(50,Number(body.limit)||25)),offset=Math.max(0,Number(body.offset)||0);
       const {data,error}=await admin.rpc('platform_support_queue',{p_actor:actor,p_status:['open','in_progress','resolved'].includes(status)?status:null,p_category:['support','billing','technical','access','booking','feature','other'].includes(category)?category:null,p_severity:['low','normal','high','urgent'].includes(severity)?severity:null,p_search:search||null,p_limit:limit,p_offset:offset});
       if(error)throw error;
-      return json(req,{data:data??{rows:[],count:0,limit,offset}});
+      return json({data:data??{rows:[],count:0,limit,offset}});
     }
     if (action === 'support_ticket_detail') {
-      if (!['owner','support'].includes(role)) return json(req,{error:'forbidden'},403);
-      const ticketId=uuidOf(body.ticket_id);if(!ticketId)return json(req,{error:'bad_request'},400);
+      if (!['owner','support'].includes(role)) return json({error:'forbidden'},403);
+      const ticketId=uuidOf(body.ticket_id);if(!ticketId)return json({error:'bad_request'},400);
       const {data:ticket,error}=await admin.rpc('platform_support_ticket_detail',{p_actor:actor,p_ticket:ticketId});
-      if(error)throw error;if(!ticket)return json(req,{error:'not_found'},404);
-      return json(req,{data:ticket});
+      if(error)throw error;if(!ticket)return json({error:'not_found'},404);
+      return json({data:ticket});
     }
     if (action === 'support_ticket_update') {
-      if (!['owner','support'].includes(role)) return json(req,{error:'forbidden'},403);
+      if (!['owner','support'].includes(role)) return json({error:'forbidden'},403);
       const ticketId=uuidOf(body.ticket_id),status=str(body.status,20),message=str(body.message,3000);
-      if(!ticketId||!['open','in_progress','resolved'].includes(status))return json(req,{error:'bad_request'},400);
+      if(!ticketId||!['open','in_progress','resolved'].includes(status))return json({error:'bad_request'},400);
       const {data:current,error:currentError}=await admin.from('platform_tenant_cases').select('id,tenant_id,status').eq('id',ticketId).maybeSingle();
-      if(currentError)throw currentError;if(!current)return json(req,{error:'not_found'},404);
+      if(currentError)throw currentError;if(!current)return json({error:'not_found'},404);
       const now=new Date().toISOString();
       const {error:updateError}=await admin.from('platform_tenant_cases').update({status,updated_by:actor,updated_by_email:str(user.email,254),updated_at:now}).eq('id',ticketId);
       if(updateError)throw updateError;
@@ -343,90 +344,90 @@ Deno.serve(async (req) => {
         if(eventError)throw eventError;
       }
       await admin.rpc('platform_log',{p_actor:actor,p_action:'support.ticket.update',p_tenant:current.tenant_id,p_payload:{ticket_id:ticketId,status,message_added:!!message}});
-      return json(req,{ok:true});
+      return json({ok:true});
     }
     if(['announcements','announcement_save','announcement_delete','tenant_flags_get','tenant_flags_set','admin_logins'].includes(action)&&role!=='owner')
-      return json(req,{error:'forbidden'},403);
+      return json({error:'forbidden'},403);
     if(action==='announcements'){
       const {data,error}=await admin.from('platform_announcements').select('id,title,body,audience,tenant_ids,starts_at,ends_at,is_active,created_at').order('created_at',{ascending:false}).limit(300);
-      if(error)throw error;return json(req,{data:data??[]});
+      if(error)throw error;return json({data:data??[]});
     }
     if(action==='announcement_save'){
       const item=obj(body.announcement),id=uuidOf(item.id);
       const payload={title:str(item.title,180),body:str(item.body,5000),audience:item.audience==='selected'?'selected':'all',
         tenant_ids:Array.isArray(item.tenant_ids)?item.tenant_ids.filter((v)=>uuidOf(v)).slice(0,500):[],
         starts_at:str(item.starts_at,50)||new Date().toISOString(),ends_at:str(item.ends_at,50)||null,is_active:item.is_active!==false,created_by:actor};
-      if(payload.title.length<3||!payload.body|| (payload.audience==='selected'&&!payload.tenant_ids.length))return json(req,{error:'bad_request'},400);
+      if(payload.title.length<3||!payload.body|| (payload.audience==='selected'&&!payload.tenant_ids.length))return json({error:'bad_request'},400);
       const query=id?admin.from('platform_announcements').update(payload).eq('id',id):admin.from('platform_announcements').insert(payload);
       const {error}=await query;if(error)throw error;
       await admin.rpc('platform_log',{p_actor:actor,p_action:'announcement.save',p_tenant:null,p_payload:{audience:payload.audience}});
-      return json(req,{ok:true});
+      return json({ok:true});
     }
     if(action==='announcement_delete'){
-      const id=uuidOf(body.id);if(!id)return json(req,{error:'bad_request'},400);
+      const id=uuidOf(body.id);if(!id)return json({error:'bad_request'},400);
       const {error}=await admin.from('platform_announcements').delete().eq('id',id);if(error)throw error;
       await admin.rpc('platform_log',{p_actor:actor,p_action:'announcement.delete',p_tenant:null,p_payload:{id}});
-      return json(req,{ok:true});
+      return json({ok:true});
     }
     if(action==='tenant_flags_get'){
-      const tenantId=uuidOf(body.tenant_id);if(!tenantId)return json(req,{error:'bad_request'},400);
+      const tenantId=uuidOf(body.tenant_id);if(!tenantId)return json({error:'bad_request'},400);
       const {data,error}=await admin.from('platform_tenant_feature_flags').select('flag_key,enabled,updated_at').eq('tenant_id',tenantId).order('flag_key');
-      if(error)throw error;return json(req,{data:data??[]});
+      if(error)throw error;return json({data:data??[]});
     }
     if(action==='tenant_flags_set'){
       const tenantId=uuidOf(body.tenant_id),key=str(body.flag_key,64),enabled=body.enabled;
-      if(!tenantId||! /^[a-z][a-z0-9_]{1,63}$/.test(key)||typeof enabled!=='boolean')return json(req,{error:'bad_request'},400);
+      if(!tenantId||! /^[a-z][a-z0-9_]{1,63}$/.test(key)||typeof enabled!=='boolean')return json({error:'bad_request'},400);
       const {error}=await admin.from('platform_tenant_feature_flags').upsert({tenant_id:tenantId,flag_key:key,enabled,updated_by:actor,updated_at:new Date().toISOString()});
       if(error)throw error;await admin.rpc('platform_log',{p_actor:actor,p_action:'tenant.feature_flag.update',p_tenant:tenantId,p_payload:{flag_key:key,enabled}});
-      return json(req,{ok:true});
+      return json({ok:true});
     }
     if(action==='admin_login_event'){
       const forwarded=str(body.ip_address,64)||String(req.headers.get('x-forwarded-for')??'').split(',')[0].trim();
       const ip=/^(?:\d{1,3}\.){3}\d{1,3}$|^[0-9a-f:]{3,45}$/i.test(forwarded)?forwarded:null;
       const {error}=await admin.from('platform_admin_login_events').insert({user_id:actor,email:str(user.email,254),ip_address:ip,user_agent:str(body.user_agent,500)||str(req.headers.get('user-agent'),500)});
       if(error)throw error;
-      return json(req,{ok:true});
+      return json({ok:true});
     }
     if(action==='admin_logins'){
-      if(role!=='owner')return json(req,{error:'forbidden'},403);
+      if(role!=='owner')return json({error:'forbidden'},403);
       const {data,error}=await admin.from('platform_admin_login_events').select('id,user_id,email,ip_address,user_agent,signed_in_at').order('signed_in_at',{ascending:false}).limit(300);
       if(error)throw error;
-      return json(req,{data:data??[]});
+      return json({data:data??[]});
     }
     if (action === 'tenant_support' || action === 'tenant_note_add' || action === 'tenant_case_create' || action === 'tenant_case_update') {
-      if (!['owner','support'].includes(role)) return json(req, { error: 'forbidden' }, 403);
+      if (!['owner','support'].includes(role)) return json({ error: 'forbidden' }, 403);
       const tenantId = uuidOf(body.tenant_id);
-      if (!tenantId) return json(req, { error: 'bad_request' }, 400);
+      if (!tenantId) return json({ error: 'bad_request' }, 400);
       const { data: tenant } = await admin.from('tenants').select('id').eq('id', tenantId).maybeSingle();
-      if (!tenant) return json(req, { error: 'not_found' }, 404);
+      if (!tenant) return json({ error: 'not_found' }, 404);
       const actorEmail = str(user.email, 254);
       if (action === 'tenant_support') {
         const { data: notes, error } = await admin.from('platform_tenant_notes').select('id,body,created_by_email,created_at').eq('tenant_id', tenantId).order('created_at', { ascending: false }).limit(100);
         if (error) throw error;
-        return json(req, { ok: true, data: { notes: notes ?? [] } });
+        return json({ ok: true, data: { notes: notes ?? [] } });
       }
       if (action === 'tenant_note_add') {
         const note = str(body.body, 3000);
-        if (note.length < 1) return json(req, { error: 'bad_request' }, 400);
+        if (note.length < 1) return json({ error: 'bad_request' }, 400);
         const { error } = await admin.from('platform_tenant_notes').insert({ tenant_id: tenantId, body: note, created_by: actor, created_by_email: actorEmail });
         if (error) throw error;
         await admin.rpc('platform_log', { p_actor: actor, p_action: 'tenant.internal_note.add', p_tenant: tenantId, p_payload: { length: note.length } });
-        return json(req, { ok: true });
+        return json({ ok: true });
       }
       if (action === 'tenant_case_create') {
         const subject = str(body.subject, 200), category = str(body.category, 40), message = str(body.message, 3000);
-        if (subject.length < 3 || !['support','billing','technical','other'].includes(category)) return json(req, { error: 'bad_request' }, 400);
+        if (subject.length < 3 || !['support','billing','technical','other'].includes(category)) return json({ error: 'bad_request' }, 400);
         const { data: item, error } = await admin.from('platform_tenant_cases').insert({ tenant_id: tenantId, subject, category, status: 'open', created_by: actor, updated_by: actor, created_by_email: actorEmail, updated_by_email: actorEmail }).select('id').single();
         if (error || !item) throw error ?? new Error('operation_failed');
         const { error: eventError } = await admin.from('platform_tenant_case_events').insert({ tenant_id: tenantId, case_id: item.id, event_type: 'created', message: message || null, status: 'open', actor_id: actor, actor_email: actorEmail });
         if (eventError) throw eventError;
         await admin.rpc('platform_log', { p_actor: actor, p_action: 'tenant.support_case.create', p_tenant: tenantId, p_payload: { case_id: item.id, category } });
-        return json(req, { ok: true, data: { id: item.id } });
+        return json({ ok: true, data: { id: item.id } });
       }
       const caseId = uuidOf(body.case_id), status = str(body.status, 20), message = str(body.message, 3000);
-      if (!caseId || !['open','in_progress','resolved'].includes(status)) return json(req, { error: 'bad_request' }, 400);
+      if (!caseId || !['open','in_progress','resolved'].includes(status)) return json({ error: 'bad_request' }, 400);
       const { data: current } = await admin.from('platform_tenant_cases').select('id,status').eq('id', caseId).eq('tenant_id', tenantId).maybeSingle();
-      if (!current) return json(req, { error: 'not_found' }, 404);
+      if (!current) return json({ error: 'not_found' }, 404);
       const { error } = await admin.from('platform_tenant_cases').update({ status, updated_by: actor, updated_by_email: actorEmail, updated_at: new Date().toISOString() }).eq('id', caseId).eq('tenant_id', tenantId);
       if (error) throw error;
       if (status !== current.status || message) {
@@ -434,53 +435,53 @@ Deno.serve(async (req) => {
         if (eventError) throw eventError;
       }
       await admin.rpc('platform_log', { p_actor: actor, p_action: 'tenant.support_case.update', p_tenant: tenantId, p_payload: { case_id: caseId, before_status: current.status, after_status: status, message_added: !!message } });
-      return json(req, { ok: true });
+      return json({ ok: true });
     }
     if (action === 'impersonation_start') {
       const tenantId = uuidOf(body.tenant_id);
       const reason = str(body.reason, 500);
-      if (!tenantId || reason.length < 5) return json(req, { error: 'reason_required' }, 400);
+      if (!tenantId || reason.length < 5) return json({ error: 'reason_required' }, 400);
       const { data: tenant } = await admin.from('tenants').select('id,slug,config').eq('id', tenantId).maybeSingle();
-      if (!tenant) return json(req, { error: 'not_found' }, 404);
+      if (!tenant) return json({ error: 'not_found' }, 404);
       const { data: member } = await admin.from('tenant_members').select('user_id').eq('tenant_id', tenantId).eq('role','owner').limit(1).maybeSingle();
-      if (!member) return json(req, { error: 'owner_missing' }, 404);
+      if (!member) return json({ error: 'owner_missing' }, 404);
       const { data: ownerResult, error: ownerError } = await admin.auth.admin.getUserById(member.user_id);
-      if (ownerError || !ownerResult.user?.email) return json(req, { error: 'owner_missing' }, 404);
+      if (ownerError || !ownerResult.user?.email) return json({ error: 'owner_missing' }, 404);
       const now = new Date(); const expiresAt = new Date(now.getTime() + 30 * 60_000);
       const { data: sessionRow, error: insertError } = await admin.from('platform_impersonation_sessions').insert({ actor_id: actor, tenant_id: tenantId, reason, expires_at: expiresAt.toISOString() }).select('id').single();
-      if (insertError || !sessionRow) return json(req, { error: 'operation_failed' }, 500);
+      if (insertError || !sessionRow) return json({ error: 'operation_failed' }, 500);
       const { data: link, error: linkError } = await admin.auth.admin.generateLink({ type: 'magiclink', email: ownerResult.user.email });
       if (linkError || !link.properties?.hashed_token) {
         await admin.from('platform_impersonation_sessions').update({ ended_at: new Date().toISOString() }).eq('id',sessionRow.id);
-        return json(req, { error: 'operation_failed' }, 502);
+        return json({ error: 'operation_failed' }, 502);
       }
       const { data: ownerSession, error: verifyError } = await caller.auth.verifyOtp({ token_hash: link.properties.hashed_token, type: 'magiclink' });
       if (verifyError || !ownerSession.session) {
         await admin.from('platform_impersonation_sessions').update({ ended_at: new Date().toISOString() }).eq('id',sessionRow.id);
-        return json(req, { error: 'operation_failed' }, 502);
+        return json({ error: 'operation_failed' }, 502);
       }
       await admin.rpc('platform_log', { p_actor: actor, p_action: 'impersonation.start', p_tenant: tenantId, p_payload: { session_id: sessionRow.id, reason, expires_at: expiresAt.toISOString(), owner_email: ownerResult.user.email } });
       await admin.from('admin_audit_events').insert({ tenant_id:tenantId,actor_id:actor,entity:'support',entity_id:sessionRow.id,action:'support_started',details:{reason,expires_at:expiresAt.toISOString()} });
-      return json(req, { ok: true, data: { session_id: sessionRow.id, tenant_id: tenantId, tenant_slug: tenant.slug, tenant_name: obj(tenant.config).name, reason, expires_at: expiresAt.toISOString(), owner_session: ownerSession.session } });
+      return json({ ok: true, data: { session_id: sessionRow.id, tenant_id: tenantId, tenant_slug: tenant.slug, tenant_name: obj(tenant.config).name, reason, expires_at: expiresAt.toISOString(), owner_session: ownerSession.session } });
     }
     if (action === 'impersonation_check' || action === 'impersonation_end' || action === 'impersonation_log') {
       const sessionId = uuidOf(body.session_id);
-      if (!sessionId) return json(req, { error: 'bad_request' }, 400);
+      if (!sessionId) return json({ error: 'bad_request' }, 400);
       const { data: active } = await admin.from('platform_impersonation_sessions').select('id,tenant_id,reason,expires_at,ended_at,tenants(slug,config)').eq('id',sessionId).eq('actor_id',actor).maybeSingle();
-      if (!active || active.ended_at) return json(req, { error: 'impersonation_expired' }, 401);
+      if (!active || active.ended_at) return json({ error: 'impersonation_expired' }, 401);
       if (new Date(active.expires_at).getTime() <= Date.now()) {
         const endedAt=new Date().toISOString();
         await admin.from('platform_impersonation_sessions').update({ended_at:endedAt}).eq('id',sessionId).is('ended_at',null);
         await admin.rpc('platform_log',{p_actor:actor,p_action:'impersonation.expired',p_tenant:active.tenant_id,p_payload:{session_id:sessionId}});
         await admin.from('admin_audit_events').insert({tenant_id:active.tenant_id,actor_id:actor,entity:'support',entity_id:sessionId,action:'support_expired',details:{}});
-        return json(req, { error: 'impersonation_expired' }, 401);
+        return json({ error: 'impersonation_expired' }, 401);
       }
       if (action === 'impersonation_end') {
         const endedAt = new Date().toISOString();
         await admin.from('platform_impersonation_sessions').update({ ended_at: endedAt }).eq('id',sessionId);
         await admin.rpc('platform_log', { p_actor: actor, p_action: 'impersonation.end', p_tenant: active.tenant_id, p_payload: { session_id: sessionId } });
         await admin.from('admin_audit_events').insert({ tenant_id:active.tenant_id,actor_id:actor,entity:'support',entity_id:sessionId,action:'support_ended',details:{} });
-        return json(req, { ok: true });
+        return json({ ok: true });
       }
       if (action === 'impersonation_log') {
         await admin.rpc('platform_log', { p_actor: actor, p_action: 'impersonation.action', p_tenant: active.tenant_id, p_payload: { session_id: sessionId, action: str(body.owner_action, 80), succeeded: body.succeeded === true } });
@@ -489,87 +490,87 @@ Deno.serve(async (req) => {
         if(mutations.has(ownerAction)) await admin.from('admin_audit_events').insert({tenant_id:active.tenant_id,actor_id:actor,entity:'support',entity_id:sessionId,action:'support_action',details:{owner_action:ownerAction,succeeded:body.succeeded===true}});
       }
       const tenantValue = Array.isArray(active.tenants) ? active.tenants[0] : active.tenants;
-      return json(req, { ok: true, data: { tenant_id: active.tenant_id, tenant_slug: tenantValue?.slug, tenant_name: obj(tenantValue?.config).name, reason: active.reason, expires_at: active.expires_at } });
+      return json({ ok: true, data: { tenant_id: active.tenant_id, tenant_slug: tenantValue?.slug, tenant_name: obj(tenantValue?.config).name, reason: active.reason, expires_at: active.expires_at } });
     }
     if (action === 'admins') {
-      if (role !== 'owner') return json(req, { error: 'forbidden' }, 403);
+      if (role !== 'owner') return json({ error: 'forbidden' }, 403);
       const { data: rows, error } = await admin.from('platform_admins').select('user_id,role,is_active,created_at').order('created_at', { ascending: true });
-      if (error) return json(req, { error: 'operation_failed' }, 500);
+      if (error) return json({ error: 'operation_failed' }, 500);
       const data = await Promise.all((rows ?? []).map(async (row) => {
         const result = await admin.auth.admin.getUserById(row.user_id);
         return { ...row, email: result.data.user?.email ?? '' };
       }));
-      return json(req, { ok: true, data });
+      return json({ ok: true, data });
     }
     if (action === 'admin_add' || action === 'admin_update' || action === 'admin_disable' || action === 'admin_delete' || action === 'admin_reset_mfa') {
-      if (role !== 'owner') return json(req, { error: 'forbidden' }, 403);
+      if (role !== 'owner') return json({ error: 'forbidden' }, 403);
       const targetId = str(body.user_id, 40);
       const targetRole = str(body.role, 20);
       if (action === 'admin_add') {
         const email = str(body.email, 254).toLowerCase();
-        if (!EMAIL.test(email) || !['support','finance','read_only','owner'].includes(targetRole)) return json(req, { error: 'bad_request' }, 400);
+        if (!EMAIL.test(email) || !['support','finance','read_only','owner'].includes(targetRole)) return json({ error: 'bad_request' }, 400);
         let target = await findUserByEmail(admin, email);
         let created = false;
         if (!target) {
           const result = await admin.auth.admin.createUser({ email, email_confirm: true });
-          if (result.error || !result.data.user) return json(req, { error: 'operation_failed' }, 502);
+          if (result.error || !result.data.user) return json({ error: 'operation_failed' }, 502);
           target = result.data.user; created = true;
         }
         const { error } = await admin.from('platform_admins').upsert({ user_id: target.id, role: targetRole, is_active: true });
-        if (error) return json(req, { error: 'operation_failed' }, 500);
+        if (error) return json({ error: 'operation_failed' }, 500);
         const inviteSent = created && !!site && !(await caller.auth.resetPasswordForEmail(email, { redirectTo: `${site.replace(/\/$/, '')}/platform/admin` })).error;
         await admin.rpc('platform_log', { p_actor: actor, p_action: 'admin.add', p_tenant: null, p_payload: { target_user_id: target.id, target_email: email, role: targetRole, created, invite_sent: inviteSent } });
-        return json(req, { ok: true, created, invite_sent: inviteSent });
+        return json({ ok: true, created, invite_sent: inviteSent });
       }
-      if (!UUID.test(targetId) || targetId === actor) return json(req, { error: 'bad_request' }, 400);
+      if (!UUID.test(targetId) || targetId === actor) return json({ error: 'bad_request' }, 400);
       const targetUser = await admin.auth.admin.getUserById(targetId);
       const targetEmail = targetUser.data.user?.email ?? '';
       if (action === 'admin_update') {
-        if (!['owner','support','finance','read_only'].includes(targetRole)) return json(req, { error: 'bad_request' }, 400);
+        if (!['owner','support','finance','read_only'].includes(targetRole)) return json({ error: 'bad_request' }, 400);
         const { error } = await admin.from('platform_admins').update({ role: targetRole }).eq('user_id', targetId);
-        if (error) return json(req, { error: 'operation_failed' }, 500);
+        if (error) return json({ error: 'operation_failed' }, 500);
         await admin.rpc('platform_log', { p_actor: actor, p_action: 'admin.role_update', p_tenant: null, p_payload: { target_user_id: targetId, target_email: targetEmail, role: targetRole } });
       } else if (action === 'admin_disable') {
         const { error } = await admin.from('platform_admins').update({ is_active: false }).eq('user_id', targetId);
-        if (error) return json(req, { error: 'operation_failed' }, 500);
+        if (error) return json({ error: 'operation_failed' }, 500);
         await admin.rpc('platform_log', { p_actor: actor, p_action: 'admin.disable', p_tenant: null, p_payload: { target_user_id: targetId, target_email: targetEmail } });
       } else if (action === 'admin_delete') {
         const { data: targetRow } = await admin.from('platform_admins').select('role,is_active').eq('user_id', targetId).maybeSingle();
-        if (!targetRow) return json(req, { error: 'not_found' }, 404);
+        if (!targetRow) return json({ error: 'not_found' }, 404);
         if (targetRow.role === 'owner' && targetRow.is_active) {
           const { count } = await admin.from('platform_admins').select('user_id', { count: 'exact', head: true }).eq('role', 'owner').eq('is_active', true).neq('user_id', targetId);
-          if (!count) return json(req, { error: 'last_owner' }, 409);
+          if (!count) return json({ error: 'last_owner' }, 409);
         }
         // Убираем и подтверждения входа (Google Authenticator), чтобы при повторном добавлении настройка началась заново.
         const { data: oldFactors } = await admin.auth.admin.mfa.listFactors({ userId: targetId });
         for (const factor of oldFactors?.factors ?? []) await admin.auth.admin.mfa.deleteFactor({ id: factor.id, userId: targetId }).catch(() => undefined);
         const { error } = await admin.from('platform_admins').delete().eq('user_id', targetId);
-        if (error) return json(req, { error: 'operation_failed' }, 500);
+        if (error) return json({ error: 'operation_failed' }, 500);
         await admin.rpc('platform_log', { p_actor: actor, p_action: 'admin.delete', p_tenant: null, p_payload: { target_user_id: targetId, target_email: targetEmail } });
       } else {
         const { data: factors, error: factorsError } = await admin.auth.admin.mfa.listFactors({ userId: targetId });
-        if (factorsError) return json(req, { error: 'operation_failed' }, 500);
+        if (factorsError) return json({ error: 'operation_failed' }, 500);
         for (const factor of factors.factors) {
           const { error } = await admin.auth.admin.mfa.deleteFactor({ id: factor.id, userId: targetId });
-          if (error) return json(req, { error: 'operation_failed' }, 500);
+          if (error) return json({ error: 'operation_failed' }, 500);
         }
         await admin.rpc('platform_log', { p_actor: actor, p_action: 'admin.mfa_reset', p_tenant: null, p_payload: { target_user_id: targetId, target_email: targetEmail, factors_removed: factors.factors.length } });
       }
-      return json(req, { ok: true });
+      return json({ ok: true });
     }
     let rpc: { name: string; args: Record<string, unknown> } | null = null;
     switch (action) {
       case 'dashboard': rpc = { name: 'platform_dashboard', args: { p_actor: actor } }; break;
       case 'tenants': rpc = { name: 'platform_list_tenants', args: { p_actor: actor, p_search: str(body.search, 80) || null, p_phase: str(body.phase, 20) || null, p_plan: str(body.plan, 20) || null, p_limit: Number(body.limit) || 50, p_offset: Number(body.offset) || 0 } }; break;
-      case 'tenant': { const id = uuidOf(body.tenant_id); if (!id) return json(req, { error: 'bad_request' }, 400); rpc = { name: 'platform_tenant_card', args: { p_actor: actor, p_tenant: id } }; break; }
-      case 'tenant_events': { const id = uuidOf(body.tenant_id); if (!id) return json(req, { error: 'bad_request' }, 400); rpc = { name: 'platform_tenant_events', args: { p_actor: actor, p_tenant: id, p_limit: Number(body.limit) || 50, p_offset: Math.max(0, Number(body.offset) || 0) } }; break; }
+      case 'tenant': { const id = uuidOf(body.tenant_id); if (!id) return json({ error: 'bad_request' }, 400); rpc = { name: 'platform_tenant_card', args: { p_actor: actor, p_tenant: id } }; break; }
+      case 'tenant_events': { const id = uuidOf(body.tenant_id); if (!id) return json({ error: 'bad_request' }, 400); rpc = { name: 'platform_tenant_events', args: { p_actor: actor, p_tenant: id, p_limit: Number(body.limit) || 50, p_offset: Math.max(0, Number(body.offset) || 0) } }; break; }
       case 'tenant_limits_set': {
-        const id=uuidOf(body.tenant_id); if(!id||role!=='owner')return json(req,{error:'forbidden'},403);
+        const id=uuidOf(body.tenant_id); if(!id||role!=='owner')return json({error:'forbidden'},403);
         rpc={name:'platform_set_tenant_plan_override',args:{p_actor:actor,p_tenant:id,p_limits:obj(body.limits),p_features:obj(body.features),p_reason:str(body.reason,500)}}; break;
       }
       case 'tenant_lifecycle': {
         const id=uuidOf(body.tenant_id), action=str(body.lifecycle_action,30), reason=str(body.reason,500);
-        if(!id||role!=='owner'||reason.length<5)return json(req,{error:'forbidden'},403);
+        if(!id||role!=='owner'||reason.length<5)return json({error:'forbidden'},403);
         rpc={name:'platform_tenant_lifecycle',args:{p_actor:actor,p_tenant:id,p_action:action,p_reason:reason}};break;
       }
       case 'billing_documents': rpc={name:'platform_billing_documents_list',args:{p_actor:actor,p_tenant:uuidOf(body.tenant_id)}};break;
@@ -588,50 +589,50 @@ Deno.serve(async (req) => {
       case 'settings_set': rpc = { name: 'platform_set_setting', args: { p_actor: actor, p_key: str(body.key, 40), p_value: body.value ?? null } }; break;
       case 'sync': rpc = { name: 'platform_sync_subscriptions', args: {} }; break;
       case 'subscription_create': {
-        const id = uuidOf(body.tenant_id); if (!id || !needKey()) return json(req, { error: 'bad_request' }, 400);
+        const id = uuidOf(body.tenant_id); if (!id || !needKey()) return json({ error: 'bad_request' }, 400);
         rpc = { name: 'platform_create_subscription', args: { p_actor: actor, p_key: idem, p_tenant: id, p: obj(body.subscription) } }; break;
       }
       case 'subscription_action': {
-        const id = uuidOf(body.subscription_id); if (!id || !needKey()) return json(req, { error: 'bad_request' }, 400);
+        const id = uuidOf(body.subscription_id); if (!id || !needKey()) return json({ error: 'bad_request' }, 400);
         const type=str(body.type,20), data=obj(body.data);
-        if(type==='cancel'&&str(data.reason,500).length<5)return json(req,{error:'reason_required'},400);
+        if(type==='cancel'&&str(data.reason,500).length<5)return json({error:'reason_required'},400);
         rpc = { name: 'platform_subscription_action', args: { p_actor: actor, p_key: idem, p_sub: id, p_action: type, p: data } }; break;
       }
       case 'payment_create': {
         const id = uuidOf(body.tenant_id); const pay = obj(body.payment);
-        if (!id || !needKey() || !(Number(pay.amount_kzt) > 0)) return json(req, { error: 'bad_request' }, 400);
+        if (!id || !needKey() || !(Number(pay.amount_kzt) > 0)) return json({ error: 'bad_request' }, 400);
         rpc = { name: 'platform_create_payment', args: { p_actor: actor, p_key: idem, p_tenant: id, p: pay } }; break;
       }
-      case 'payment_confirm': { const id = uuidOf(body.payment_id); if (!id) return json(req, { error: 'bad_request' }, 400); rpc = { name: 'platform_confirm_payment', args: { p_actor: actor, p_payment: id } }; break; }
-      case 'payment_refund': { const id = uuidOf(body.payment_id); if (!id) return json(req, { error: 'bad_request' }, 400); rpc = { name: 'platform_refund_payment', args: { p_actor: actor, p_payment: id, p_reason: str(body.reason, 300) } }; break; }
-      case 'payment_fail': { const id = uuidOf(body.payment_id); if (!id) return json(req, { error: 'bad_request' }, 400); rpc = { name: 'platform_fail_payment', args: { p_actor: actor, p_payment: id, p_reason: str(body.reason, 300) || null } }; break; }
+      case 'payment_confirm': { const id = uuidOf(body.payment_id); if (!id) return json({ error: 'bad_request' }, 400); rpc = { name: 'platform_confirm_payment', args: { p_actor: actor, p_payment: id } }; break; }
+      case 'payment_refund': { const id = uuidOf(body.payment_id); if (!id) return json({ error: 'bad_request' }, 400); rpc = { name: 'platform_refund_payment', args: { p_actor: actor, p_payment: id, p_reason: str(body.reason, 300) } }; break; }
+      case 'payment_fail': { const id = uuidOf(body.payment_id); if (!id) return json({ error: 'bad_request' }, 400); rpc = { name: 'platform_fail_payment', args: { p_actor: actor, p_payment: id, p_reason: str(body.reason, 300) || null } }; break; }
 
       case 'create_tenant': {
         const t = obj(body.tenant);
         const email = str(t.owner_email, 254).toLowerCase();
         const slug = str(t.slug, 40).toLowerCase();
-        if (!needKey() || !EMAIL.test(email) || !/^[a-z0-9-]{2,40}$/.test(slug) || str(t.name, 80).length < 2) return json(req, { error: 'bad_request' }, 400);
+        if (!needKey() || !EMAIL.test(email) || !/^[a-z0-9-]{2,40}$/.test(slug) || str(t.name, 80).length < 2) return json({ error: 'bad_request' }, 400);
         const limit = await admin.rpc('consume_platform_rate', { p_scope: 'platform_admin', p_key: `create:${actor}`, p_limit: 30, p_window: 3600 });
-        if (limit.error) return json(req, { error: 'temporarily_unavailable' }, 503);
-        if (limit.data !== true) return json(req, { error: 'rate_limited' }, 429);
+        if (limit.error) return json({ error: 'temporarily_unavailable' }, 503);
+        if (limit.data !== true) return json({ error: 'rate_limited' }, 429);
 
         // владелец: привязываем существующего пользователя или создаём нового (Auth Admin API)
         let owner = await findUserByEmail(admin, email);
         let createdUser = false;
         if (!owner) {
           const created = await admin.auth.admin.createUser({ email, email_confirm: true, user_metadata: { full_name: str(t.owner_name, 120) } });
-          if (created.error || !created.data.user) return json(req, { error: 'owner_create_failed' }, 502);
+          if (created.error || !created.data.user) return json({ error: 'owner_create_failed' }, 502);
           owner = created.data.user; createdUser = true;
         }
         const { data, error } = await admin.rpc('platform_create_tenant', { p_actor: actor, p_key: idem, p: { ...t, slug, owner_email: email, owner_user_id: owner.id } });
         if (error) {
           // транзакция в БД откатилась целиком; созданный пользователь переиспользуется при повторе
           const code = KNOWN.find((k) => error.message?.includes(k));
-          if (code) return json(req, { error: code }, ERROR_STATUS[code] ?? 400);
+          if (code) return json({ error: code }, ERROR_STATUS[code] ?? 400);
           console.error('create_tenant failed:', error.message);
-          return json(req, { error: 'operation_failed' }, 500);
+          return json({ error: 'operation_failed' }, 500);
         }
-        if (!(await ensureOwnerMembership(admin, String((data as { tenant_id?: string }).tenant_id), owner.id))) return json(req, { error: 'operation_failed' }, 500);
+        if (!(await ensureOwnerMembership(admin, String((data as { tenant_id?: string }).tenant_id), owner.id))) return json({ error: 'operation_failed' }, 500);
         // приглашение: письмо для установки пароля (только для вновь созданного пользователя)
         let invited = false;
         if (createdUser && site) {
@@ -639,12 +640,12 @@ Deno.serve(async (req) => {
           invited = !inviteError;
           if (inviteError) console.error('invite failed:', inviteError.message);
         }
-        return json(req, { ...(data as object), owner_user_id: owner.id, owner_created: createdUser, invite_sent: invited });
+        return json({ ...(data as object), owner_user_id: owner.id, owner_created: createdUser, invite_sent: invited });
       }
 
       case 'resend_invite': {
         const email = str(body.email, 254).toLowerCase(); const slug = str(body.slug, 40).toLowerCase();
-        if (!EMAIL.test(email) || !/^[a-z0-9-]{2,40}$/.test(slug) || !site) return json(req, { error: 'bad_request' }, 400);
+        if (!EMAIL.test(email) || !/^[a-z0-9-]{2,40}$/.test(slug) || !site) return json({ error: 'bad_request' }, 400);
         const { error } = await caller.auth.resetPasswordForEmail(email, { redirectTo: `${site.replace(/\/$/, '')}/s/${slug}/owner` });
         await admin.rpc('platform_log', { p_actor: actor, p_action: 'owner.resend_invite', p_tenant: null, p_payload: { email, slug, sent: !error } });
         if (error) {
@@ -654,23 +655,23 @@ Deno.serve(async (req) => {
             : /redirect|validation_failed/.test(detail) ? 'invite_redirect_not_allowed'
             : /email_address_not_authorized|smtp|email_provider_disabled/.test(detail) ? 'invite_email_provider_error'
             : 'invite_email_failed';
-          return json(req, { error: reason }, 502);
+          return json({ error: reason }, 502);
         }
-        return json(req, { ok: true });
+        return json({ ok: true });
       }
-      default: return json(req, { error: 'unknown_action' }, 400);
+      default: return json({ error: 'unknown_action' }, 400);
     }
 
     const { data, error } = await admin.rpc(rpc.name, rpc.args);
     if (error) {
       const code = KNOWN.find((k) => error.message?.includes(k));
-      if (code) return json(req, { error: code }, ERROR_STATUS[code] ?? 400);
+      if (code) return json({ error: code }, ERROR_STATUS[code] ?? 400);
       console.error(`${action} failed:`, error.message);
-      return json(req, { error: 'operation_failed' }, 500);
+      return json({ error: 'operation_failed' }, 500);
     }
-    return json(req, { ok: true, data });
+    return json({ ok: true, data });
   } catch (e) {
     console.error('platform-admin error:', (e as Error).message);
-    return json(req, { error: 'temporarily_unavailable' }, 503);
+    return json({ error: 'temporarily_unavailable' }, 503);
   }
-});
+}));

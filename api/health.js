@@ -7,18 +7,21 @@ async function check(key, label, url, init = {}) {
   if (!url) return { key, label, state: 'unknown' };
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 4500);
+  const started = Date.now();
   try {
     const response = await fetch(url, { ...init, signal: controller.signal, cache: 'no-store' });
     return {
       key,
       label,
       state: response.ok ? 'operational' : 'down',
+      latency_ms: Date.now() - started,
     };
   } catch {
     return {
       key,
       label,
       state: 'down',
+      latency_ms: Date.now() - started,
     };
   } finally {
     clearTimeout(timeout);
@@ -36,7 +39,9 @@ function resolveSiteUrl(req) {
   return '';
 }
 
-export default async function handler(req, res) {
+import { withObservability } from './_observability.js';
+
+async function handler(req, res) {
   res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=30, stale-while-revalidate=30');
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   if (req.method !== 'GET') {
@@ -69,3 +74,5 @@ export default async function handler(req, res) {
     checks,
   });
 }
+
+export default withObservability(handler, { name: 'health' });

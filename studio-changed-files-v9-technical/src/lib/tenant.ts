@@ -1,0 +1,45 @@
+import { z } from 'zod';
+import { supabase } from './supabase';
+const Card = z.object({ title: z.string(), text: z.string() });
+const defaultImage = '/servio-default.svg';
+const defaultCards = {
+  booking: { title: 'Запись на обслуживание', text: 'Выберите услугу и удобное время.' },
+  catalog: { title: 'Услуги студии', text: 'Посмотрите услуги и цены.' },
+  install: { title: 'Сохраните сайт студии', text: 'Добавьте его на экран телефона для быстрого доступа.' },
+};
+export const Business = z.object({
+  slug: z.string(), name: z.string(), short_name: z.string().default('Автосервис'), accent: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  timezone: z.string(), currency: z.string(), route_url: z.string().optional(), client_profile: z.boolean().optional(), client_telegram_enabled: z.boolean().optional(),
+  legal: z.object({ name: z.string(), bin: z.string(), address: z.string(), email: z.string(), storage: z.string(), processors: z.string(), retention: z.string(), retention_days:z.number().int().min(1).max(36500).nullable().optional() }).partial().optional(), phone: z.string(), address: z.string(), description: z.string(),
+  demo: z.boolean().optional(),
+  images: z.object({ logo: z.string().default(defaultImage), hero: z.string().default(defaultImage) })
+    .default({ logo: defaultImage, hero: defaultImage }),
+  gallery: z.array(z.object({ image: z.string(), caption: z.string() })).default([]),
+  cards: z.object({
+    booking: Card.default(defaultCards.booking),
+    catalog: Card.default(defaultCards.catalog),
+    install: Card.default(defaultCards.install),
+  }).default(defaultCards),
+  resources: z.array(z.string()).default([]),
+  buffer_minutes: z.number().int().min(0).max(240).optional(),
+  slot_minutes: z.number().int().min(5).max(240).optional(),
+  cancel_hours: z.number().int().min(0).max(168).optional(),
+  reschedule_hours: z.number().int().min(0).max(168).optional(),
+  client_reschedule_enabled: z.boolean().optional(),
+  breaks: z.record(z.string(), z.array(z.tuple([z.string(), z.string()])).nullable()).default({}),
+  hours: z.record(z.string(), z.tuple([z.string(), z.string()]).nullable()).default({}),
+  services: z.array(z.object({ name: z.string(), category: z.string().optional(), price: z.number(), duration_minutes: z.number(), price_from: z.boolean().optional() })).default([]),
+});
+export type Business = z.infer<typeof Business>;
+// Runtime-источник — БД (владелец правит настройки в кабинете). Статический JSON — запасной вариант, если БД недоступна.
+export async function loadBusiness(slug: string): Promise<Business> {
+  try {
+    const { data, error } = await supabase.from('tenants').select('config').eq('slug', slug).maybeSingle();
+    if (!error && data) return Business.parse(data.config);
+  } catch { /* падаем на статический конфиг */ }
+  const r = await fetch(`/tenants/${slug}.json`);
+  if (!r.ok) throw new Error('Студия не найдена');
+  return Business.parse(await r.json());
+}
+export type Ctx = { b: Business; openBooking: (service?: string) => void };
+export const assetUrl = (slug: string, p: string) => (/^(https?:|\/)/.test(p) ? p : `/tenants/${slug}/${p}`);

@@ -1,0 +1,419 @@
+@use '../../styles/variables' as *;
+
+/* ---------- Полоса фактов ---------- */
+.trust {
+  background: $color-dark;
+  color: #fff;
+
+  .trust__list {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px 32px;
+    padding-top: 36px;
+    padding-bottom: 36px;
+  }
+
+  &__item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-left: 16px;
+    border-left: 2px solid rgba(255, 255, 255, 0.18);
+
+    b {
+      font-size: 24px;
+      line-height: 1.2;
+    }
+
+    span {
+      color: #94a3b8;
+      font-size: 14px;
+    }
+  }
+
+  @media (max-width: 1023px) {
+    .trust__list {
+      grid-template-columns: repeat(2, 1fr);
+      gap: 24px 20px;
+    }
+  }
+
+  @include mobile {
+    .trust__list {
+      padding-top: 28px;
+      padding-bottom: 28px;
+    }
+
+    &__item b {
+      font-size: 20px;
+    }
+  }
+}
+
+/* ---------- Для кого ---------- */
+.audience {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+
+  &__card {
+    display: flex;
+    flex-direction: column;
+    padding: 28px 24px;
+    background: #fff;
+    border: 1px solid $color-border;
+    border-radius: $radius;
+    box-shadow: $shadow;
+    transition: transform 0.2s, border-color 0.2s;
+
+    &:hover {
+      border-color: rgba(31, 79, 216, 0.4);
+      transform: translateY(-3px);
+    }
+
+    h3 {
+      margin: 20px 0 10px;
+      font-size: 20px;
+    }
+
+    p {
+      color: $color-text-muted;
+      font-size: 15px;
+      line-height: 1.55;
+    }
+
+    ul {
+      flex: 1;
+      margin: 18px 0 24px;
+      padding-top: 18px;
+      border-top: 1px solid $color-border;
+      display: grid;
+      align-content: start;
+      gap: 10px;
+    }
+
+    li {
+      position: relative;
+      padding-left: 22px;
+      font-size: 14px;
+
+      &::before {
+        content: '✓';
+        position: absolute;
+        left: 0;
+        color: $color-accent;
+        font-weight: 700;
+      }
+    }
+  }
+
+  &__icon {
+    display: grid;
+    place-items: center;
+    width: 52px;
+    height: 52px;
+    font-size: 26px;
+    background: linear-gradient(135deg, #e8eefc, #d5f3f2);
+    border-radius: 14px;
+  }
+
+  &__link {
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+
+  @media (max-width: 1023px) {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  @include mobile {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------- Возможности ---------- */
+.highlights {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+
+  &__item {
+    padding: 26px;
+    background: #fff;
+    border: 1px solid $color-border;
+    border-radius: $radius;
+    transition: box-shadow 0.2s, transform 0.2s;
+
+    &:hover {
+      box-shadow: $shadow;
+      transform: translateY(-2px);
+    }
+
+    h3 {
+      margin: 14px 0 8px;
+      font-size: 18px;
+    }
+
+    p {
+      color: $color-text-muted;
+      font-size: 15px;
+    }
+  }
+
+  &__icon {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    font-size: 22px;
+    background: #eef3ff;
+    border-radius: 12px;
+  }
+
+  &__more {
+    margin-top: 44px;
+    text-align: center;
+  }
+
+  @media (min-width: 768px) and (max-width: 1023px) {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  @include mobile {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------- Было / стало ---------- */
+.compare {
+  max-width: 980px;
+  margin: 0 auto;
+  overflow: hidden;
+  border: 1px solid $color-border;
+  border-radius: $radius;
+  box-shadow: $shadow;
+
+  &__head,
+  &__row {
+    display: grid;
+    grid-template-columns: 0.8fr 1.1fr 1.1fr;
+    gap: 16px;
+    align-items: center;
+    padding: 16px 24px;
+  }
+
+  &__head {
+    color: $color-text-muted;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    background: $color-bg-alt;
+
+    .is-after {
+      color: $color-primary;
+    }
+  }
+
+  &__row {
+    border-top: 1px solid $color-border;
+    font-size: 15px;
+  }
+
+  &__before {
+    color: $color-text-muted;
+  }
+
+  &__before::before {
+    content: '✕';
+    margin-right: 10px;
+    color: #ef4444;
+    font-weight: 700;
+  }
+
+  &__after {
+    font-weight: 500;
+  }
+
+  &__after::before {
+    content: '✓';
+    margin-right: 10px;
+    color: $color-accent;
+    font-weight: 700;
+  }
+
+  @include mobile {
+    &__head {
+      display: none;
+    }
+
+    &__row {
+      grid-template-columns: 1fr;
+      gap: 6px;
+      padding: 18px 20px;
+    }
+  }
+}
+
+/* ---------- Калькулятор ---------- */
+.roi {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  gap: 32px;
+  max-width: 1040px;
+  margin: 0 auto;
+
+  &__form,
+  &__result {
+    padding: 32px;
+    background: #fff;
+    border: 1px solid $color-border;
+    border-radius: $radius;
+    box-shadow: $shadow;
+  }
+
+  &__form {
+    display: grid;
+    gap: 24px;
+  }
+
+  &__field > label {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  &__control {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+
+    > input[type='range'] {
+      flex: 1;
+      min-width: 0;
+      accent-color: $color-primary;
+    }
+  }
+
+  &__input {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 0 0 auto;
+
+    input {
+      width: 96px;
+      height: 40px;
+      padding: 0 10px;
+      text-align: right;
+      border: 1px solid $color-border;
+      border-radius: 8px;
+    }
+
+    em {
+      min-width: 24px;
+      color: $color-text-muted;
+      font-size: 13px;
+      font-style: normal;
+    }
+  }
+
+  &__result {
+    background: linear-gradient(160deg, #0f172a, #1b2c63);
+    border: 0;
+    color: #fff;
+  }
+
+  &__label {
+    color: #94a3b8;
+    font-size: 14px;
+  }
+
+  &__big {
+    margin: 4px 0 20px;
+    font-size: 40px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+  }
+
+  &__rows {
+    display: grid;
+    gap: 10px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+
+    li {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      font-size: 14px;
+
+      span {
+        color: #cbd5e1;
+      }
+    }
+  }
+
+  &__verdict {
+    margin: 18px 0;
+    color: #cbd5e1;
+    font-size: 15px;
+
+    &.is-plus {
+      color: #5eead4;
+      font-weight: 600;
+    }
+  }
+
+  &__cta.btn {
+    width: 100%;
+    color: #fff;
+
+    &:hover {
+      color: #fff;
+    }
+  }
+
+  &__note {
+    margin-top: 14px;
+    color: #94a3b8;
+    font-size: 12px;
+  }
+
+  @media (max-width: 1023px) {
+    grid-template-columns: 1fr;
+  }
+
+  @include mobile {
+    &__form,
+    &__result {
+      padding: 22px;
+    }
+
+    &__big {
+      font-size: 32px;
+    }
+
+    &__control {
+      flex-wrap: wrap;
+    }
+  }
+}
+
+/* ---------- Появление при прокрутке ---------- */
+.reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+
+  &.is-visible {
+    opacity: 1;
+    transform: none;
+  }
+}

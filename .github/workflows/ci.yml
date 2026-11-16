@@ -35,6 +35,9 @@ jobs:
       - name: Format check
         run: npm run format:check
 
+      - name: Migration checks
+        run: npm run check:migrations
+
       - name: Typecheck
         run: npm run typecheck
 

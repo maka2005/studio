@@ -1,3 +1,5 @@
+import { withObservability } from './_observability.js';
+
 const SECURE_COOKIE = process.env.NODE_ENV === 'production';
 const ACCESS = SECURE_COOKIE ? '__Host-studio_owner_access' : 'studio_owner_access';
 const REFRESH = SECURE_COOKIE ? '__Host-studio_owner_refresh' : 'studio_owner_refresh';
@@ -220,7 +222,7 @@ const platformAction = async (cfg, adminToken, action, body = {}) => {
 
 export const config = { api: { bodyParser: false } };
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (!originAllowed(req)) {
     return send(res, 403, { error: 'forbidden' });
   }
@@ -807,8 +809,10 @@ export default async function handler(req, res) {
     const message = error instanceof SyntaxError ? 'bad_request' : 'internal_error';
     const status = message === 'bad_request' ? 400 : 500;
     if (status === 500) {
-      console.error('owner api error:', error?.message || error);
+      console.error(JSON.stringify({ level: 'error', at: new Date().toISOString(), service: 'vercel-api', handler: 'owner', request_id: req.requestId, event: 'owner_api_error', error: String(error?.message || error).slice(0, 500) }));
     }
     return send(res, status, { error: message });
   }
 }
+
+export default withObservability(handler, { name: 'owner' });

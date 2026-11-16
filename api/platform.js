@@ -1,3 +1,5 @@
+import { withObservability } from './_observability.js';
+
 const COOKIE = process.env.NODE_ENV === 'production' ? '__Host-platform_admin' : 'platform_admin';
 const IDLE_SECONDS = 30 * 60;
 const SECURE = process.env.NODE_ENV === 'production';
@@ -163,7 +165,7 @@ const edge = async (cfg, token, action, body = {}) => {
 
 export const config = { api: { bodyParser: false } };
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (!originAllowed(req)) {
     return send(res, 403, { error: 'forbidden' });
   }
@@ -485,7 +487,10 @@ export default async function handler(req, res) {
     }
 
     return send(res, 404, { error: 'not_found' });
-  } catch {
+  } catch (error) {
+    console.warn(JSON.stringify({ level: 'warn', at: new Date().toISOString(), service: 'vercel-api', handler: 'platform', request_id: req.requestId, event: 'platform_api_error', error: String(error?.message || error).slice(0, 500) }));
     return send(res, 400, { error: 'bad_request' });
   }
 }
+
+export default withObservability(handler, { name: 'platform' });

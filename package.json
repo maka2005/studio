@@ -23,7 +23,8 @@
     "tenant:validate": "node scripts/tenant.mjs validate",
     "tenant:build": "node scripts/tenant.mjs build",
     "tenant:sql": "node scripts/tenant.mjs sql",
-    "prerender": "node scripts/prerender-marketing.mjs"
+    "prerender": "node scripts/prerender-marketing.mjs",
+    "check:migrations": "node scripts/check-migrations.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
