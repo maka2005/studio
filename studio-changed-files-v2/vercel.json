@@ -1,0 +1,62 @@
+{
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Content-Security-Policy-Report-Only",
+          "value": "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' https://challenges.cloudflare.com https://mc.yandex.ru https://www.googletagmanager.com https://www.google-analytics.com https://browser.sentry-cdn.com https://js.sentry-cdn.com; frame-src https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data: https:; connect-src 'self' https://ezqelrhialezszepehco.supabase.co wss://ezqelrhialezszepehco.supabase.co https://mc.yandex.ru https://mc.yandex.com https://www.google-analytics.com https://region1.google-analytics.com https://*.ingest.sentry.io https://*.sentry.io; worker-src 'self' blob:; manifest-src 'self'; report-uri /api/csp-report"
+        },
+        {
+          "key": "Strict-Transport-Security",
+          "value": "max-age=63072000; includeSubDomains"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/assets/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
+    {
+      "source": "/(favicon.svg|og-image.png)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=86400"
+        }
+      ]
+    }
+  ],
+  "rewrites": [
+    { "source": "/features", "destination": "/features/index.html" },
+    { "source": "/features/", "destination": "/features/index.html" },
+    { "source": "/pricing", "destination": "/pricing/index.html" },
+    { "source": "/pricing/", "destination": "/pricing/index.html" },
+    { "source": "/contact", "destination": "/contact/index.html" },
+    { "source": "/contact/", "destination": "/contact/index.html" },
+    { "source": "/privacy", "destination": "/privacy/index.html" },
+    { "source": "/privacy/", "destination": "/privacy/index.html" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
