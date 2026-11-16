@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ownerRequest } from '../../lib/ownerSession'
-import { owner, type OwnerBillingNotification } from '../../lib/api'
+import { fetchServices, owner, type OwnerBillingNotification } from '../../lib/api'
 import { LoadingScreen } from '../../components/LoadingScreen'
 import type { Business } from '../../lib/tenant'
 import { ExportButton, TAB_GROUPS, TAB_LABELS, TABS, billingEventDetail, billingEventTitle } from './shared'
@@ -10,6 +10,120 @@ import { MyAccess, TeamAccess, TeamResources } from './team'
 import { AuditHistory, Promos, Reports, Reviews, WaitlistAdmin } from './reports'
 import { Services } from './services'
 import { Docs, Media, Notify, Settings } from './settings'
+
+function hasWorkingHours(hours: Business['hours']) {
+  return Object.values(hours || {}).some((slot) => Array.isArray(slot) && slot[0] && slot[1])
+}
+
+function OnboardingChecklist({
+  b,
+  role,
+  onGo,
+}: {
+  b: Business
+  role?: string
+  onGo: (tab: (typeof TABS)[number]) => void
+}) {
+  const services = useQuery({
+    queryKey: ['owner', 'onboarding-services', b.slug],
+    queryFn: () => fetchServices(b.slug),
+    enabled: role === 'owner' || role === 'manager',
+    retry: false,
+    staleTime: 30_000,
+  })
+  const telegram = useQuery({
+    queryKey: ['owner', 'telegram', b.slug],
+    queryFn: () => owner.telegramLinks(b.slug),
+    enabled: role === 'owner' || role === 'manager',
+    retry: false,
+    staleTime: 30_000,
+  })
+
+  const items = useMemo(() => {
+    const addressDone = !!b.address?.trim()
+    const scheduleDone = hasWorkingHours(b.hours)
+    const servicesDone = (services.data?.length ?? 0) > 0
+    const telegramDone = (telegram.data?.length ?? 0) > 0
+    return [
+      {
+        key: 'services',
+        title: 'Услуги',
+        done: servicesDone,
+        loading: services.isPending,
+        error: services.isError,
+        hint: servicesDone ? 'Добавлены активные услуги.' : 'Добавьте хотя бы одну услугу с ценой и длительностью.',
+        action: () => onGo('Услуги'),
+        actionLabel: 'К услугам',
+      },
+      {
+        key: 'schedule',
+        title: 'Расписание',
+        done: scheduleDone,
+        loading: false,
+        error: false,
+        hint: scheduleDone ? 'Рабочие часы настроены.' : 'Укажите рабочие дни и часы, чтобы клиенты могли записываться.',
+        action: () => onGo('Настройки'),
+        actionLabel: 'К настройкам',
+      },
+      {
+        key: 'telegram',
+        title: 'Telegram',
+        done: telegramDone,
+        loading: telegram.isPending,
+        error: telegram.isError,
+        hint: telegramDone ? 'Telegram подключён для уведомлений.' : 'Подключите Telegram, чтобы получать уведомления о записях.',
+        action: () => onGo('Уведомления'),
+        actionLabel: 'К уведомлениям',
+      },
+      {
+        key: 'address',
+        title: 'Адрес',
+        done: addressDone,
+        loading: false,
+        error: false,
+        hint: addressDone ? 'Адрес заполнен.' : 'Добавьте адрес, чтобы клиентам было проще вас найти.',
+        action: () => onGo('Настройки'),
+        actionLabel: 'К настройкам',
+      },
+    ]
+  }, [b.address, b.hours, onGo, services.data, services.isError, services.isPending, telegram.data, telegram.isError, telegram.isPending])
+
+  if (role !== 'owner' && role !== 'manager') return null
+  const doneCount = items.filter((i) => i.done).length
+  if (doneCount === items.length) return null
+
+  return (
+    <section className="card col" aria-label="Онбординг-чеклист" style={{ gap: 12 }}>
+      <div className="row between wrap">
+        <div>
+          <p className="admin-eyebrow">Начало работы</p>
+          <h2>Чеклист настройки студии</h2>
+          <p className="muted small">Заполните основные разделы, чтобы клиенты могли записываться и получать информацию.</p>
+        </div>
+        <b>{doneCount}/{items.length}</b>
+      </div>
+      <div className="col" style={{ gap: 10 }}>
+        {items.map((item) => (
+          <div key={item.key} className="row between wrap" style={{ gap: 8, alignItems: 'flex-start' }}>
+            <div style={{ flex: '1 1 240px' }}>
+              <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+                <span aria-hidden="true">{item.done ? '✓' : item.loading ? '…' : '○'}</span>
+                <b>{item.title}</b>
+                {item.error && !item.loading && <span className="muted small">(не удалось проверить)</span>}
+              </div>
+              <p className="muted small" style={{ margin: '4px 0 0' }}>{item.hint}</p>
+            </div>
+            {!item.done && (
+              <button type="button" className="btn ghost mini" onClick={item.action}>
+                {item.actionLabel}
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
 
 // Статус подписки для владельца. Если запрос не удался (например, не разрешён прокси), баннер просто не показывается.
 export function SubscriptionBanner({ slug, canRespond, latestSuspension }: { slug: string; canRespond: boolean; latestSuspension?: OwnerBillingNotification }) {
@@ -172,6 +286,7 @@ export function Cabinet({ b, onLogout, impersonation }: { b: Business; onLogout:
           Выйти
         </button>
       </div>
+      <OnboardingChecklist b={b} role={role ?? undefined} onGo={setTab} />
       {platformAnnouncements.data?.filter(a=>!dismissedAnnouncements.includes(a.id)).map(a=><aside className="owner-subscription-alert card owner-platform-announcement" key={a.id}><div><b>{a.title}</b><p>{a.body}</p></div><button className="owner-announcement-dismiss" type="button" aria-label={`Скрыть уведомление: ${a.title}`} onClick={()=>dismissAnnouncement(a.id)}>Скрыть</button></aside>)}
       {Object.entries(platformFlags.data??{}).some(([,enabled])=>enabled)&&<aside className="owner-account-card card"><b>Для вашей студии доступны новые возможности</b><p className="muted small">{Object.entries(platformFlags.data??{}).filter(([,enabled])=>enabled).map(([key])=>key).join(' · ')}</p></aside>}
       <div className="admin-layout">

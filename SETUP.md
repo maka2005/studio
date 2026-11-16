@@ -1,13 +1,13 @@
 # Запуск
 
 ## Локально
-1. `pnpm install`
-2. `pnpm tenant:validate graphite`, затем `pnpm dev` (перед стартом собирается `public/tenants/`).
+1. `npm install`
+2. `npm run tenant:validate -- graphite`, затем `npm run dev` (перед стартом собирается `public/tenants/`).
 3. Скопируйте `.env.example` в `.env.local` и заполните `VITE_SUPABASE_*`.
 
 ## Supabase
-1. SQL Editor, по порядку выполните все ещё не применённые миграции `supabase/migrations/0001_core.sql`–`0012_reuse_telegram_link_code.sql`. Если проект уже обновлялся по предыдущей инструкции, примените `0012_reuse_telegram_link_code.sql`.
-2. Сид студии: `pnpm tenant:sql graphite`, затем выполнить `supabase/seed/graphite.sql`. Повторный запуск обновляет настройки и цены, записи не трогает.
+1. Применить все миграции в нужном порядке из `supabase/migrations/` (в репозитории их 69): `supabase db push` (или `supabase migration up` в зависимости от вашего процесса). Это гарантирует корректный порядок применения миграций. При ручной установке можно выполнять SQL-файлы в Supabase SQL Editor только в хронологическом порядке.
+2. Seed студии: `npm run tenant:sql -- graphite`, затем выполнить `supabase/seed/graphite.sql`. Настройки студии обновлять в кабинете.
 3. Владелец: Authentication → Users → Add user (почта + пароль, публичной регистрации нет; отключите «Allow new users to sign up»). Затем в SQL:
    `insert into tenant_members(tenant_id,user_id) select t.id,u.id from tenants t, auth.users u where t.slug='graphite' and u.email='owner@example.com';`
 4. Помощник: `supabase functions deploy assistant`, затем
@@ -38,10 +38,10 @@
 8. Клиент может подключить Telegram после записи или позднее в разделе «Моя запись». Регистрация на сайте не нужна: клиент отмечает отдельное согласие, открывает персональную ссылку и нажимает «Запустить» в боте. Бот отправляет подтверждение, напоминает за 24 часа (или сразу, если запись создана ближе чем за сутки) и сообщает об отмене. Команда `/stop` отключает все уведомления этого Telegram-чата.
 
 ## Vercel
-Подключите репозиторий, команды по умолчанию (`pnpm build`), задайте `VITE_SUPABASE_URL` и `VITE_SUPABASE_ANON_KEY`. `vercel.json` уже перенаправляет `/s/<slug>/…` на оболочку.
+Подключите репозиторий, команды по умолчанию (`npm run build`), задайте `VITE_SUPABASE_URL` и `VITE_SUPABASE_ANON_KEY`. `vercel.json` уже перенаправляет `/s/<slug>/…` на оболочку.
 
 ## Новая студия
-`pnpm tenant:new my-studio` → правка `tenants/my-studio/business.json`, картинки в `images/` (logo, hero, work*, icon-192.png, icon-512.png) → `pnpm tenant:validate my-studio` → `pnpm tenant:sql my-studio` → выполнить SQL → деплой. Ссылка: `/s/my-studio/`.
+`npm run tenant:new -- my-studio` → правка `tenants/my-studio/business.json`, картинки в `images/` (logo, hero, work*, icon-192.png, icon-512.png) → `npm run tenant:validate -- my-studio` → `npm run tenant:sql -- my-studio` → выполнить SQL → деплой. Ссылка: `/s/my-studio/`.
 Пока `"demo": true`, студия в статусе preview. Для боевой студии уберите demo, положите реальные картинки и снова выполните `tenant:validate`.
 
 ## Перед коммерческим запуском
