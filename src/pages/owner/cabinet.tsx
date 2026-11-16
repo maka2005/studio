@@ -62,7 +62,7 @@ function OnboardingChecklist({
         loading: false,
         error: false,
         hint: scheduleDone ? 'Рабочие часы настроены.' : 'Укажите рабочие дни и часы, чтобы клиенты могли записываться.',
-        action: () => onGo('Настройки'),
+        action: () => onGo('Студия'),
         actionLabel: 'К настройкам',
       },
       {
@@ -82,7 +82,7 @@ function OnboardingChecklist({
         loading: false,
         error: false,
         hint: addressDone ? 'Адрес заполнен.' : 'Добавьте адрес, чтобы клиентам было проще вас найти.',
-        action: () => onGo('Настройки'),
+        action: () => onGo('Студия'),
         actionLabel: 'К настройкам',
       },
     ]
