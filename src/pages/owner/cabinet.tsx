@@ -266,7 +266,7 @@ export function Cabinet({ b, onLogout, impersonation }: { b: Business; onLogout:
     qc.removeQueries({ queryKey: ['owner'] });
     window.location.assign('/platform/admin');
   };
-  const dismissAnnouncement=(id:string)=>setDismissedAnnouncements(current=>{const next=[...new Set([...current,id])];try{localStorage.setItem(`servio-hidden-announcements:${b.slug}`,JSON.stringify(next))}catch{}return next});
+  const dismissAnnouncement=(id:string)=>setDismissedAnnouncements(current=>{const next=[...new Set([...current,id])];try{localStorage.setItem(`servio-hidden-announcements:${b.slug}`,JSON.stringify(next))}catch{/* localStorage unavailable */}return next});
   return (
     <section className="pad admin-shell">
       {archiveStatus.data?.archived&&<aside className="owner-subscription-alert card" role="alert"><b>Организация находится в архиве</b><p>Доступ к управлению и онлайн-записи приостановлен. Данные сохранены. Перед закрытием скачайте копию данных или свяжитесь с поддержкой Renvio для восстановления доступа.{archiveStatus.data.deletion_requested_at&&' Также зарегистрирован запрос на удаление данных.'}</p>{role==='owner'&&<ExportButton slug={b.slug}/>}</aside>}

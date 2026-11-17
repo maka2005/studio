@@ -46,6 +46,12 @@ describe('GET /api/health contract', () => {
     expect(res.statusCode).toBe(200);
     expect(headers['cache-control']).toContain('s-maxage=30');
     expect(res.body).toMatchObject({ status: expect.any(String), checks: expect.any(Array) });
-    expect(res.body.checks.map((c: any) => c.key)).toEqual(['web', 'api', 'database', 'auth', 'edge']);
+    expect(res.body.checks.map((c: any) => c.key)).toEqual([
+      'web',
+      'api',
+      'database',
+      'auth',
+      'edge',
+    ]);
   });
 });

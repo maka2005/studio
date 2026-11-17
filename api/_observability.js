@@ -16,7 +16,7 @@ export function withObservability(handler, opts = {}) {
     const method = String(req?.method || 'GET').toUpperCase();
     const path = String(req?.url || '/').split('?')[0];
     req.requestId = requestId;
-    try { res.setHeader('x-request-id', requestId); } catch {}
+    try { res.setHeader('x-request-id', requestId); } catch { /* response may be locked */ }
 
     let logged = false;
     const log = (status, extra = {}) => {
@@ -64,7 +64,7 @@ export function withObservability(handler, opts = {}) {
           res.statusCode = status >= 400 ? status : 500;
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
           res.end(JSON.stringify({ error: 'internal_error', request_id: requestId }));
-        } catch {}
+        } catch { /* best-effort error response */ }
       }
       throw error;
     }

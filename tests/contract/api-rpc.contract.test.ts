@@ -19,18 +19,19 @@ describe('API / Edge / RPC contracts', () => {
       'owner_delete_schedule_exception',
     ]) {
       // schedule settings/exceptions RPCs are called via supabase client in frontend; allowlist covers proxied RPCs
-      if (rpc.startsWith('owner_update_schedule_settings') || rpc.includes('schedule_exception')) continue;
+      if (rpc.startsWith('owner_update_schedule_settings') || rpc.includes('schedule_exception'))
+        continue;
       expect(ownerApi).toContain(`'${rpc}'`);
     }
   });
 
   it('health API exposes stable component keys', () => {
     const healthApi = read('api/health.js');
-    expect(healthApi).toContain("key: 'web'");
+    for (const key of ['web', 'database', 'auth', 'edge']) {
+      expect(healthApi).toContain(`check('${key}'`);
+    }
     expect(healthApi).toContain("key: 'api'");
-    expect(healthApi).toContain("key: 'database'");
-    expect(healthApi).toContain("key: 'auth'");
-    expect(healthApi).toContain("key: 'edge'");
+    expect(healthApi).toContain('withObservability(handler');
   });
 
   it('critical edge functions exist', () => {

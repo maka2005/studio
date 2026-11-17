@@ -125,6 +125,9 @@ export type OwnerRepeatStats = { completed_visits: number; unique_clients: numbe
 export type OwnerNotificationSettings = { reminder_hours_before: number; repeat_after_days: number; reminder_message: string | null; repeat_message: string | null };
 export type OwnerAuditEvent = { id: number; created_at: string; entity: string; entity_id: string | null; action: string; details: Record<string, unknown>; actor_email: string | null };
 export type OwnerBillingNotification = { id: string; event_type: string; payload: Record<string, unknown>; created_at: string; is_read: boolean };
+/** Keyset page returned by the new *_page RPCs. Pass next_cursor back unchanged. */
+export type CursorPage<T> = { items: T[]; has_more: boolean; next_cursor: Record<string, string> | null };
+export type DailyMetric = { day: string; visits: number; done: number; booked: number; received_cents: number; expected_cents: number; updated_at: string };
 export type OwnerPlanUsage = { plan_code:string; limits:Record<string,number|null>; features:Record<string,boolean>; override:{limits:Record<string,number|null>;features:Record<string,boolean>;reason:string|null;updated_at:string|null}; usage:Record<string,number|string|null> };
 export type OwnerNotificationStatus = { pending: number; failed: number; last_sent_at: string | null };
 export type OwnerSubscription = { state: 'open' | 'grace' | 'closed'; phase: string; plan_code?: string; plan_name?: string; price_kzt?: number; price_period_months?: number; starts_at?: string | null; ends_at?: string | null; grace_ends_at?: string | null; days_left?: number | null };
@@ -146,6 +149,19 @@ export const owner = {
   stats: async (slug: string, from: string, to: string) => (await rpc<OwnerStats[]>('owner_stats', { p_slug: slug, p_from: from, p_to: to }))[0]!,
   repeatStats: async (slug: string, from: string, to: string) => (await rpc<OwnerRepeatStats[]>('owner_repeat_stats', { p_slug: slug, p_from: from, p_to: to }))[0]!,
   auditHistory: (slug: string, limit: number, offset: number) => rpc<OwnerAuditEvent[]>('owner_audit_history', { p_slug: slug, p_limit: limit, p_offset: offset }),
+  // Keyset pagination (preferred for growing lists). Requires the performance migration.
+  bookingsPage: (slug: string, from: string, to: string, limit = 50, cursor: Record<string, string> | null = null) =>
+    rpc<CursorPage<OwnerBooking>>('owner_bookings_page', { p_slug: slug, p_from: from, p_to: to, p_limit: limit, p_cursor: cursor }),
+  auditHistoryPage: (slug: string, limit = 50, cursor: Record<string, string> | null = null) =>
+    rpc<CursorPage<OwnerAuditEvent>>('owner_audit_history_page', { p_slug: slug, p_limit: limit, p_cursor: cursor }),
+  billingNotificationsPage: (slug: string, limit = 50, cursor: Record<string, string> | null = null) =>
+    rpc<CursorPage<OwnerBillingNotification>>('owner_billing_notifications_page', { p_slug: slug, p_limit: limit, p_cursor: cursor }),
+  reviewsPage: (slug: string, limit = 50, cursor: Record<string, string> | null = null) =>
+    rpc<CursorPage<{ id: string; booking_id: string; rating: number; comment: string; published: boolean; created_at: string; customer_name: string; service_name: string }>>('owner_reviews_page', { p_slug: slug, p_limit: limit, p_cursor: cursor }),
+  waitlistPage: (slug: string, limit = 50, cursor: Record<string, string> | null = null) =>
+    rpc<CursorPage<{ id: string; service_name: string; preferred_day: string; customer_name: string; customer_phone: string; car: string; status: string; created_at: string }>>('owner_waitlist_page', { p_slug: slug, p_limit: limit, p_cursor: cursor }),
+  dailyMetrics: (slug: string, from: string, to: string) =>
+    rpc<DailyMetric[]>('owner_daily_metrics', { p_slug: slug, p_from: from, p_to: to }),
   setStatus: (id: string, status: 'arrived' | 'done') => rpc<void>('owner_set_status', { p_booking: id, p_status: status }),
   staffSetStatus: (id: string, status: 'arrived' | 'done') => rpc<void>('staff_set_status', { p_booking: id, p_status: status }),
   team: async (slug: string, action: 'list'|'create'|'set_role'|'remove', args: Record<string,unknown> = {}) => {

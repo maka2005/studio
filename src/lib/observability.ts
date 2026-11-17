@@ -33,7 +33,7 @@ export function initObservability() {
     if (ymId) {
       // Yandex Metrika tag (minimal)
       (function(m: any,e: Document,t: string,r: string,i: string){
-        m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
+        m[i]=m[i]||function(...args: unknown[]){(m[i].a=m[i].a||[]).push(args)};
         m[i].l=1*Date.now();
         const k=e.createElement(t) as HTMLScriptElement, a=e.getElementsByTagName(t)[0];
         k.async=true; k.src=r; a?.parentNode?.insertBefore(k,a);

@@ -12,7 +12,7 @@ async function handler(req, res) {
     for await (const chunk of req) chunks.push(Buffer.from(chunk));
     const raw = Buffer.concat(chunks).toString('utf8').slice(0, 20000);
     let report = raw;
-    try { report = JSON.parse(raw); } catch {}
+    try { report = JSON.parse(raw); } catch { /* keep raw payload */ }
     console.warn(JSON.stringify({
       level: 'warn',
       at: new Date().toISOString(),

@@ -119,8 +119,9 @@ async function ensureOwnerMembership(admin: ReturnType<typeof createClient>, ten
   return true;
 }
 
-Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: { ...corsFor(req), 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' } });
+Deno.serve(withEdgeObservability('platform-admin', async (req, { requestId }) => {
+  const json = makeJson(req, requestId);
+  if (req.method === 'OPTIONS') return json({ ok: true });
   if (req.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
   const origin = req.headers.get('origin');
   if (origin && !allowed.has(origin)) return json({ error: 'forbidden' }, 403);
