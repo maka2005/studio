@@ -1,13 +1,10 @@
 import { withEdgeObservability } from '../_shared/observability.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { Image } from 'npm:imagescript@1.3.1';
 
 const siteOrigin = (() => { try { return new URL(Deno.env.get('SITE_URL') ?? '').origin; } catch { return ''; } })();
 const headers = { ...(siteOrigin ? { 'Access-Control-Allow-Origin': siteOrigin } : {}), 'Vary': 'Origin', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Content-Type': 'application/json' };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers });
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const MAX_DIMENSION = 1600;
-const JPEG_QUALITY = 82;
 
 type ImgKind = { contentType: 'image/jpeg' | 'image/png' | 'image/webp'; ext: 'jpg' | 'png' | 'webp' };
 function detect(bytes: Uint8Array): ImgKind | null {
@@ -17,34 +14,13 @@ function detect(bytes: Uint8Array): ImgKind | null {
   return null;
 }
 
-async function optimizeImage(bytes: Uint8Array, kind: ImgKind): Promise<{ bytes: Uint8Array; contentType: string; ext: string }> {
-  try {
-    const decoded = await Image.decode(bytes);
-    const width = decoded.width;
-    const height = decoded.height;
-    if (!width || !height) return { bytes, contentType: kind.contentType, ext: kind.ext };
-    let image = decoded;
-    const maxSide = Math.max(width, height);
-    if (maxSide > MAX_DIMENSION) {
-      if (width >= height) image = image.resize(MAX_DIMENSION, Image.RESIZE_AUTO);
-      else image = image.resize(Image.RESIZE_AUTO, MAX_DIMENSION);
-    }
-    // For photos prefer JPEG output to reduce size; keep PNG if it has alpha-like transparency risk is low for studio photos.
-    if (kind.contentType === 'image/png') {
-      const out = await image.encodePNG();
-      return { bytes: new Uint8Array(out), contentType: 'image/png', ext: 'png' };
-    }
-    if (kind.contentType === 'image/webp') {
-      // imagescript encodes JPEG/PNG reliably; convert webp to optimized jpeg unless very small.
-      const out = await image.encodeJPEG(JPEG_QUALITY);
-      return { bytes: new Uint8Array(out), contentType: 'image/jpeg', ext: 'jpg' };
-    }
-    const out = await image.encodeJPEG(JPEG_QUALITY);
-    return { bytes: new Uint8Array(out), contentType: 'image/jpeg', ext: 'jpg' };
-  } catch (error) {
-    console.warn('media resize skipped:', (error as Error)?.message || error);
-    return { bytes, contentType: kind.contentType, ext: kind.ext };
-  }
+/**
+ * Keep the original bytes on upload. Resize/WebP negotiation is done on delivery
+ * by Supabase Storage render URLs (see src/lib/media.ts), so the Edge function
+ * does not need native image libraries that are unavailable in Deno Deploy.
+ */
+function prepareUpload(bytes: Uint8Array, kind: ImgKind): { bytes: Uint8Array; contentType: string; ext: string } {
+  return { bytes, contentType: kind.contentType, ext: kind.ext };
 }
 
 Deno.serve(withEdgeObservability('media-management', async (req) => {
@@ -67,7 +43,7 @@ Deno.serve(withEdgeObservability('media-management', async (req) => {
     const bytes = new Uint8Array(await file.arrayBuffer());
     const kind = detect(bytes);
     if (!kind) return json({ error: 'bad_file_type' }, 415);
-    const optimized = await optimizeImage(bytes, kind);
+    const optimized = prepareUpload(bytes, kind);
     const path = `${tenantId}/${crypto.randomUUID()}.${optimized.ext}`;
     const { error } = await admin.storage.from('tenant-media').upload(path, optimized.bytes, { contentType: optimized.contentType, cacheControl: '31536000', upsert: false });
     if (error) return json({ error: 'upload_failed' }, 400);
