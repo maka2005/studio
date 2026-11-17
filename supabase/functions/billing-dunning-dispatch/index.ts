@@ -1,3 +1,4 @@
+import { withEdgeObservability } from '../_shared/observability.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import nodemailer from 'npm:nodemailer@6.9.16';
 
@@ -31,7 +32,7 @@ function emailContent(kind:string,payload:Record<string,unknown>,siteUrl:string,
   return {subject,html,text};
 }
 
-Deno.serve(async(req)=>{
+Deno.serve(withEdgeObservability('billing-dunning-dispatch', async (req) => {
   if(req.method!=='POST')return new Response('method_not_allowed',{status:405});
   if(!env('CRON_SECRET')||req.headers.get('x-cron-secret')!==env('CRON_SECRET'))return new Response('forbidden',{status:403});
 
@@ -93,4 +94,4 @@ Deno.serve(async(req)=>{
     }
   }
   return Response.json({sent,failed,skipped});
-});
+}));

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { notify } from '../../components/Toaster';
+import { useDebouncedValue } from '../../lib/useDebouncedValue';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type Row = Record<string, any>;
 
 export const ERR: Record<string, string> = {
@@ -66,6 +66,98 @@ export const Table = ({ head, children }: { head: string[]; children: ReactNode 
   <div className="pf-scroll"><table className="pf-table"><thead><tr>{head.map((h) => <th key={h}>{h}</th>)}</tr></thead><tbody>{children}</tbody></table></div>);
 
 export const newKey = () => crypto.randomUUID();
+
+/** Shared search state with debounce and localStorage presets for admin lists. */
+export function usePlatformFilters<T extends Record<string, string>>(storageKey: string, defaults: T) {
+  const [draft, setDraft] = useState<T>(defaults);
+  const debounced = useDebouncedValue(draft, 300);
+  const [applied, setApplied] = useState<T>(defaults);
+  const [presets, setPresets] = useState<Record<string, T>>(() => {
+    try { return JSON.parse(localStorage.getItem(storageKey) || '{}') as Record<string, T>; }
+    catch { return {}; }
+  });
+  useEffect(() => { setApplied(debounced); }, [debounced]);
+  const set = (name: keyof T, value: string) => setDraft((prev) => prev[name] === value ? prev : { ...prev, [name]: value });
+  const reset = () => setDraft(defaults);
+  const savePreset = (name: string) => {
+    const clean = name.trim();
+    if (!clean) return;
+    const next = { ...presets, [clean]: draft };
+    setPresets(next);
+    localStorage.setItem(storageKey, JSON.stringify(next));
+    notify('Условия поиска сохранены.');
+  };
+  const applyPreset = (name: string) => { const preset = presets[name]; if (preset) setDraft({ ...defaults, ...preset }); };
+  const removePreset = (name: string) => {
+    const next = { ...presets }; delete next[name];
+    setPresets(next); localStorage.setItem(storageKey, JSON.stringify(next));
+  };
+  return { draft, applied, set, setDraft, reset, applyPreset, savePreset, removePreset, presets };
+}
+
+/** Generic CSV writer: BOM, semicolon separator and formula-injection guard. */
+export function downloadCsv(fileName: string, header: string[], rows: unknown[][]) {
+  const cell = (value: unknown) => {
+    const raw = String(value ?? '').replace(/[\r\n]+/g, ' ');
+    const safe = /^[\s]*[=+\-@]/.test(raw) ? `'${raw}` : raw;
+    return `"${safe.replaceAll('"', '""')}"`;
+  };
+  const csv = ['\ufeff' + [header, ...rows].map((row) => row.map(cell).join(';')).join('\r\n')];
+  const url = URL.createObjectURL(new Blob(csv, { type: 'text/csv;charset=utf-8' }));
+  const a = document.createElement('a'); a.href = url; a.download = fileName; a.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** Walks an offset-based admin action in batches so an export never exceeds one page. */
+export async function exportAllRows<T = Row>(action: string, params: Row, pageSize = 200): Promise<T[]> {
+  const all: T[] = [];
+  for (let offset = 0; offset < 100000; offset += pageSize) {
+    const batch = await call<T[]>(action, { ...params, limit: pageSize, offset });
+    all.push(...batch);
+    if (batch.length < pageSize) break;
+  }
+  return all;
+}
+
+/** Same as exportAllRows for actions that return { rows, count } instead of an array. */
+export async function exportPagedRows<T = Row>(action: string, params: Row, pageSize = 200): Promise<T[]> {
+  const all: T[] = [];
+  for (let offset = 0; offset < 100000;) {
+    const batch = await call<{ rows: T[]; limit?: number }>(action, { ...params, limit: pageSize, offset });
+    const rows = batch.rows ?? [];
+    all.push(...rows);
+    const step = Math.max(1, Math.min(pageSize, Number(batch.limit) || pageSize));
+    if (rows.length < step) break;
+    offset += step;
+  }
+  return all;
+}
+
+/** Reusable filter row: search input, preset picker, save/reset and CSV button. */
+export function FilterBar<T extends Record<string, string>>({
+  filters, storageKey, children, onExport,
+}: {
+  filters: ReturnType<typeof usePlatformFilters<T>>;
+  storageKey: string;
+  children?: ReactNode;
+  onExport?: () => void;
+}) {
+  const names = Object.keys(filters.presets);
+  return <div className="row wrap">
+    {children}
+    <button className="pf-action-secondary" onClick={() => { const name = window.prompt('Название сохранённого фильтра'); if (name) filters.savePreset(name); }}>Сохранить фильтр</button>
+    {names.length > 0 && <select className="field" value="" onChange={(e) => { filters.applyPreset(e.target.value); e.target.value = ''; }} aria-label={`Сохранённые фильтры ${storageKey}`}>
+      <option value="">Сохранённые фильтры…</option>
+      {names.map((name) => <option key={name} value={name}>{name}</option>)}
+    </select>}
+    {names.length > 0 && <select className="field" value="" onChange={(e) => { if (e.target.value) filters.removePreset(e.target.value); e.target.value = ''; }} aria-label="Удалить сохранённый фильтр">
+      <option value="">Удалить фильтр…</option>
+      {names.map((name) => <option key={name} value={name}>{name}</option>)}
+    </select>}
+    <button className="pf-action-secondary" onClick={filters.reset}>Сбросить</button>
+    {onExport && <button className="pf-action-secondary" onClick={onExport}>Скачать CSV</button>}
+  </div>;
+}
 
 export async function runSubAction(sub: string, type: string, data: Row = {}) {
   return call('subscription_action', { subscription_id: sub, type, data, idempotency_key: newKey() });

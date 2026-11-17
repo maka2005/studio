@@ -1,3 +1,4 @@
+import { withEdgeObservability } from '../_shared/observability.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { Image } from 'npm:imagescript@1.3.1';
 
@@ -46,7 +47,7 @@ async function optimizeImage(bytes: Uint8Array, kind: ImgKind): Promise<{ bytes:
   }
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withEdgeObservability('media-management', async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers });
   if (req.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
   const origin = req.headers.get('origin'); if (origin && origin !== siteOrigin) return json({ error: 'forbidden' }, 403);
@@ -77,4 +78,4 @@ Deno.serve(async (req) => {
     const { error } = await admin.storage.from('tenant-media').remove([path]); return error ? json({ error: 'remove_failed' }, 400) : json({ ok: true });
   }
   return json({ error: 'bad_request' }, 400);
-});
+}));

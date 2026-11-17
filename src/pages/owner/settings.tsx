@@ -10,6 +10,7 @@ import { prepareImage, removeByUrl, uploadImage } from '../../lib/media'
 import { assetUrl, type Business } from '../../lib/tenant'
 import { TenantImage } from '../../components/TenantImage'
 import { Err } from './shared'
+import { NotificationDelivery, NotificationTemplates } from './notifications'
 
 const DAYS: [string, string][] = [
   ['mon', 'Пн'],
@@ -667,6 +668,8 @@ export function Notify({ b }: { b: Business }) {
       <p className="muted small">Уведомления о новых записях и отменах будут приходить в подключённый чат автоматически.</p>
     </div>
     <NotificationPreferences b={b}/>
+    <NotificationTemplates b={b}/>
+    <NotificationDelivery b={b}/>
     </>
   )
 }

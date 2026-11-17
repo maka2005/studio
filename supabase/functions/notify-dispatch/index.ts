@@ -1,10 +1,25 @@
+import { withEdgeObservability } from '../_shared/observability.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { buildCustomerMessage, buildMessage, escapeHtml, isDeadChat, type Kind } from './format.ts';
+import { buildCustomerMessage, buildMessage, buildOwnerTemplateMessage, escapeHtml, isDeadChat, type Kind } from './format.ts';
 const env = (k: string) => Deno.env.get(k) ?? '';
+type Admin = ReturnType<typeof createClient>;
+type Template = { id: string; kind: string; audience: string; body: string };
 
-async function finishJob(admin: ReturnType<typeof createClient>, id: string, ok: boolean, error: string | null) {
-  const { error: finishError } = await admin.rpc('finish_notification_job', { p_id: id, p_ok: ok, p_error: error });
+async function finishJob(admin: Admin, id: string, ok: boolean, error: string | null, templateCode: string | null = null) {
+  const { error: finishError } = await admin.rpc('finish_notification_job', {
+    p_id: id, p_ok: ok, p_error: error, p_template_code: templateCode,
+  });
   if (finishError) throw finishError;
+}
+
+/** Active per-tenant templates, keyed as "audience:kind". */
+async function loadTemplates(admin: Admin, tenantId: string): Promise<Record<string, Template>> {
+  const { data, error } = await admin.from('notification_templates')
+    .select('id,kind,audience,body').eq('tenant_id', tenantId).eq('channel', 'telegram').eq('is_active', true);
+  if (error) throw error;
+  const result: Record<string, Template> = {};
+  for (const t of (data ?? []) as Template[]) result[`${t.audience}:${t.kind}`] = t;
+  return result;
 }
 
 async function send(token: string, chat: number, text: string, url: string) {
@@ -23,7 +38,7 @@ async function send(token: string, chat: number, text: string, url: string) {
 }
 
 // Вызывается по расписанию (Supabase Cron). Секрет в заголовке не даёт запускать функцию посторонним.
-Deno.serve(async (req) => {
+Deno.serve(withEdgeObservability('notify-dispatch', async (req) => {
   if (!env('CRON_SECRET') || req.headers.get('x-cron-secret') !== env('CRON_SECRET')) return new Response('forbidden', { status: 403 });
   const token = env('TELEGRAM_BOT_TOKEN'); if (!token) return new Response('telegram not configured', { status: 503 });
   const admin = createClient(env('SUPABASE_URL'), env('SUPABASE_SERVICE_ROLE_KEY'));
@@ -31,18 +46,22 @@ Deno.serve(async (req) => {
   if (error) return new Response(error.message, { status: 500 });
   let sent = 0, retry = 0;
   for (const j of (jobs ?? []) as { id: string; tenant_id: string; kind: Kind; booking_id: string | null; payload?: Record<string, unknown> }[]) {
+    let templateCode: string | null = null;
     try {
       const { data: t, error: tenantError } = await admin.from('tenants').select('slug,timezone,config').eq('id', j.tenant_id).maybeSingle();
       if (tenantError) throw tenantError;
-      const { data: links, error: linksError } = j.kind === 'booking_followup'
-        ? { data: [], error: null }
-        : await admin.from('telegram_links').select('chat_id').eq('tenant_id', j.tenant_id);
-      if (linksError) throw linksError;
+      const [templatesResult, links] = await Promise.all([
+        loadTemplates(admin, j.tenant_id),
+        j.kind === 'booking_followup'
+          ? Promise.resolve({ data: [] as { chat_id: number }[], error: null })
+          : admin.from('telegram_links').select('chat_id').eq('tenant_id', j.tenant_id),
+      ]);
+      if (links.error) throw links.error;
+      const templates = templatesResult;
       if (!t) throw new Error('tenant_missing');
       const { data: notifyOpen, error: notifyOpenError } = await admin.rpc('tenant_notifications_open', { p_tenant: j.tenant_id });
       if (notifyOpenError) throw notifyOpenError;
       if (notifyOpen !== true) {
-        // подписка приостановлена: задание закрываем без отправки (данные не удаляются)
         await admin.from('notification_jobs').update({ status: 'failed', lease_until: null, last_error: 'subscription_suspended' }).eq('id', j.id);
         retry++;
         continue;
@@ -55,7 +74,8 @@ Deno.serve(async (req) => {
         continue;
       }
       if (j.kind === 'waitlist_interest') {
-        if (!links?.length) {
+        const chatLinks = (links.data ?? []) as { chat_id: number }[];
+        if (!chatLinks.length) {
           await finishJob(admin, j.id, false, 'no_telegram_chat_linked');
           retry++;
           continue;
@@ -65,11 +85,11 @@ Deno.serve(async (req) => {
           `Услуга: ${escapeHtml(String(p.service ?? ''))}`, `Дата: ${escapeHtml(String(p.day ?? ''))}`,
           `Клиент: ${escapeHtml(String(p.name ?? ''))}, ${escapeHtml(String(p.phone ?? ''))}`, `Авто: ${escapeHtml(String(p.car ?? ''))}`].join('\n');
         let failure: string | null = null; let delivered = 0;
-        for (const l of links as { chat_id: number }[]) {
-          const sent = await send(token, l.chat_id, text, `${env('SITE_URL').replace(/\/+$/, '')}/s/${t.slug}/owner`);
-          if (sent.ok) delivered++;
-          else if (isDeadChat(sent.code, sent.desc)) await admin.from('telegram_links').delete().eq('tenant_id', j.tenant_id).eq('chat_id', l.chat_id);
-          else failure = `telegram ${sent.code ?? ''} ${sent.desc}`.slice(0, 200);
+        for (const l of chatLinks) {
+          const r = await send(token, l.chat_id, text, `${env('SITE_URL').replace(/\/+$/, '')}/s/${t.slug}/owner`);
+          if (r.ok) delivered++;
+          else if (isDeadChat(r.code, r.desc)) await admin.from('telegram_links').delete().eq('tenant_id', j.tenant_id).eq('chat_id', l.chat_id);
+          else failure = `telegram ${r.code ?? ''} ${r.desc}`.slice(0, 200);
         }
         if (failure === null && delivered === 0) failure = 'no_reachable_telegram_chat';
         await finishJob(admin, j.id, failure === null, failure);
@@ -94,7 +114,8 @@ Deno.serve(async (req) => {
           .maybeSingle()
         : { data: null, error: null };
       if (clientLinkError) throw clientLinkError;
-      if (!links?.length && !clientLink) {
+      const chatLinks = (links.data ?? []) as { chat_id: number }[];
+      if (!chatLinks.length && !clientLink) {
         await finishJob(admin, j.id, j.kind === 'booking_followup', j.kind === 'booking_followup' ? null : 'no_telegram_chat_linked');
         if (j.kind !== 'booking_followup') retry++;
         continue;
@@ -105,11 +126,18 @@ Deno.serve(async (req) => {
         await finishJob(admin, j.id, true, null);
         continue;
       }
-      const text = j.kind === 'booking_followup' ? '' : buildMessage({ kind: j.kind, studio: cfg.name ?? t.slug, service: svc?.name ?? '', startsAt: bk.starts_at, timezone: t.timezone,
-        customer: bk.customer_name, phone: bk.customer_phone, car: bk.car, priceCents: bk.price_cents, currency: cfg.currency ?? '' });
+      const ownerTemplate = templates[`owner:${j.kind}`];
+      const clientTemplate = templates[`client:${j.kind}`];
+      if (ownerTemplate) templateCode = ownerTemplate.id;
+      const messageData = {
+        kind: j.kind, studio: cfg.name ?? t.slug, service: svc?.name ?? '', startsAt: bk.starts_at,
+        timezone: t.timezone, customer: bk.customer_name, phone: bk.customer_phone,
+        car: bk.car, priceCents: bk.price_cents, currency: cfg.currency ?? '',
+      };
+      const text = ownerTemplate ? buildOwnerTemplateMessage(ownerTemplate.body, messageData) : buildMessage(messageData);
       let failure: string | null = null;
       let delivered = 0;
-      for (const l of (links ?? []) as { chat_id: number }[]) {
+      for (const l of chatLinks) {
         const r = await send(token, l.chat_id, text, `${env('SITE_URL').replace(/\/+$/, '')}/s/${t.slug}/owner`);
         if (r.ok) { delivered++; continue; }
         if (isDeadChat(r.code, r.desc)) {
@@ -121,16 +149,17 @@ Deno.serve(async (req) => {
       }
       let clientDelivered = false;
       if (clientLink) {
-        const { data: notifySettings, error: settingsError } = await admin.from('tenant_notification_settings').select('reminder_message,repeat_message').eq('tenant_id',j.tenant_id).maybeSingle();
+        const { data: notifySettings, error: settingsError } = await admin.from('tenant_notification_settings').select('reminder_message,repeat_message').eq('tenant_id', j.tenant_id).maybeSingle();
         if (settingsError) throw settingsError;
         const payload = j.payload ?? {};
-        const repeatText = typeof payload.message === 'string' ? payload.message : notifySettings?.repeat_message;
-        const customMessage = j.kind === 'booking_followup'
-          ? repeatText ?? null
-          : j.kind === 'booking_reminder' ? notifySettings?.reminder_message ?? null : null;
+        const legacy = typeof payload.message === 'string' ? payload.message
+          : j.kind === 'booking_followup' ? notifySettings?.repeat_message
+            : j.kind === 'booking_reminder' ? notifySettings?.reminder_message : null;
+        const customMessage = clientTemplate ? null : legacy;
+        if (clientTemplate) templateCode = clientTemplate.id;
         const customerText = buildCustomerMessage({ kind: j.kind as Exclude<Kind, 'waitlist_interest'>,
           studio: cfg.short_name ?? cfg.name ?? t.slug, service: svc?.name ?? '', startsAt: bk.starts_at,
-          timezone: t.timezone, address: cfg.address ?? '', customMessage });
+          timezone: t.timezone, address: cfg.address ?? '', customMessage, templateBody: clientTemplate?.body });
         const r = await send(token, clientLink.chat_id, customerText, '');
         if (r.ok) clientDelivered = true;
         else if (isDeadChat(r.code, r.desc)) {
@@ -144,13 +173,13 @@ Deno.serve(async (req) => {
       }
       delivered += Number(clientDelivered);
       if (failure === null && delivered === 0 && j.kind !== 'booking_followup') failure = 'no_reachable_telegram_chat';
-      await finishJob(admin, j.id, failure === null, failure);
+      await finishJob(admin, j.id, failure === null, failure, templateCode);
       if (failure === null) sent++; else retry++;
     } catch (e) {
-      try { await finishJob(admin, j.id, false, String((e as Error).message)); }
+      try { await finishJob(admin, j.id, false, String((e as Error).message), templateCode); }
       catch (finishError) { console.error('notification job could not be finalized', j.id, String(finishError)); }
       retry++;
     }
   }
   return new Response(JSON.stringify({ sent, retry }), { headers: { 'Content-Type': 'application/json' } });
-});
+}));

@@ -140,7 +140,14 @@ async function collectCursorPages<T>(load: (cursor: Record<string, string> | nul
 export type DailyMetric = { day: string; visits: number; done: number; booked: number; received_cents: number; expected_cents: number; updated_at: string };
 export type OwnerPlanUsage = { plan_code:string; limits:Record<string,number|null>; features:Record<string,boolean>; override:{limits:Record<string,number|null>;features:Record<string,boolean>;reason:string|null;updated_at:string|null}; usage:Record<string,number|string|null> };
 export type OwnerNotificationStatus = { pending: number; failed: number; last_sent_at: string | null };
+export type NotificationTemplate = { id: string | null; kind: string; audience: 'client' | 'owner'; channel: string; subject: string | null; body: string | null; is_active: boolean; source: 'default' | 'template'; updated_at: string | null };
+export type NotificationJob = { id: string; kind: string; channel: string; status: 'pending' | 'sent' | 'failed'; attempts: number; last_error: string | null; created_at: string; sent_at: string | null; bounced_at: string | null; bounce_type: string | null; template_code: string | null; booking_id: string | null };
+export type NotificationBounce = { id: string; channel: string; recipient: string; bounce_type: 'soft' | 'hard' | 'complaint'; provider: string; created_at: string };
+export type NotificationJobPage = { rows: NotificationJob[]; count: number };
+export type NotificationBouncePage = { rows: NotificationBounce[]; count: number };
 export type OwnerSubscription = { state: 'open' | 'grace' | 'closed'; phase: string; plan_code?: string; plan_name?: string; price_kzt?: number; price_period_months?: number; starts_at?: string | null; ends_at?: string | null; grace_ends_at?: string | null; days_left?: number | null };
+export type OwnerBillingDocument = { id: string; document_type: 'invoice' | 'act'; number: string; issue_date: string; service_from: string; service_to: string; amount_kzt: number; currency: string; description: string; esf_number: string | null; esf_status: string; status: string; created_at: string };
+export type OwnerPayment = { id: string; amount_kzt: number; method: string; status: string; received_at: string; period_start: string; period_end: string; note: string | null; refund_reason: string | null; created_at: string };
 export const owner = {
   platformAnnouncements:(slug:string)=>rpc<{id:string;title:string;body:string;starts_at:string;ends_at:string|null}[]>('owner_platform_announcements',{p_slug:slug}),
   platformFeatureFlags:(slug:string)=>rpc<Record<string,boolean>>('owner_platform_feature_flags',{p_slug:slug}),
@@ -153,6 +160,8 @@ export const owner = {
   billingNotifications: (slug:string,limit=50,offset=0) => rpc<OwnerBillingNotification[]>('owner_billing_notifications',{p_slug:slug,p_limit:limit,p_offset:offset}),
   markBillingNotificationsRead: (slug:string,ids:string[]) => rpc<void>('owner_mark_billing_notifications_read',{p_slug:slug,p_ids:ids}),
   respondPriceChange: (slug:string,id:string,accept:boolean) => rpc<void>('owner_respond_price_change', { p_slug:slug,p_id:id,p_accept:accept }),
+  billingDocuments: (slug: string) => rpc<OwnerBillingDocument[]>('owner_billing_documents', { p_slug: slug }),
+  payments: (slug: string) => rpc<OwnerPayment[]>('owner_payments', { p_slug: slug }),
   access: (slug: string) => rpc<'owner'|'manager'|'staff'|null>('owner_access', { p_slug: slug }),
   bookings: (slug: string, from: string, to: string) => rpc<OwnerBooking[]>('owner_bookings', { p_slug: slug, p_from: from, p_to: to }),
   staffBookings: (slug: string, from: string, to: string) => rpc<OwnerBooking[]>('staff_bookings', { p_slug: slug, p_from: from, p_to: to }),
@@ -216,6 +225,14 @@ export const owner = {
   telegramLinks: (slug: string) => rpc<{ id: string; created_at: string }[]>('owner_telegram_links', { p_slug: slug }),
   notificationStatus: async (slug: string) => (await rpc<OwnerNotificationStatus[]>('owner_notification_status', { p_slug: slug }))[0]!,
   telegramUnlink: (id: string) => rpc<void>('owner_telegram_unlink', { p_id: id }),
+  notificationTemplates: (slug: string) => rpc<NotificationTemplate[]>('owner_notification_templates', { p_slug: slug }),
+  upsertNotificationTemplate: (slug: string, t: { kind: string; audience: 'client' | 'owner'; body: string; active: boolean }) =>
+    rpc<string | null>('owner_upsert_notification_template', { p_slug: slug, p_kind: t.kind, p_audience: t.audience, p_body: t.body, p_active: t.active }),
+  notificationJobs: (slug: string, status = 'all', kind = 'all', limit = 50, offset = 0) =>
+    rpc<NotificationJobPage>('owner_notification_jobs', { p_slug: slug, p_status: status, p_kind: kind, p_limit: limit, p_offset: offset }),
+  notificationRetry: (slug: string, jobId: string) => rpc<void>('owner_notification_retry', { p_slug: slug, p_job_id: jobId }),
+  notificationBounces: (slug: string, limit = 50, offset = 0) =>
+    rpc<NotificationBouncePage>('owner_notification_bounces', { p_slug: slug, p_limit: limit, p_offset: offset }),
   resources: async (slug: string) => {
     return ownerRequest<{ id: string; name: string }[]>('resources', { slug });
   },
@@ -235,5 +252,5 @@ const MSG: [string, string][] = [['slot_taken', 'Это время занято.
   ['bad_name', 'Проверьте имя клиента.'], ['bad_phone', 'Проверьте номер телефона.'], ['bad_car', 'Укажите автомобиль.'],
   ['bad_config', 'Проверьте введённые настройки.'], ['bad_url', 'Ссылка должна начинаться с https://'],
   ['bad_range', 'Неверный диапазон дат.'], ['bad_hours', 'Неверное время работы.'], ['not_found', 'Запись не найдена.'],
-  ['consent_required', 'Нужно согласие на обработку данных.'], ['feature_disabled', 'Эта функция не входит в ваш тариф. Обратитесь к администратору платформы.'], ['plan_limit_employees', 'Достигнут лимит сотрудников по тарифу. Измените тариф или обратитесь в поддержку.'], ['plan_limit_services', 'Достигнут лимит услуг по тарифу. Измените тариф или обратитесь в поддержку.'], ['plan_limit_bookings_per_month', 'Достигнут лимит записей на этот месяц. Измените тариф или обратитесь в поддержку.'], ['service_in_use', 'Услуга уже используется в записи или заявке. Снимите отметку «Показывается клиентам», чтобы скрыть её.'], ['resource_in_use', 'У этого рабочего ресурса уже есть записи или блокировки. Его нельзя удалить, пока они с ним связаны.'], ['duplicate_resource', 'У этого рабочего ресурса уже есть записи или блокировки. Его нельзя удалить, пока они с ним связаны.'], ['bad_notification_settings', 'Проверьте время напоминания, период повторного визита и длину текста.']];
+  ['consent_required', 'Нужно согласие на обработку данных.'], ['feature_disabled', 'Эта функция не входит в ваш тариф. Обратитесь к администратору платформы.'], ['plan_limit_employees', 'Достигнут лимит сотрудников по тарифу. Измените тариф или обратитесь в поддержку.'], ['plan_limit_services', 'Достигнут лимит услуг по тарифу. Измените тариф или обратитесь в поддержку.'], ['plan_limit_bookings_per_month', 'Достигнут лимит записей на этот месяц. Измените тариф или обратитесь в поддержку.'], ['service_in_use', 'Услуга уже используется в записи или заявке. Снимите отметку «Показывается клиентам», чтобы скрыть её.'], ['resource_in_use', 'У этого рабочего ресурса уже есть записи или блокировки. Его нельзя удалить, пока они с ним связаны.'], ['duplicate_resource', 'У этого рабочего ресурса уже есть записи или блокировки. Его нельзя удалить, пока они с ним связаны.'], ['bad_notification_settings', 'Проверьте время напоминания, период повторного визита и длину текста.'], ['bad_template', 'Проверьте текст шаблона: допустимы подстановки {studio}, {service}, {date}, {time}, {address}, {customer}, {phone}, {car}, {price}, длина — до 2000 символов.']];
 export const errText = (e: unknown) => { const m = String((e as Error)?.message ?? e); return MSG.find(([k]) => m.includes(k))?.[1] ?? 'Не удалось выполнить действие. Повторите.'; };

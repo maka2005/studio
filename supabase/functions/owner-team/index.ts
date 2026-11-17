@@ -1,3 +1,4 @@
+import { withEdgeObservability } from '../_shared/observability.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 // IP клиента. Запросы приходят с серверов Vercel, поэтому cf-connecting-ip там общий для всех. Реальный IP (x-real-ip) принимаем только вместе с секретом прокси.
 const PROXY_SECRET = Deno.env.get('PLATFORM_PROXY_SECRET') ?? '';
@@ -13,7 +14,7 @@ const json=(req:Request,value:unknown,status=200)=>new Response(JSON.stringify(v
 const emailOk=(v:string)=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 const sha=async(v:string)=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(v)))].map(x=>x.toString(16).padStart(2,'0')).join('');
 const randomSecret=(n=24)=>btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(n)))).replaceAll('+','-').replaceAll('/','_').replaceAll('=','');
-Deno.serve(async(req)=>{
+Deno.serve(withEdgeObservability('owner-team', async (req) => {
  if(req.method==='OPTIONS')return new Response('ok',{headers:headers(req)});
  if(req.method!=='POST')return json(req,{error:'method_not_allowed'},405);
  const origin=req.headers.get('origin'); if(origin&&!allowed.has(origin))return json(req,{error:'forbidden'},403);
@@ -96,4 +97,4 @@ Deno.serve(async(req)=>{
  const {error}=await admin.rpc('owner_team_set',{p_slug:slug,p_actor:user.id,p_user:userId,p_role:role,p_resource:resource});
  if(error)return json(req,{error:error.message.startsWith('plan_limit_')?error.message:'operation_failed'},400);
  return json(req,{ok:true,created:!foundUser,temporary_password:temporaryPassword});
-});
+}));

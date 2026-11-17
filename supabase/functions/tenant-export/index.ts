@@ -1,3 +1,4 @@
+import { withEdgeObservability } from '../_shared/observability.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { strToU8, zipSync } from 'npm:fflate@0.8.2';
 
@@ -31,7 +32,7 @@ const toCsv = (rows: Record<string, unknown>[]): string => {
   return '\uFEFF' + [cols.map(cell).join(','), ...rows.map((r) => cols.map((c) => cell(r[c])).join(','))].join('\r\n') + '\r\n';
 };
 
-Deno.serve(async (req) => {
+Deno.serve(withEdgeObservability('tenant-export', async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: baseHeaders(req) });
   if (req.method !== 'POST') return json(req, { error: 'method_not_allowed' }, 405);
   const origin = req.headers.get('origin');
@@ -87,4 +88,4 @@ Deno.serve(async (req) => {
 
   const stamp = new Date().toISOString().slice(0, 10);
   return new Response(zipSync(files), { status: 200, headers: { ...baseHeaders(req), 'Content-Type': 'application/zip', 'Content-Disposition': `attachment; filename="${tenant.slug}-export-${stamp}.zip"`, 'Cache-Control': 'no-store' } });
-});
+}));

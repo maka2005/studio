@@ -16,6 +16,8 @@ describe('API / Edge / RPC contracts', () => {
       'owner_daily_metrics',
       'owner_audit_history_page',
       'owner_billing_notifications_page',
+      'owner_billing_documents',
+      'owner_payments',
       'owner_reviews_page',
       'owner_waitlist_page',
       'owner_update_config',
@@ -68,6 +70,14 @@ describe('API / Edge / RPC contracts', () => {
     ]) {
       expect(api).toContain(`${method}:`);
     }
+  });
+
+  it('frontend owner API declares billing document and payment methods', () => {
+    const api = read('src/lib/api.ts');
+    for (const method of ['billingDocuments', 'payments']) {
+      expect(api).toContain(`${method}:`);
+    }
+    expect(read('src/pages/owner/billing.tsx')).toContain('owner.billingDocuments');
   });
 
   it('owner lists no longer call the old offset RPC wrappers', () => {

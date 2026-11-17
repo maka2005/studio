@@ -20,6 +20,7 @@ const Docs = lazy(() => import('./settings').then((m) => ({ default: m.Docs })))
 const Media = lazy(() => import('./settings').then((m) => ({ default: m.Media })))
 const Notify = lazy(() => import('./settings').then((m) => ({ default: m.Notify })))
 const Settings = lazy(() => import('./settings').then((m) => ({ default: m.Settings })))
+const Billing = lazy(() => import('./billing').then((m) => ({ default: m.Billing })))
 
 function hasWorkingHours(hours: Business['hours']) {
   return Object.values(hours || {}).some((slot) => Array.isArray(slot) && slot[0] && slot[1])
@@ -180,7 +181,7 @@ export function OwnerAccount({slug,canExport,canRespond,latestSuspension}:{slug:
   const featureRows:[string,string][]=[['telegram','Telegram'],['export','Выгрузка данных'],['reviews','Отзывы']];
   const usageValue=(key:string)=>{const current=Number(planUsage.data?.usage?.[key]??0);const cap=planUsage.data?.limits?.[key];return `${current.toLocaleString('ru-RU')} / ${cap==null?'без ограничений':Number(cap).toLocaleString('ru-RU')}`};
   return <div className="col"><div className="admin-subheading"><div><h2>Личный кабинет</h2><p className="muted small">Текущие условия и оплата подписки.</p></div></div><SubscriptionBanner slug={slug} canRespond={canRespond} latestSuspension={latestSuspension}/><section className="card col owner-account-card"><div className="row between wrap"><b>Тариф {s.plan_name??s.plan_code??'—'}</b><span className={`pf-badge pf-${s.phase}`}>{statusLabels[s.phase]??'Статус уточняется'}</span></div><div className="owner-account-grid"><div><span className="muted small">Подписка действует до</span><b>{s.ends_at?date(s.ends_at):'Без срока'}</b></div><div><span className="muted small">Осталось</span><b>{s.days_left==null?'—':`${Math.max(0,s.days_left)} дней`}</b></div><div><span className="muted small">К оплате за период</span><b>{(s.price_kzt??0).toLocaleString('ru-RU')} ₸</b></div><div><span className="muted small">Период</span><b>{s.price_period_months??1} мес.</b></div></div></section>
-    <section className="card col"><div className="row between wrap"><b>Использование тарифа</b>{planUsage.data&&<span className="muted small">{planUsage.data.plan_code}</span>}</div>{planUsage.isPending?<p className="muted small">Загружаем лимиты…</p>:planUsage.isError?<p className="err small">Не удалось загрузить лимиты. Обновите страницу.</p>:<><div className="owner-account-grid">{rows.map(([key,label])=><div key={key}><span className="muted small">{label}</span><b>{usageValue(key)}</b></div>)}</div><p className="muted small">Основной филиал: 1 / {planUsage.data.limits.branches==null?'без ограничений':planUsage.data.limits.branches}. Управление несколькими филиалами в приложении пока не подключено.</p><div className="row wrap">{featureRows.map(([key,label])=><span className={`pf-badge ${planUsage.data.features[key]?'pf-active':'pf-expired'}`} key={key}>{label}: {planUsage.data.features[key]?'доступно':'не включено'}</span>)}</div></>}</section>
+    <section className="card col"><div className="row between wrap"><b>Использование тарифа</b>{planUsage.data&&<span className="muted small">{planUsage.data.plan_code}</span>}</div>{planUsage.isPending?<p className="muted small">Загружаем лимиты…</p>:planUsage.isError?<p className="err small">Не удалось загрузить лимиты. Обновите страницу.</p>:<><div className="owner-account-grid">{rows.map(([key,label])=>{const current=Number(planUsage.data?.usage?.[key]??0);const cap=planUsage.data?.limits?.[key];const pct=cap==null||Number(cap)<=0?0:Math.min(100,Math.round(current/Number(cap)*100));return <div key={key}><span className="muted small">{label}</span><b>{usageValue(key)}</b>{cap!=null&&<div style={{height:5,borderRadius:999,background:'var(--line, #222)',overflow:'hidden',marginTop:4}}><div style={{width:`${pct}%`,height:'100%',background:pct>=80?'#e0a030':'var(--accent, #568cff)'}}/></div>}{pct>=80&&cap!=null&&<span className="err small">Лимит почти исчерпан</span>}</div>})}</div><p className="muted small">Основной филиал: 1 / {planUsage.data.limits.branches==null?'без ограничений':planUsage.data.limits.branches}. Управление несколькими филиалами в приложении пока не подключено.</p><div className="row wrap">{featureRows.map(([key,label])=><span className={`pf-badge ${planUsage.data.features[key]?'pf-active':'pf-expired'}`} key={key}>{label}: {planUsage.data.features[key]?'доступно':'не включено'}</span>)}</div></>}</section>
     {canExport&&planUsage.data?.features.export===true&&<ExportButton slug={slug}/>}</div>
 }
 
@@ -262,6 +263,7 @@ export function Cabinet({ b, onLogout, impersonation }: { b: Business; onLogout:
     // Infinite-strap queries need InfiniteData in the cache, otherwise the tab sees an empty list.
     const warmInfinite=(queryKey:unknown[],queryFn:()=>Promise<unknown>)=>void qc.prefetchInfiniteQuery({queryKey,queryFn,initialPageParam:null,staleTime:30_000})
     switch(t){
+      case 'Счета и оплата': warm(['owner','billing-documents',b.slug],()=>owner.billingDocuments(b.slug));warm(['owner','payments',b.slug],()=>owner.payments(b.slug));break
       case 'Услуги': warm(['owner','services',b.slug],()=>fetchServices(b.slug,true));break
       case 'Ожидание': warmInfinite(['owner','waitlist-page',b.slug],()=>owner.waitlistPage(b.slug,50,null));break
       case 'Отзывы': warmInfinite(['owner','reviews-page',b.slug],()=>owner.reviewsPage(b.slug,50,null));break
@@ -382,6 +384,7 @@ export function Cabinet({ b, onLogout, impersonation }: { b: Business; onLogout:
             {tab === 'Сотрудники' && role === 'manager' && <TeamAccess b={b} canManageManagers={false} />}
             {tab === 'Мой доступ' && <MyAccess b={b} />}
             {tab === 'Личный кабинет' && <OwnerAccount slug={b.slug} canExport={role==='owner'} canRespond={role==='owner'} latestSuspension={billingNoticeItems.find(e=>e.event_type==='suspended')} />}
+            {tab === 'Счета и оплата' && <Billing slug={b.slug} onOpenSupport={() => setTab('Поддержка')} />}
             {tab === 'Центр уведомлений' && <OwnerNotificationCenter slug={b.slug} canRespond={role === 'owner'} />}
             {tab === 'Поддержка' && <OwnerSupportTickets slug={b.slug} />}
             {tab === 'Отчёты' && <Reports b={b} />}

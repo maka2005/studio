@@ -1,3 +1,4 @@
+import { withEdgeObservability } from '../_shared/observability.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 const siteOrigin = (() => { try { return new URL(Deno.env.get('SITE_URL') ?? '').origin } catch { return '' } })();
@@ -8,7 +9,7 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 const sha = async (s: string) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)))].map((x) => x.toString(16).padStart(2, '0')).join('');
 const ipOf = (r: Request) => r.headers.get('cf-connecting-ip') ?? r.headers.get('x-real-ip') ?? 'unknown';
 
-Deno.serve(async (req) => {
+Deno.serve(withEdgeObservability('public-api', async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   if (req.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
   const origin=req.headers.get('origin'); if(origin&&!allowedOrigins.has(origin)) return json({error:'forbidden'},403);
@@ -134,4 +135,4 @@ Deno.serve(async (req) => {
     if ((e as Error).message === 'rate_service_unavailable') return json({ error: 'temporarily_unavailable' }, 503);
     return json({ error: 'temporarily_unavailable' }, 503);
   }
-});
+}));

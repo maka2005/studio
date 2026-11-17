@@ -1,3 +1,4 @@
+import { withEdgeObservability } from '../_shared/observability.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 const env = (k: string) => Deno.env.get(k) ?? '';
 const ok = () => new Response('ok');
@@ -6,7 +7,7 @@ async function reply(chat: number, text: string) {
     body: JSON.stringify({ chat_id: chat, text }), signal: AbortSignal.timeout(8000) }).catch(() => undefined);
 }
 // Webhook бота. Развёртывается с --no-verify-jwt: Telegram не умеет JWT, поэтому проверяем секрет вебхука.
-Deno.serve(async (req) => {
+Deno.serve(withEdgeObservability('telegram-webhook', async (req) => {
   if (req.method !== 'POST') return ok();
   if (!env('TELEGRAM_WEBHOOK_SECRET') || req.headers.get('x-telegram-bot-api-secret-token') !== env('TELEGRAM_WEBHOOK_SECRET')) return new Response('forbidden', { status: 403 });
   const u = await req.json().catch(() => null);
@@ -44,4 +45,4 @@ Deno.serve(async (req) => {
     await reply(chat.id, 'Это бот уведомлений. Чтобы получать сообщения о записи, подключите Telegram на странице «Моя запись». Если вы владелец студии, подключите чат в кабинете студии.');
   }
   return ok();
-});
+}));

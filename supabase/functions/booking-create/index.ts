@@ -1,3 +1,4 @@
+import { withEdgeObservability } from '../_shared/observability.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 const siteOrigin = (() => { try { return new URL(Deno.env.get('SITE_URL') ?? '').origin } catch { return '' } })();
@@ -14,7 +15,7 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 });
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-Deno.serve(async (req) => {
+Deno.serve(withEdgeObservability('booking-create', async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   if (req.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
   const origin=req.headers.get('origin'); if(origin&&!allowedOrigins.has(origin)) return json({error:'forbidden'},403);
@@ -75,4 +76,4 @@ Deno.serve(async (req) => {
   const { data: pricing, error: pricingError } = await admin.from('bookings').select('price_cents,discount_cents,promo_code').eq('id', booking.booking_id).maybeSingle();
   if (pricingError) console.error('booking price lookup failed:', pricingError.message);
   return json({ booking: { ...booking, ...(pricing ?? {}) } });
-});
+}));

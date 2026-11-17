@@ -1,3 +1,4 @@
+import { withEdgeObservability } from '../_shared/observability.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import OpenAI from 'npm:openai@4';
 import { runRouter, type LlmCall, type Scope } from './router.ts';
@@ -11,7 +12,7 @@ const env = (k: string) => Deno.env.get(k) ?? '';
 const addDay = (iso: string, n: number) => new Date(new Date(`${iso}T12:00:00Z`).getTime() + n * 864e5).toISOString().slice(0, 10);
 const sha = async (s: string) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)))].map((x) => x.toString(16).padStart(2, '0')).join('').slice(0, 16);
 
-Deno.serve(async (req) => {
+Deno.serve(withEdgeObservability('assistant', async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: H });
   const origin=req.headers.get('origin'); if(origin&&!allowedOrigins.has(origin)) return json({error:'forbidden'},403);
   try {
@@ -81,4 +82,4 @@ Deno.serve(async (req) => {
     try { const r = await runRouter({ scope, message, system, llm: call, exec }); return json({ reply: r.reply, mode: r.mode }); }
     catch (e) { return budgetHit ? json({ error: 'budget_exceeded' }, 429) : json({ error: 'ai_failed', detail: String((e as Error).message).slice(0, 120) }, 502); }
   } catch { return json({ error: 'bad_request' }, 400); }
-});
+}));

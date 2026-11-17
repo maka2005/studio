@@ -1,3 +1,4 @@
+import { withEdgeObservability } from '../_shared/observability.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 const site = (Deno.env.get('SITE_URL') ?? '').trim();
@@ -18,7 +19,7 @@ const viaProxy = (r: Request) => PROXY_SECRET.length >= 16 && safeEqual(r.header
 const ipOf = (r: Request) => (viaProxy(r) ? r.headers.get('x-real-ip')?.trim() : '') || r.headers.get('cf-connecting-ip')?.trim() || 'unknown';
 const sha = async (s: string) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)))].map((x) => x.toString(16).padStart(2, '0')).join('');
 
-Deno.serve(async (req) => {
+Deno.serve(withEdgeObservability('owner-login', async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: { ...corsFor(req), 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' } });
   if (req.method !== 'POST') return json(req, { error: 'method_not_allowed' }, 405);
   const origin = req.headers.get('origin');
@@ -55,4 +56,4 @@ Deno.serve(async (req) => {
     return json(req, { error: 'wrong_organization', organizations: rows.slice(0, 5).map((m) => ({ slug: m.tenants.slug, name: m.tenants.config?.name ?? m.tenants.slug })) }, 403);
   }
   return json(req, { session: { access_token: data.session.access_token, refresh_token: data.session.refresh_token } });
-});
+}));

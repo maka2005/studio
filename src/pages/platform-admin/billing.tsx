@@ -1,18 +1,32 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Badge, METHODS, PHASE, State, SubscriptionActionModal, Table, call, errText, fmtDate, iso, kzt, newKey, resumeFlow, runSubAction, useAllTenants, useLoad, type Row } from './shared';
+import { Badge, FilterBar, METHODS, PHASE, State, SubscriptionActionModal, Table, call, downloadCsv, errText, exportAllRows, fmtDate, iso, kzt, newKey, resumeFlow, runSubAction, useAllTenants, useLoad, usePlatformFilters, type Row } from './shared';
 
 /* ----------------------------------------------------------------------------------- подписки */
 export function Subscriptions({ onOpen }: { onOpen: (id: string) => void }) {
-  const [phase, setPhase] = useState('');
+  const filters = usePlatformFilters('platform-subscriptions-filters', { phase: '' });
+  const { phase } = filters.applied;
   const [subModal,setSubModal]=useState<{type:string;subscription:Row}|null>(null);
-  const { data, err, loading, reload } = useLoad<Row[]>('subscriptions', { phase }, [phase]);
+  const [page,setPage]=useState(0); const pageSize=50;
+  useEffect(()=>setPage(0),[filters.applied]);
+  const { data, err, loading, reload } = useLoad<Row[]>('subscriptions', { phase, limit: pageSize+1, offset: page*pageSize }, [filters.applied, page]);
+  const rows=(data??[]).slice(0,pageSize); const hasNext=(data?.length??0)>pageSize;
   const [msg, setMsg] = useState('');
   const act = async (fn: () => Promise<unknown>) => { setMsg(''); try { await fn(); await reload(); } catch (e) { setMsg(errText(e)); } };
+  const exportCsv = async () => {
+    setMsg('');
+    try {
+      const all = await exportAllRows<Row>('subscriptions', { phase });
+      downloadCsv('platform-subscriptions.csv', ['Организация','Slug','Тариф','Цена','Период, мес.','Статус','Начало','Окончание'],
+        all.map((s)=>[s.name??'',s.slug??'',s.plan_code??'',s.price_kzt??'',s.price_period_months??'',PHASE[s.phase]??s.phase??'',fmtDate(s.starts_at),s.ends_at?fmtDate(s.ends_at):'бессрочно']));
+    } catch (e) { setMsg(errText(e)); }
+  };
   return (<>
     {subModal&&<SubscriptionActionModal type={subModal.type} subscription={subModal.subscription} initialPlan={subModal.subscription.plan_code} initialDate={subModal.subscription.ends_at?.slice(0,10)??''} onClose={()=>setSubModal(null)} onSubmit={async values=>{await act(()=>runSubAction(subModal.subscription.id,subModal.type,values));setSubModal(null)}}/>}
-    <select className="field" value={phase} onChange={(e) => setPhase(e.target.value)}><option value="">Все статусы</option>{Object.entries(PHASE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
+    <FilterBar filters={filters} storageKey="подписок" onExport={()=>void exportCsv()}>
+      <select className="field" value={filters.draft.phase} onChange={(e) => filters.set('phase', e.target.value)} aria-label="Статус подписки"><option value="">Все статусы</option>{Object.entries(PHASE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
+    </FilterBar>
     {msg && <p className="err">{msg}</p>}<State err={err} loading={loading && !data} />
-    {data && <Table head={['Организация', 'Тариф', 'Цена по подписке', 'Статус', 'Начало', 'Окончание', 'Действия']}>{data.map((s) => (
+    {data && <Table head={['Организация', 'Тариф', 'Цена по подписке', 'Статус', 'Начало', 'Окончание', 'Действия']}>{rows.map((s) => (
       <tr key={s.id}><td><button className="pf-link" onClick={() => onOpen(s.tenant_id)}>{s.name ?? s.slug}</button></td><td>{s.plan_code}</td><td>{kzt(s.price_kzt)} / {s.price_period_months} мес.</td><td><Badge phase={s.phase} /></td><td>{fmtDate(s.starts_at)}</td><td>{s.ends_at ? fmtDate(s.ends_at) : 'бессрочно'}</td>
         <td className="pf-actions">
           {s.ends_at && <button onClick={() => act(() => runSubAction(s.id, 'extend', { months: 1 }))}>+1 мес.</button>}
@@ -20,7 +34,8 @@ export function Subscriptions({ onOpen }: { onOpen: (id: string) => void }) {
           <button onClick={() => setSubModal({type:'set_dates',subscription:s})}>Даты</button>
           {['trial', 'active', 'grace'].includes(s.phase) && <button onClick={() => setSubModal({type:'suspend',subscription:s})}>Приостановить</button>}
           {['suspended', 'expired'].includes(s.phase) && <button onClick={() => act(() => resumeFlow(s.id))}>Возобновить</button>}
-        </td></tr>))}</Table>}</>);
+        </td></tr>))}</Table>}
+    {data&&(rows.length>0||page>0)&&<nav className='admin-service-pagination' aria-label='Подписки'><button className='admin-page-button' disabled={page===0||loading} onClick={()=>setPage(page-1)}>Назад</button><span className='muted small'>Страница <b>{page+1}</b></span><button className='admin-page-button' disabled={!hasNext||loading} onClick={()=>setPage(page+1)}>Далее</button></nav>}</>);
 }
 
 /* ----------------------------------------------------------------------------------- тарифы */
@@ -60,9 +75,11 @@ export function BillingDocuments(){
 
 /* ----------------------------------------------------------------------------------- платежи */
 export function Payments() {
-  const [page,setPage]=useState(0); const [status,setStatus]=useState('');const pageSize=50;
-  useEffect(()=>setPage(0),[status]);
-  const { data, err, loading, reload } = useLoad<Row[]>('payments',{status:status||undefined,limit:pageSize+1,offset:page*pageSize},[page,status]);
+  const filters = usePlatformFilters('platform-payments-filters', { status: '' });
+  const { status } = filters.applied;
+  const [page,setPage]=useState(0); const pageSize=50;
+  useEffect(()=>setPage(0),[filters.applied]);
+  const { data, err, loading, reload } = useLoad<Row[]>('payments',{status:status||undefined,limit:pageSize+1,offset:page*pageSize},[page,filters.applied]);
   const rows=(data??[]).slice(0,pageSize); const hasNext=(data?.length??0)>pageSize;
   const tenants = useAllTenants();
   const [msg, setMsg] = useState('');
@@ -77,7 +94,7 @@ export function Payments() {
     } catch (e2) { setMsg(errText(e2)); } finally { setBusy(false); }
   };
   const act = async (fn: () => Promise<unknown>) => { setMsg(''); try { await fn(); await reload(); } catch (e) { setMsg(errText(e)); } };
-  const exportCsv=async()=>{try{const all:Row[]=[];for(let offset=0;offset<100000;offset+=200){const batch=await call<Row[]>('payments',{status:status||undefined,limit:200,offset});all.push(...batch);if(batch.length<200)break}const quote=(x:unknown)=>'"'+String(x??'').replace(/[\r\n]+/g,' ').replace(/"/g,'""')+'"';const csv=['Дата,Организация,Slug,Сумма KZT,Период с,Период по,Метод,Статус',...all.map(p=>[p.received_at,p.name,p.slug,p.amount_kzt,p.period_start,p.period_end,p.method,p.status].map(quote).join(','))].join('\r\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));a.download='payments.csv';a.click();URL.revokeObjectURL(a.href)}catch(e){setMsg(errText(e))}};
+  const exportCsv=async()=>{setMsg('');try{const all=await exportAllRows<Row>('payments',{status:status||undefined});downloadCsv('payments.csv',['Дата','Организация','Slug','Сумма KZT','Период с','Период по','Метод','Статус'],all.map(p=>[p.received_at,p.name,p.slug,p.amount_kzt,p.period_start,p.period_end,p.method,p.status]))}catch(e){setMsg(errText(e))}};
   return (<>
     <form className="card col pf-form" onSubmit={create}><h2>Новый платёж</h2>
       <select className="field" value={f.tenant_id} onChange={(e) => setF({ ...f, tenant_id: e.target.value })} required><option value="">Организация…</option>{tenants.data?.map((t) => <option key={t.id} value={t.id}>{t.name ?? t.slug}</option>)}</select>
@@ -87,7 +104,9 @@ export function Payments() {
       <select className="field" value={f.method} onChange={(e) => setF({ ...f, method: e.target.value })}>{Object.entries(METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
       <label className="pf-label">Дата получения<input className="field" type="date" value={f.received_at} onChange={(e) => setF({ ...f, received_at: e.target.value })} required /></label>
       <button className="btn" disabled={busy}>Создать (статус «Ожидает»)</button></form>
-    <div className="row wrap"><select className="field" aria-label="Статус платежа" value={status} onChange={e=>setStatus(e.target.value)}><option value="">Все платежи</option><option value="pending">Ожидает</option><option value="paid">Оплачен</option><option value="failed">Не прошёл</option><option value="refunded">Возврат</option></select><button className="pf-action-secondary" onClick={()=>void exportCsv()}>Скачать таблицу платежей</button></div>
+    <FilterBar filters={filters} storageKey="платежей" onExport={()=>void exportCsv()}>
+      <select className="field" aria-label="Статус платежа" value={filters.draft.status} onChange={e=>filters.set('status',e.target.value)}><option value="">Все платежи</option><option value="pending">Ожидает</option><option value="paid">Оплачен</option><option value="failed">Не прошёл</option><option value="refunded">Возврат</option></select>
+    </FilterBar>
     {msg && <p className="err">{msg}</p>}<State err={err} loading={loading && !data} />
     {data && <Table head={['Дата', 'Организация', 'Сумма', 'Период', 'Способ', 'Статус', 'Действия']}>{rows.map((p) => (
       <tr key={p.id}><td>{fmtDate(p.received_at)}</td><td>{p.name ?? p.slug}</td><td>{kzt(p.amount_kzt)}</td><td>{fmtDate(p.period_start)} — {fmtDate(p.period_end)}</td><td>{METHODS[p.method] ?? p.method}</td>

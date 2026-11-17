@@ -278,9 +278,9 @@ Deno.serve(withEdgeObservability('platform-admin', async (req, { requestId }) =>
   if (action === 'whoami') return json({ ok: true, email: user.email, role, aal: aalOf(token), mfa_required: mfaNeeded });
   if (mfaNeeded) return json({ error: 'mfa_required' }, 403);
 
-  const readActions = new Set(['whoami','admin_login_event','dashboard','tenants','tenant','tenant_events','subscriptions','plans','payments','audit','notifications','settings','admins','billing_documents']);
-  const financeActions = new Set(['whoami','admin_login_event','payments','payment_create','payment_confirm','payment_refund','payment_fail','subscriptions','dashboard','audit','notifications','tenants','tenant','tenant_events','plans','billing_documents','billing_document_save']);
-  const supportActions = new Set(['whoami','admin_login_event','tenants','tenant','tenant_events','tenant_support','tenant_note_add','tenant_case_create','tenant_case_update','support_tickets','support_ticket_detail','support_ticket_update','business_leads','business_lead_update','resend_invite','impersonation_start','impersonation_check','impersonation_end','impersonation_log']);
+  const readActions = new Set(['whoami','admin_login_event','dashboard','tenants','tenant','tenant_events','subscriptions','plans','payments','audit','notifications','notification_delivery','notification_bounces','settings','admins','billing_documents']);
+  const financeActions = new Set(['whoami','admin_login_event','payments','payment_create','payment_confirm','payment_refund','payment_fail','subscriptions','dashboard','audit','notifications','notification_delivery','notification_bounces','tenants','tenant','tenant_events','plans','billing_documents','billing_document_save']);
+  const supportActions = new Set(['whoami','admin_login_event','tenants','tenant','tenant_events','tenant_support','tenant_note_add','tenant_case_create','tenant_case_update','support_tickets','support_ticket_detail','support_ticket_update','business_leads','business_lead_update','resend_invite','impersonation_start','impersonation_check','impersonation_end','impersonation_log','notifications','notification_delivery','notification_bounces']);
   const allowedByRole = role === 'owner' ? null : role === 'read_only' ? readActions : role === 'finance' ? financeActions : supportActions;
   if (!['owner','support','finance','read_only'].includes(role) || (allowedByRole && !allowedByRole.has(action)))
     return json({ error: 'forbidden' }, 403);
@@ -299,8 +299,10 @@ Deno.serve(withEdgeObservability('platform-admin', async (req, { requestId }) =>
     if(action==='business_leads'){
       if(!['owner','support'].includes(role))return json({error:'forbidden'},403);
       const status=str(body.status,20),limit=Math.max(1,Math.min(50,Number(body.limit)||25)),offset=Math.max(0,Number(body.offset)||0);
+      const search=str(body.search,80).replace(/[,()\\]/g,' ').trim();
       let query=admin.from('platform_business_leads').select('*',{count:'exact'}).order('created_at',{ascending:false}).range(offset,offset+limit-1);
       if(['new','contacted','converted','closed'].includes(status))query=query.eq('status',status);
+      if(search)query=query.or(`business_name.ilike.%${search}%,name.ilike.%${search}%,owner_name.ilike.%${search}%,owner_email.ilike.%${search}%,phone.ilike.%${search}%`);
       const {data,error,count}=await query;if(error)throw error;
       return json({data:{rows:data??[],count:count??0,limit,offset}});
     }
@@ -576,12 +578,14 @@ Deno.serve(withEdgeObservability('platform-admin', async (req, { requestId }) =>
       }
       case 'billing_documents': rpc={name:'platform_billing_documents_list',args:{p_actor:actor,p_tenant:uuidOf(body.tenant_id)}};break;
       case 'billing_document_save': rpc={name:'platform_billing_document_save',args:{p_actor:actor,p:obj(body.document)}};break;
-      case 'subscriptions': rpc = { name: 'platform_list_subscriptions', args: { p_actor: actor, p_phase: str(body.phase, 20) || null, p_limit: Number(body.limit) || 100 } }; break;
+      case 'subscriptions': rpc = { name: 'platform_list_subscriptions', args: { p_actor: actor, p_phase: str(body.phase, 20) || null, p_limit: Number(body.limit) || 100, p_offset: Math.max(0, Number(body.offset) || 0) } }; break;
       case 'plans': rpc = { name: 'platform_list_plans', args: { p_actor: actor } }; break;
       case 'plan_save': rpc = { name: 'platform_upsert_plan', args: { p_actor: actor, p: obj(body.plan) } }; break;
       case 'payments': rpc = { name: 'platform_list_payments', args: { p_actor: actor, p_status: str(body.status, 20) || null, p_limit: Number(body.limit) || 51, p_offset: Math.max(0, Number(body.offset) || 0) } }; break;
       case 'audit': rpc = { name: 'platform_audit_list', args: { p_actor: actor, p_tenant: uuidOf(body.tenant_id), p_from: str(body.from, 40) || null, p_to: str(body.to, 40) || null, p_action: str(body.audit_action, 100) || null, p_limit: Number(body.limit) || 51, p_offset: Math.max(0, Number(body.offset) || 0) } }; break;
-      case 'notifications': rpc = { name: 'platform_notifications', args: { p_actor: actor, p_limit: Number(body.limit) || 200 } }; break;
+      case 'notifications': rpc = { name: 'platform_notifications', args: { p_actor: actor, p_limit: Number(body.limit) || 200, p_offset: Math.max(0, Number(body.offset) || 0) } }; break;
+      case 'notification_delivery': rpc = { name: 'platform_notification_delivery', args: { p_status: str(body.status, 20) || 'all', p_kind: str(body.kind, 40) || 'all', p_limit: Math.max(1, Math.min(100, Number(body.limit) || 50)), p_offset: Math.max(0, Number(body.offset) || 0) } }; break;
+      case 'notification_bounces': rpc = { name: 'platform_notification_bounces', args: { p_limit: Math.max(1, Math.min(100, Number(body.limit) || 50)), p_offset: Math.max(0, Number(body.offset) || 0) } }; break;
       case 'notifications_read': {
         const ids = Array.isArray(body.ids) ? body.ids.map(uuidOf).filter((id): id is string => !!id).slice(0,500) : [];
         rpc = { name: 'platform_mark_notifications_read', args: { p_actor: actor, p_ids: ids } }; break;

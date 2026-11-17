@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { businessTypeCode } from '../../lib/businessTypes';
 import { notify } from '../../components/Toaster';
-import { Badge, PLATFORM_ROLE_LABEL, State, Table, call, errText, fmtDate, fmtDateTime, iso, isoEnd, slugFromName, useAllTenants, useLoad, type LeadPrefill, type Row } from './shared';
+import { Badge, FilterBar, PLATFORM_ROLE_LABEL, State, Table, call, downloadCsv, errText, exportAllRows, exportPagedRows, fmtDate, fmtDateTime, iso, isoEnd, slugFromName, useAllTenants, useLoad, usePlatformFilters, type LeadPrefill, type Row } from './shared';
 
 export function PlatformServiceAdmin(){
   const announcements=useLoad<Row[]>('announcements');
@@ -70,17 +70,33 @@ function platformAuditDetail(action:string,payload:Row){
 }
 
 export function Audit() {
-  const [tenant, setTenant] = useState(''); const [from, setFrom] = useState(''); const [to, setTo] = useState(''); const [action, setAction] = useState(''); const [page,setPage]=useState(0); const limit=50;
+  const filters = usePlatformFilters('platform-audit-filters', { tenant: '', action: '', from: '', to: '' });
+  const { tenant, action, from, to } = filters.applied;
+  const [page,setPage]=useState(0); const limit=50;
   const tenants = useLoad<Row[]>('tenants', { limit: 200 });
-  useEffect(()=>setPage(0),[tenant,from,to,action]);
-  const { data, err, loading } = useLoad<Row[]>('audit', { tenant_id: tenant || undefined, from: from ? iso(from) : undefined, to: to ? isoEnd(to) : undefined, audit_action:action||undefined, limit:limit+1, offset:page*limit }, [tenant, from, to, action, page]);
+  useEffect(()=>setPage(0),[filters.applied]);
+  const params = { tenant_id: tenant || undefined, from: from ? iso(from) : undefined, to: to ? isoEnd(to) : undefined, audit_action: action || undefined };
+  const { data, err, loading } = useLoad<Row[]>('audit', { ...params, limit:limit+1, offset:page*limit }, [filters.applied, page]);
   const rows=(data??[]).filter((a)=>!(a.action==='impersonation.action'&&!PLATFORM_MUTATIONS.has(String(a.payload?.action??''))));
   const visibleRows=rows.slice(0,limit); const hasNext=(data?.length??0)>limit;
+  const [msg,setMsg]=useState('');
+  const exportCsv = async () => {
+    setMsg('');
+    try {
+      const all = await exportAllRows<Row>('audit', params);
+      downloadCsv('platform-audit.csv', ['Когда','Кто','Событие','Организация','Подробности'],
+        all.filter((a)=>!(a.action==='impersonation.action'&&!PLATFORM_MUTATIONS.has(String(a.payload?.action??''))))
+          .map((a)=>[fmtDateTime(a.created_at),a.actor_email??'',platformActionLabel(String(a.action)),a.slug??'',platformAuditDetail(String(a.action),a.payload??{})]));
+    } catch (e) { setMsg(errText(e)); }
+  };
   return (<>
-    <div className="row wrap">
-      <select className="field" value={tenant} onChange={(e) => setTenant(e.target.value)}><option value="">Все организации</option>{tenants.data?.map((t) => <option key={t.id} value={t.id}>{t.name ?? t.slug}</option>)}</select>
-      <select className="field" value={action} onChange={(e)=>setAction(e.target.value)} aria-label="Тип действия"><option value="">Все действия</option>{Object.keys(PLATFORM_ACTION_LABELS).map((key)=><option key={key} value={key}>{platformActionLabel(key)}</option>)}</select>
-      <input className="field" type="date" value={from} onChange={(e) => setFrom(e.target.value)} aria-label="С даты" /><input className="field" type="date" value={to} onChange={(e) => setTo(e.target.value)} aria-label="По дату" /></div>
+    <FilterBar filters={filters} storageKey="журнала" onExport={()=>void exportCsv()}>
+      <select className="field" value={filters.draft.tenant} onChange={(e) => filters.set('tenant',e.target.value)}><option value="">Все организации</option>{tenants.data?.map((t) => <option key={t.id} value={t.id}>{t.name ?? t.slug}</option>)}</select>
+      <select className="field" value={filters.draft.action} onChange={(e) => filters.set('action',e.target.value)} aria-label="Тип действия"><option value="">Все действия</option>{Object.keys(PLATFORM_ACTION_LABELS).map((key)=><option key={key} value={key}>{platformActionLabel(key)}</option>)}</select>
+      <input className="field" type="date" value={filters.draft.from} onChange={(e) => filters.set('from',e.target.value)} aria-label="С даты" />
+      <input className="field" type="date" value={filters.draft.to} onChange={(e) => filters.set('to',e.target.value)} aria-label="По дату" />
+    </FilterBar>
+    {msg && <p className="err small">{msg}</p>}
     <State err={err} loading={loading && !data} />
     {data && (visibleRows.length===0?<p className="muted">Записей по выбранным условиям нет.</p>:<Table head={['Когда','Кто','Что произошло','Организация','Подробности']}>{visibleRows.map((a)=><tr key={a.id}><td>{fmtDateTime(a.created_at)}</td><td>{a.actor_email??'—'}</td><td>{platformActionLabel(String(a.action))}</td><td>{a.slug??'—'}</td><td className="muted small">{platformAuditDetail(String(a.action),a.payload??{})}</td></tr>)}</Table>)}
     {data&&(visibleRows.length>0||page>0)&&<nav className="admin-service-pagination" aria-label="Журнал платформы"><button className="admin-page-button" disabled={page===0||loading} onClick={()=>setPage(page-1)}>Назад</button><span className="muted small">Страница <b>{page+1}</b></span><button className="admin-page-button" disabled={!hasNext||loading} onClick={()=>setPage(page+1)}>Далее</button></nav>}</>);
@@ -90,8 +106,19 @@ const TICKET_STATUS:Record<string,string>={open:'Открыт',in_progress:'В �
 const TICKET_TYPE:Record<string,string>={support:'Поддержка',billing:'Оплата и подписка',technical:'Техническая проблема',access:'Вход и доступ',booking:'Записи и расписание',feature:'Функция сервиса',other:'Другое'};
 const TICKET_SEVERITY:Record<string,string>={low:'Низкая',normal:'Обычная',high:'Высокая',urgent:'Критичная'};
 export function SupportQueue(){
-  const [status,setStatus]=useState(''),[category,setCategory]=useState(''),[severity,setSeverity]=useState(''),[searchInput,setSearchInput]=useState(''),[search,setSearch]=useState(''),[page,setPage]=useState(0),[ticket,setTicket]=useState<Row|null>(null),[reply,setReply]=useState(''),[msg,setMsg]=useState(''),[busy,setBusy]=useState(false);
-  const q=useLoad<Row>('support_tickets',{status,category,severity,search,limit:25,offset:page*25},[status,category,severity,search,page]);
+  const filters = usePlatformFilters('platform-support-filters', { status: '', category: '', severity: '', search: '' });
+  const { status, category, severity, search } = filters.applied;
+  const [page,setPage]=useState(0),[ticket,setTicket]=useState<Row|null>(null),[reply,setReply]=useState(''),[msg,setMsg]=useState(''),[busy,setBusy]=useState(false);
+  useEffect(()=>setPage(0),[filters.applied]);
+  const q=useLoad<Row>('support_tickets',{status,category,severity,search,limit:25,offset:page*25},[filters.applied,page]);
+  const exportCsv = async () => {
+    setMsg('');
+    try {
+      const all = await exportPagedRows<Row>('support_tickets', { status, category, severity, search });
+      downloadCsv('platform-support.csv', ['Тема','Организация','Адрес','Тип','Срочность','Статус','Автор','Создано'],
+        all.map((item)=>[item.subject??'',item.tenant?.name??'',item.tenant?.slug??'',TICKET_TYPE[item.category]??item.category??'',TICKET_SEVERITY[item.severity]??item.severity??'',TICKET_STATUS[item.status]??item.status??'',item.created_by_email??'',fmtDateTime(item.created_at)]));
+    } catch (e) { setMsg(errText(e)); }
+  };
   const open=async(item:Row)=>{setMsg('');setBusy(true);try{setTicket(await call<Row>('support_ticket_detail',{ticket_id:item.id}));setReply('')}catch(e){setMsg(errText(e))}finally{setBusy(false)}};
   const refresh=async()=>{await q.reload();if(ticket){try{setTicket(await call<Row>('support_ticket_detail',{ticket_id:ticket.id}))}catch(e){setMsg(errText(e))}}};
   const update=async(nextStatus:string,message='')=>{if(!ticket)return;setBusy(true);setMsg('');try{await call('support_ticket_update',{ticket_id:ticket.id,status:nextStatus,message});setReply('');await refresh()}catch(e){setMsg(errText(e))}finally{setBusy(false)}};
@@ -101,7 +128,12 @@ export function SupportQueue(){
     <div className="support-admin-thread" aria-label="Переписка по обращению">{(ticket.events??[]).map((event:Row)=><article className={`support-admin-message ${event.is_support?'from-support':'from-organization'}`} key={event.id}><div className="support-admin-message-meta"><b>{event.is_support?'Поддержка Renvio':event.actor_email}</b><time>{fmtDateTime(event.created_at)}</time></div><p>{event.message??(event.event_type==='created'?'Обращение создано.':'Статус изменён: '+(TICKET_STATUS[event.status]??event.status))}</p></article>)}</div>
     <form className="col" onSubmit={e=>{e.preventDefault();void update(ticket.status,reply.trim())}}><label className="muted small">Ответ организации<textarea className="field" rows={4} maxLength={3000} minLength={1} value={reply} onChange={e=>setReply(e.target.value)} placeholder="Напишите ответ или задайте уточняющий вопрос" required/></label><button className="btn" disabled={busy||!reply.trim()}>Отправить ответ</button></form></section>{msg&&<p className="err" role="alert">{msg}</p>}</div>;
   return <div className="col"><div className="admin-subheading"><div><h2>Обращения организаций</h2><p className="muted small">Здесь собраны просьбы о помощи. Найдите нужное обращение по теме, типу или срочности.</p></div><button className="btn ghost mini" onClick={()=>void q.reload()}>Обновить</button></div>
-    <form className="support-queue-filters" onSubmit={e=>{e.preventDefault();setPage(0);setSearch(searchInput.trim())}}><input className="field" value={searchInput} onChange={e=>setSearchInput(e.target.value)} placeholder="Поиск по теме или типу"/><select className="field" value={status} onChange={e=>{setPage(0);setStatus(e.target.value)}}><option value="">Все статусы</option>{Object.entries(TICKET_STATUS).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select><select className="field" value={category} onChange={e=>{setPage(0);setCategory(e.target.value)}}><option value="">Все типы</option>{Object.entries(TICKET_TYPE).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select><select className="field" value={severity} onChange={e=>{setPage(0);setSeverity(e.target.value)}}><option value="">Любая срочность</option>{Object.entries(TICKET_SEVERITY).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select><button className="btn">Найти</button><button className="btn ghost" type="button" onClick={()=>{setSearchInput('');setSearch('');setStatus('');setCategory('');setSeverity('');setPage(0)}}>Сбросить</button></form>
+    <FilterBar filters={filters} storageKey="обращений" onExport={()=>void exportCsv()}>
+      <input className="field" value={filters.draft.search} onChange={e=>filters.set('search',e.target.value)} placeholder="Поиск по теме или типу" aria-label="Поиск обращений"/>
+      <select className="field" value={filters.draft.status} onChange={e=>filters.set('status',e.target.value)} aria-label="Статус обращения"><option value="">Все статусы</option>{Object.entries(TICKET_STATUS).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select>
+      <select className="field" value={filters.draft.category} onChange={e=>filters.set('category',e.target.value)} aria-label="Тип обращения"><option value="">Все типы</option>{Object.entries(TICKET_TYPE).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select>
+      <select className="field" value={filters.draft.severity} onChange={e=>filters.set('severity',e.target.value)} aria-label="Срочность"><option value="">Любая срочность</option>{Object.entries(TICKET_SEVERITY).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select>
+    </FilterBar>
     <State err={q.err} loading={q.loading}/>{!q.loading&&!q.err&&!rows.length&&<p className="muted">По выбранным условиям обращений нет.</p>}
     <div className="support-queue-list">{rows.map(item=><article className="card support-queue-item" key={item.id}><div className="row between wrap"><div><button className="pf-link" onClick={()=>void open(item)}>{item.subject}</button><p className="muted small">{item.tenant?.name??'Организация'} · {item.tenant?.slug??'—'} · {TICKET_TYPE[item.category]??item.category}{item.custom_type?` · ${item.custom_type}`:''}</p></div><div className="row wrap"><span className={`pf-badge pf-${item.severity}`}>{TICKET_SEVERITY[item.severity]??item.severity}</span><span className={`pf-badge pf-${item.status}`}>{TICKET_STATUS[item.status]??item.status}</span></div></div><div className="row between wrap"><span className="muted small">{item.created_by_email} · обновлено {fmtDateTime(item.updated_at)}</span><button className="btn ghost mini" disabled={busy} onClick={()=>void open(item)}>Открыть обращение</button></div></article>)}</div>
     <div className="row between wrap"><span className="muted small">{count} тикетов · страница {page+1} из {pages}</span><div className="row"><button className="btn ghost mini" disabled={page===0||q.loading} onClick={()=>setPage(p=>p-1)}>Назад</button><button className="btn ghost mini" disabled={page+1>=pages||q.loading} onClick={()=>setPage(p=>p+1)}>Дальше</button></div></div>{msg&&<p className="err" role="alert">{msg}</p>}
@@ -110,25 +142,65 @@ export function SupportQueue(){
 
 const LEAD_STATUS:Record<string,string>={new:'Новая',contacted:'Связались',converted:'Подключён',closed:'Закрыта'};
 export function BusinessLeads({canConnect,onConnect}:{canConnect:boolean;onConnect:(lead:LeadPrefill)=>void}){
-  const [status,setStatus]=useState(''),[page,setPage]=useState(0),[msg,setMsg]=useState('');
-  const q=useLoad<Row>('business_leads',{status,limit:25,offset:page*25},[status,page]);
+  const filters = usePlatformFilters('platform-leads-filters', { status: '', search: '' });
+  const { status, search } = filters.applied;
+  const [page,setPage]=useState(0),[msg,setMsg]=useState('');
+  useEffect(()=>setPage(0),[filters.applied]);
+  const q=useLoad<Row>('business_leads',{status,search,limit:25,offset:page*25},[filters.applied,page]);
+  const exportCsv = async () => {
+    setMsg('');
+    try {
+      const all = await exportPagedRows<Row>('business_leads', { status, search });
+      downloadCsv('platform-leads.csv', ['Организация','Владелец','Email','Телефон','Тип','Тариф','Состояние','Поступила'],
+        all.map((lead)=>[lead.business_name??lead.name??'',lead.owner_name??'',lead.owner_email??'',lead.phone??'',lead.business_type??'',lead.plan??'',LEAD_STATUS[lead.status]??lead.status??'',fmtDateTime(lead.created_at)]));
+    } catch (e) { setMsg(errText(e)); }
+  };
   const rows:Row[]=q.data?.rows??[],count=Number(q.data?.count??0),pages=Math.max(1,Math.ceil(count/25));
   const change=async(id:string,next:string)=>{setMsg('');try{await call('business_lead_update',{lead_id:id,status:next});await q.reload()}catch(e){setMsg(errText(e))}};
   return <div className="col"><div className="admin-subheading"><div><h2>Заявки с сайта</h2><p className="muted small">Запросы на подключение и демонстрацию Renvio. Свяжитесь с человеком и обновите состояние заявки.</p></div><button className="btn ghost mini" onClick={()=>void q.reload()} disabled={q.loading}>Обновить</button></div>
-    <div className="support-queue-filters"><select className="field" value={status} onChange={e=>{setStatus(e.target.value);setPage(0)}}><option value="">Все заявки</option>{Object.entries(LEAD_STATUS).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></div>
+    <FilterBar filters={filters} storageKey="заявок" onExport={()=>void exportCsv()}>
+      <input className="field" value={filters.draft.search} onChange={e=>filters.set('search',e.target.value)} placeholder="Название, владелец, email или телефон" aria-label="Поиск заявок"/>
+      <select className="field" value={filters.draft.status} onChange={e=>filters.set('status',e.target.value)} aria-label="Состояние заявки"><option value="">Все заявки</option>{Object.entries(LEAD_STATUS).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select>
+    </FilterBar>
     <State err={q.err} loading={q.loading}/>{!q.loading&&!q.err&&!rows.length&&<p className="muted">Заявок пока нет.</p>}
     <div className="support-queue-list">{rows.map(lead=><article className="card support-queue-item" key={lead.id}><div className="row between wrap"><div><b>{lead.business_name??lead.name}</b><p className="muted small">{lead.owner_name?`${lead.owner_name} · `:''}{lead.business_type} · {lead.request_type==='demo'?'Демонстрация':'Подключение'}{lead.plan?` · тариф ${lead.plan}`:''}</p></div><span className={`pf-badge pf-${lead.status}`}>{LEAD_STATUS[lead.status]??lead.status}</span></div><div className="row between wrap"><span className="col"><a href={`tel:${String(lead.phone).replace(/[^+\d]/g,'')}`}>{lead.phone}</a>{lead.owner_email&&<a href={`mailto:${lead.owner_email}`}>{lead.owner_email}</a>}</span><time className="muted small">Поступила {fmtDateTime(lead.created_at)}</time></div>{lead.comment&&<p className="muted small">{lead.comment}</p>}{lead.consent_at?<p className="muted small">Согласие на обработку данных: {fmtDateTime(lead.consent_at)}</p>:null}{lead.tenant_slug?<p className="small">Организация создана: <a href={`/s/${lead.tenant_slug}`} target="_blank" rel="noopener noreferrer">/s/{lead.tenant_slug}</a></p>:null}{canConnect&&!lead.tenant_id&&lead.status!=='closed'&&<button className="btn mini" onClick={()=>onConnect({id:String(lead.id),name:String(lead.business_name??''),slug:slugFromName(String(lead.business_name??'')),business_type:businessTypeCode(String(lead.business_type??'')),owner_name:String(lead.owner_name??''),owner_email:String(lead.owner_email??''),phone:String(lead.phone??''),plan_code:String(lead.plan||'').toUpperCase()==='PRO'?'PRO':'START',trial:lead.request_type==='demo'})}>Подключить организацию</button>}<label className="muted small">Состояние заявки<select className="field" value={lead.status} onChange={e=>void change(String(lead.id),e.target.value)}>{Object.entries(LEAD_STATUS).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label></article>)}</div>
     <div className="row between wrap"><span className="muted small">{count} заявок · страница {page+1} из {pages}</span><div className="row"><button className="btn ghost mini" disabled={page===0||q.loading} onClick={()=>setPage(p=>p-1)}>Назад</button><button className="btn ghost mini" disabled={page+1>=pages||q.loading} onClick={()=>setPage(p=>p+1)}>Далее</button></div></div>{msg&&<p className="err" role="alert">{msg}</p>}
   </div>
 }
 
+const DELIVERY_STATUS:Record<string,string>={all:'Все статусы',pending:'Ожидают отправки',sent:'Отправлено',failed:'Не отправлено'};
+const DELIVERY_KIND:Record<string,string>={booking_created:'Новая запись',booking_cancelled:'Отмена записи',booking_reminder:'Напоминание',booking_followup:'Повторный визит',waitlist_interest:'Лист ожидания'};
+const BOUNCE_KIND:Record<string,string>={soft:'Временная ошибка',hard:'Адрес не существует',complaint:'Жалоба'};
+
 export function PlatformNotifications() {
-  const {data,err,loading,reload}=useLoad<Row[]>('notifications',{limit:200});
-  const notices=data??[];
+  const [noticePage,setNoticePage]=useState(0); const noticeLimit=25;
+  const {data,err,loading,reload}=useLoad<Row[]>('notifications',{limit:noticeLimit+1,offset:noticePage*noticeLimit},[noticePage]);
+  const notices=(data??[]).slice(0,noticeLimit); const hasNoticeNext=(data?.length??0)>noticeLimit;
   const marked=useRef(new Set<string>());
   useEffect(()=>{const ids=notices.filter(n=>!n.is_read&&!marked.current.has(String(n.id))).map(n=>String(n.id));if(ids.length){ids.forEach(id=>marked.current.add(id));void call('notifications_read',{ids}).then(()=>reload()).catch(()=>ids.forEach(id=>marked.current.delete(id))) }},[notices,reload]);
+  const [status,setStatus]=useState('all'),[kind,setKind]=useState('all'),[page,setPage]=useState(0);
+  const limit=50;
+  useEffect(()=>setPage(0),[status,kind]);
+  const delivery=useLoad<Row>('notification_delivery',{status,kind,limit,offset:page*limit},[status,kind,page]);
+  const bounces=useLoad<Row>('notification_bounces',{limit:50,offset:0});
   const title=(action:string)=>action==='price_change.accepted'?'Организация приняла новые условия':action==='price_change.declined'?'Организация отказалась от новой цены':'Изменение цены подписки';
-  return <div className="pf-notifications"><div className="pf-panel-heading"><div><span className="pf-kicker">RENVIO</span><h2>Уведомления</h2></div><button className="pf-action-secondary" onClick={()=>void reload()} disabled={loading}>{loading?'Обновляем…':'Обновить'}</button></div><State err={err} loading={loading&&!data}/>{notices.length===0&&!loading?<p className="muted">Событий по изменению цен нет.</p>:notices.map((n)=><article className="card pf-notice" key={n.id}><div className="row between wrap"><b>{title(String(n.action))}</b><span className={`pf-notice-status${n.is_read?'':' unread'}`}>{n.is_read?'Прочитано':'Новое'}</span><time className="muted small">{fmtDateTime(n.created_at)}</time></div><p>{n.slug??'Организация'} · {n.payload?.old_price??'—'} ₸ → {n.payload?.new_price??'—'} ₸</p><p className="muted small">Новые условия вступают в силу: {fmtDateTime(n.payload?.effective_at)}</p></article>)}</div>
+  const rows:Row[]=delivery.data?.rows??[],count=Number(delivery.data?.count??0),pages=Math.max(1,Math.ceil(count/limit));
+  const summary:Row=delivery.data?.summary??{};
+  return <div className="pf-notifications"><div className="pf-panel-heading"><div><span className="pf-kicker">RENVIO</span><h2>Уведомления и доставка</h2></div><button className="pf-action-secondary" onClick={()=>{void reload();void delivery.reload();void bounces.reload()}} disabled={loading}>{loading?'Обновляем…':'Обновить'}</button></div>
+    <section className="card col"><h3>Доставка сообщений</h3><p className="muted small">Очередь уведомлений организаций за последние 30 дней.</p>
+      <div className="row wrap"><span className="pf-badge pf-pending">Ожидают: {Number(summary.pending??0)}</span><span className="pf-badge pf-active">Отправлено: {Number(summary.sent??0)}</span><span className="pf-badge pf-failed">Ошибок: {Number(summary.failed??0)}</span><span className="pf-badge pf-grace">Отказов: {Number(summary.bounced??0)}</span></div>
+      <div className="row wrap"><select className="field" value={status} onChange={(e)=>setStatus(e.target.value)} aria-label="Статус доставки">{Object.entries(DELIVERY_STATUS).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select><select className="field" value={kind} onChange={(e)=>setKind(e.target.value)} aria-label="Тип уведомления"><option value="all">Все сообщения</option>{Object.entries(DELIVERY_KIND).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></div>
+      <State err={delivery.err} loading={delivery.loading&&!delivery.data}/>
+      {delivery.data&&rows.length===0&&<p className="muted small">Сообщений по выбранным условиям нет.</p>}
+      {rows.length>0&&<Table head={['Когда','Организация','Сообщение','Статус','Попытки','Ошибка']}>{rows.map((j)=><tr key={j.id}><td>{fmtDateTime(j.created_at)}</td><td>{j.slug??'—'}</td><td>{DELIVERY_KIND[j.kind]??j.kind} · {j.channel}</td><td>{DELIVERY_STATUS[j.status]??j.status}</td><td>{j.attempts}</td><td className="muted small">{j.last_error??'—'}</td></tr>)}</Table>}
+      {delivery.data&&(rows.length>0||page>0)&&<div className="row between wrap"><span className="muted small">{count} сообщений · страница {page+1} из {pages}</span><div className="row"><button className="pf-action-secondary" disabled={page===0||delivery.loading} onClick={()=>setPage(p=>p-1)}>Назад</button><button className="pf-action-secondary" disabled={page+1>=pages||delivery.loading} onClick={()=>setPage(p=>p+1)}>Дальше</button></div></div>}
+    </section>
+    <section className="card col"><h3>Отказы доставки</h3><p className="muted small">Адреса, на которые пришли отказы или жалобы.</p><State err={bounces.err} loading={bounces.loading&&!bounces.data}/>
+      {bounces.data&&(bounces.data.rows??[]).length===0&&<p className="muted small">Отказов нет.</p>}
+      {(bounces.data?.rows??[]).length>0&&<Table head={['Когда','Организация','Канал','Адрес','Тип отказа']}>{(bounces.data?.rows as Row[] ?? []).map((b)=><tr key={b.id}><td>{fmtDateTime(b.created_at)}</td><td>{b.slug??'—'}</td><td>{b.channel}</td><td>{b.recipient}</td><td>{BOUNCE_KIND[b.bounce_type]??b.bounce_type}</td></tr>)}</Table>}
+    </section>
+    <State err={err} loading={loading&&!data}/>{notices.length===0&&!loading?<p className="muted">Событий по изменению цен нет.</p>:notices.map((n)=><article className="card pf-notice" key={n.id}><div className="row between wrap"><b>{title(String(n.action))}</b><span className={`pf-notice-status${n.is_read?'':' unread'}`}>{n.is_read?'Прочитано':'Новое'}</span><time className="muted small">{fmtDateTime(n.created_at)}</time></div><p>{n.slug??'Организация'} · {n.payload?.old_price??'—'} ₸ → {n.payload?.new_price??'—'} ₸</p><p className="muted small">Новые условия вступают в силу: {fmtDateTime(n.payload?.effective_at)}</p></article>)}
+    {data&&(notices.length>0||noticePage>0)&&<div className="row between wrap"><span className="muted small">События цен · страница {noticePage+1}</span><div className="row"><button className="pf-action-secondary" disabled={noticePage===0||loading} onClick={()=>setNoticePage(p=>p-1)}>Назад</button><button className="pf-action-secondary" disabled={!hasNoticeNext||loading} onClick={()=>setNoticePage(p=>p+1)}>Дальше</button></div></div>}</div>
 }
 
 export function Settings() {

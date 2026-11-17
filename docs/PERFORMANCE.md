@@ -60,21 +60,16 @@ through `collectCursorPages` instead of issuing one large `offset` query.
 ## Report rollups
 
 `booking_report_daily` stores per-tenant, per-day `visits / done / booked /
-received_cents / expected_cents`. Refresh it on a schedule (pg_cron or an Edge
-Function with `service_role`):
+received_cents / expected_cents`. Use the helper that walks every tenant:
 
 ```sql
--- Example: refresh the last 7 days for every tenant (run daily).
-do $$
-declare t uuid;
-begin
-  for t in select id from public.tenants loop
-    perform public.refresh_booking_report_daily(
-      t, current_date - 7, current_date
-    );
-  end loop;
-end $$;
+select public.refresh_all_booking_reports(7);
 ```
+
+If `pg_cron` is enabled, migration `20261118120000_schedule_maintenance_jobs.sql`
+installs the idempotent job `platform-refresh-booking-report-daily` (`20 1 * * *`)
+that calls this helper. For backfills, call `refresh_booking_report_daily(tenant,
+from, to)` directly with `service_role`.
 
 Owners read the rollup with `owner_daily_metrics(p_slug, p_from, p_to)`. If the
 table is empty for a date range, there is nothing to display until the first
@@ -84,8 +79,9 @@ refresh completes — seed historical ranges once after deploying.
 
 `archive_old_operational_rows(p_older_than_days = 365, p_batch_limit = 1000)` copies
 old `admin_audit_events` and terminal `notification_jobs` into `*_archive` tables and
-deletes the originals in bounded batches. Schedule it via `service_role` only;
-`p_older_than_days` is clamped to at least 30 and the batch to at most 5000 rows.
+deletes the originals in bounded batches. `p_older_than_days` is clamped to at least
+30 and the batch to at most 5000 rows. The same maintenance migration schedules
+`platform-archive-old-operational-rows` (`40 3 * * 0`) when `pg_cron` is available.
 
 Check archived counts:
 
@@ -127,3 +123,40 @@ database timeout so clients receive a controlled error instead of a 504.
   (`/api/owner`, `/api/platform`, `/api/csp-report`) on `no-store`, and leaves
   `/api/health` with its short shared cache. Search inputs are debounced in owner
   bookings and platform tenants to avoid a request per keystroke.
+
+## Platform admin lists
+
+Migration `20261118150000_platform_admin_pagination.sql` adds `p_offset` to
+`platform_list_subscriptions` and `platform_notifications`. The edge dispatcher
+forwards `offset` for both actions; old calls without the new argument keep working.
+`business_leads` supports a sanitized `search` predicate across name, owner, email
+and phone.
+
+Shared helpers in `src/pages/platform-admin/shared.tsx`:
+
+- `usePlatformFilters` debounces every field by 300ms and persists named presets in
+  `localStorage` under a per-list key. Changing any filter resets pagination.
+- `FilterBar` renders the preset picker/save/reset/CSV controls.
+- `downloadCsv` writes a BOM, semicolon-separated values and prefixes formula-looking
+  cells with `'` to prevent spreadsheet injection.
+- `exportAllRows` walks array-returning actions; `exportPagedRows` walks
+  `{ rows, count, limit }` actions and follows the server-reported page size.
+
+Audit, support tickets, leads, payments and subscriptions all use these helpers.
+CSV exports stream in bounded batches (at most 200 rows per request, 50 for ticket
+and lead endpoints) instead of loading an unbounded response.
+
+## Notification delivery & bounces
+
+Migration `20261118140000_notification_delivery.sql` adds per-tenant
+`notification_templates` with `audience` (`client`/`owner`), delivery fields on
+`notification_jobs` (`channel`, `template_code`, `bounced_at`, `bounce_type`) and
+`bounce_suppressions`. The worker reads active templates once per job batch and
+records the applied template id through the new four-argument
+`finish_notification_job`.
+
+`record_email_bounce` is service-role only and is exposed through the
+`email-bounce-webhook` Edge Function (`x-webhook-secret`, secret
+`BOUNCE_WEBHOOK_SECRET` with `CRON_SECRET` fallback). Repeating the same provider
+event is a no-op. Owner RPCs are templates/list/retry/bounces; platform RPCs are
+delivery/bounces and are available to every admin role as read-only actions.
