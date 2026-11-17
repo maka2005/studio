@@ -12,15 +12,19 @@ describe('API / Edge / RPC contracts', () => {
     for (const rpc of [
       'owner_me',
       'owner_bookings',
+      'owner_bookings_page',
+      'owner_daily_metrics',
+      'owner_audit_history_page',
+      'owner_billing_notifications_page',
+      'owner_reviews_page',
+      'owner_waitlist_page',
       'owner_update_config',
       'owner_update_schedule_settings',
       'owner_schedule_exceptions',
       'owner_upsert_schedule_exception',
       'owner_delete_schedule_exception',
+      'owner_unblock',
     ]) {
-      // schedule settings/exceptions RPCs are called via supabase client in frontend; allowlist covers proxied RPCs
-      if (rpc.startsWith('owner_update_schedule_settings') || rpc.includes('schedule_exception'))
-        continue;
       expect(ownerApi).toContain(`'${rpc}'`);
     }
   });
@@ -49,5 +53,39 @@ describe('API / Edge / RPC contracts', () => {
     expect(api).toContain('scheduleExceptions');
     expect(api).toContain('upsertScheduleException');
     expect(api).toContain('deleteScheduleException');
+  });
+
+  it('frontend owner API declares keyset page methods', () => {
+    const api = read('src/lib/api.ts');
+    for (const method of [
+      'bookingsPage',
+      'bookingsAll',
+      'auditHistoryPage',
+      'billingNotificationsPage',
+      'reviewsPage',
+      'waitlistPage',
+      'dailyMetrics',
+    ]) {
+      expect(api).toContain(`${method}:`);
+    }
+  });
+
+  it('owner lists no longer call the old offset RPC wrappers', () => {
+    for (const file of [
+      'src/pages/owner/reports.tsx',
+      'src/pages/owner/cabinet.tsx',
+      'src/pages/owner/bookings.tsx',
+    ]) {
+      const source = read(file);
+      for (const oldCall of [
+        'owner.bookings(',
+        'owner.auditHistory(',
+        'owner.billingNotifications(',
+        'owner.reviews(',
+        'owner.waitlist(',
+      ]) {
+        expect(source).not.toContain(oldCall);
+      }
+    }
   });
 });

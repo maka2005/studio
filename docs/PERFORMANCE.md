@@ -49,6 +49,14 @@ Client wrappers live in `src/lib/api.ts` under `owner.*Page` and use the `Cursor
 type. Pass `next_cursor` back unchanged; never build a cursor manually. `p_limit` is
 clamped to `1..200`. The old `limit/offset` RPCs remain for backwards compatibility.
 
+The owner UI now consumes these RPCs: `reports.tsx` uses `waitlistPage`, `reviewsPage`
+and `auditHistoryPage`; `cabinet.tsx` uses `billingNotificationsPage`; `bookings.tsx`
+and report exports use `bookingsAll`, which walks `bookingsPage` with `p_limit = 200`
+and re-sorts rows by `starts_at` to preserve the previous calendar/CSV order.
+New RPC names are allowlisted in `api/owner.js` (`OWNER_RPCS`) so the Vercel proxy
+forwards them. Lists that need a full dataset (report aggregates, CSV) are streamed
+through `collectCursorPages` instead of issuing one large `offset` query.
+
 ## Report rollups
 
 `booking_report_daily` stores per-tenant, per-day `visits / done / booked /

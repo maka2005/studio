@@ -127,6 +127,16 @@ export type OwnerAuditEvent = { id: number; created_at: string; entity: string; 
 export type OwnerBillingNotification = { id: string; event_type: string; payload: Record<string, unknown>; created_at: string; is_read: boolean };
 /** Keyset page returned by the new *_page RPCs. Pass next_cursor back unchanged. */
 export type CursorPage<T> = { items: T[]; has_more: boolean; next_cursor: Record<string, string> | null };
+/** Walks keyed pages until the server says there are no more. Used where the UI still needs the full list (reports, calendar). */
+async function collectCursorPages<T>(load: (cursor: Record<string, string> | null) => Promise<CursorPage<T>>, maxPages = 200): Promise<T[]> {
+  const all: T[] = []; let cursor: Record<string, string> | null = null;
+  for (let i = 0; i < maxPages; i++) {
+    const page = await load(cursor); all.push(...page.items);
+    if (!page.has_more || !page.next_cursor) break;
+    cursor = page.next_cursor;
+  }
+  return all;
+}
 export type DailyMetric = { day: string; visits: number; done: number; booked: number; received_cents: number; expected_cents: number; updated_at: string };
 export type OwnerPlanUsage = { plan_code:string; limits:Record<string,number|null>; features:Record<string,boolean>; override:{limits:Record<string,number|null>;features:Record<string,boolean>;reason:string|null;updated_at:string|null}; usage:Record<string,number|string|null> };
 export type OwnerNotificationStatus = { pending: number; failed: number; last_sent_at: string | null };
@@ -152,6 +162,11 @@ export const owner = {
   // Keyset pagination (preferred for growing lists). Requires the performance migration.
   bookingsPage: (slug: string, from: string, to: string, limit = 50, cursor: Record<string, string> | null = null) =>
     rpc<CursorPage<OwnerBooking>>('owner_bookings_page', { p_slug: slug, p_from: from, p_to: to, p_limit: limit, p_cursor: cursor }),
+  /** Same data as bookings(), but streamed through the indexed keyset RPC and sorted back to ascending order. */
+  bookingsAll: (slug: string, from: string, to: string) =>
+    collectCursorPages<OwnerBooking>((cursor) =>
+      rpc<CursorPage<OwnerBooking>>('owner_bookings_page', { p_slug: slug, p_from: from, p_to: to, p_limit: 200, p_cursor: cursor })
+    ).then((rows) => rows.sort((a, z) => Date.parse(a.starts_at) - Date.parse(z.starts_at) || a.id.localeCompare(z.id))),
   auditHistoryPage: (slug: string, limit = 50, cursor: Record<string, string> | null = null) =>
     rpc<CursorPage<OwnerAuditEvent>>('owner_audit_history_page', { p_slug: slug, p_limit: limit, p_cursor: cursor }),
   billingNotificationsPage: (slug: string, limit = 50, cursor: Record<string, string> | null = null) =>

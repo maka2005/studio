@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ownerRequest } from '../../lib/ownerSession'
 import { fetchServices, owner, type OwnerBillingNotification } from '../../lib/api'
 import { LoadingScreen } from '../../components/LoadingScreen'
@@ -176,14 +176,21 @@ export function OwnerAccount({slug,canExport,canRespond,latestSuspension}:{slug:
 
 export function OwnerNotificationCenter({slug,canRespond}:{slug:string;canRespond:boolean}) {
   const q=useQuery({queryKey:['owner','price-changes',slug],queryFn:()=>owner.pendingPriceChanges(slug),refetchInterval:60_000,refetchOnWindowFocus:true});
-  const events=useQuery({queryKey:['owner','billing-notifications',slug],queryFn:()=>owner.billingNotifications(slug,50,0),retry:false,refetchInterval:30_000,refetchOnWindowFocus:true});
+  const events=useInfiniteQuery({
+    queryKey:['owner','billing-notifications-page',slug],
+    queryFn:({pageParam})=>owner.billingNotificationsPage(slug,50,pageParam??null),
+    initialPageParam:null as Record<string,string>|null,
+    getNextPageParam:(last)=>last.has_more?(last.next_cursor??undefined):undefined,
+    retry:false,refetchInterval:30_000,refetchOnWindowFocus:true,
+  });
   const qc=useQueryClient(); const [msg,setMsg]=useState('');
   const respond=useMutation({mutationFn:({id,accept}:{id:string;accept:boolean})=>owner.respondPriceChange(slug,id,accept),onSuccess:async()=>{setMsg('Ответ сохранён.');await qc.invalidateQueries({queryKey:['owner','price-changes',slug]});await qc.invalidateQueries({queryKey:['owner','subscription',slug]})},onError:()=>setMsg('Не удалось сохранить ответ. Обновите страницу и повторите.')});
-  const unread=events.data?.filter(e=>!e.is_read)??[];
-  const markRead=async()=>{if(!unread.length)return;try{await owner.markBillingNotificationsRead(slug,unread.map(e=>e.id));await qc.invalidateQueries({queryKey:['owner','billing-notifications',slug]})}catch{setMsg('Не удалось отметить уведомления прочитанными. Повторите позже.')}};
-  const empty=q.data?.length===0&&(events.data?.length??0)===0;
+  const eventItems=events.data?.pages.flatMap((p)=>p.items)??[];
+  const unread=eventItems.filter(e=>!e.is_read);
+  const markRead=async()=>{if(!unread.length)return;try{await owner.markBillingNotificationsRead(slug,unread.map(e=>e.id));await qc.invalidateQueries({queryKey:['owner','billing-notifications-page',slug]})}catch{setMsg('Не удалось отметить уведомления прочитанными. Повторите позже.')}};
+  const empty=q.data?.length===0&&eventItems.length===0;
   return <div className="col"><div className="admin-subheading"><div><h2>Центр уведомлений</h2><p className="muted small">Статус подписки и важные сообщения Renvio.</p></div>{unread.length>0&&<button className="btn ghost mini" onClick={()=>void markRead()}>Отметить прочитанными</button>}</div>{msg&&<p className="muted small" role="status">{msg}</p>}
-    {events.isPending?<p className="muted">Проверяем события подписки…</p>:events.isError?<p className="err">Не удалось загрузить события подписки. <button className="link" onClick={()=>void events.refetch()}>Повторить</button></p>:events.data?.length?<section className="col"><h3>Подписка и платежи</h3>{events.data.map(e=><article className="card col owner-price-notice" key={e.id} style={!e.is_read?{borderColor:'var(--accent,#568cff)'}:undefined}><div className="row between wrap"><b>{billingEventTitle(e.event_type)}</b><time className="muted small">{new Date(e.created_at).toLocaleString('ru-RU',{dateStyle:'medium',timeStyle:'short'})}</time></div><p>{billingEventDetail(e)}</p>{!e.is_read&&<span className="muted small">Новое</span>}</article>)}</section>:null}
+    {events.isPending?<p className="muted">Проверяем события подписки…</p>:events.isError?<p className="err">Не удалось загрузить события подписки. <button className="link" onClick={()=>void events.refetch()}>Повторить</button></p>:eventItems.length?<section className="col"><h3>Подписка и платежи</h3>{eventItems.map(e=><article className="card col owner-price-notice" key={e.id} style={!e.is_read?{borderColor:'var(--accent,#568cff)'}:undefined}><div className="row between wrap"><b>{billingEventTitle(e.event_type)}</b><time className="muted small">{new Date(e.created_at).toLocaleString('ru-RU',{dateStyle:'medium',timeStyle:'short'})}</time></div><p>{billingEventDetail(e)}</p>{!e.is_read&&<span className="muted small">Новое</span>}</article>)}{events.hasNextPage&&<div className="row"><button className="btn ghost mini" disabled={events.isFetchingNextPage} onClick={()=>void events.fetchNextPage()}>{events.isFetchingNextPage?'Загружаем…':'Показать ещё'}</button></div>}</section>:null}
     {q.isPending?<p className="muted">Проверяем изменения условий…</p>:q.isError?<p className="err">Не удалось загрузить предложения о цене. <button className="link" onClick={()=>void q.refetch()}>Повторить</button></p>:q.data?.length?<section className="col"><h3>Новые условия тарифа</h3>{q.data.map(p=><article className="card col owner-price-notice" key={p.id}><b>Изменение цены подписки</b><p>Сейчас: {p.old_price_kzt.toLocaleString('ru-RU')} ₸ за {p.old_period_months} мес. · Новые условия: {p.new_price_kzt.toLocaleString('ru-RU')} ₸ за {p.new_period_months} мес.</p><p className="muted small">Вступает в силу {new Date(p.effective_at).toLocaleDateString('ru-RU')}. До этой даты действует текущая цена. При отказе подписка не продлится на новых условиях и завершится по окончании оплаченного срока.</p>{canRespond?<div className="row wrap"><button className="btn" disabled={respond.isPending} onClick={()=>respond.mutate({id:p.id,accept:true})}>Принять условия</button><button className="btn ghost" disabled={respond.isPending} onClick={()=>{if(window.confirm('Отказ означает, что подписка не продлится на новых условиях.'))respond.mutate({id:p.id,accept:false})}}>Отказаться</button></div>:<p className="muted small">Решение принимает владелец организации.</p>}</article>)}</section>:null}
     {!q.isPending&&!events.isPending&&empty&&<p className="muted">Новых уведомлений нет.</p>}
   </div>
@@ -229,7 +236,8 @@ export function Cabinet({ b, onLogout, impersonation }: { b: Business; onLogout:
   const access = useQuery({ queryKey: ['owner', 'access', b.slug], queryFn: () => owner.access(b.slug), enabled: !!me.data })
   const platformAnnouncements=useQuery({queryKey:['owner','platform-announcements',b.slug],queryFn:()=>owner.platformAnnouncements(b.slug),enabled:access.data==='owner'||access.data==='manager',refetchInterval:60_000,retry:false})
   const platformFlags=useQuery({queryKey:['owner','platform-flags',b.slug],queryFn:()=>owner.platformFeatureFlags(b.slug),enabled:access.data==='owner'||access.data==='manager',retry:false})
-  const billingNotices=useQuery({queryKey:['owner','billing-notifications',b.slug],queryFn:()=>owner.billingNotifications(b.slug,50,0),enabled:access.data==='owner'||access.data==='manager',retry:false,refetchInterval:30_000,refetchOnWindowFocus:true})
+  const billingNotices=useInfiniteQuery({queryKey:['owner','billing-notifications-page',b.slug],queryFn:({pageParam})=>owner.billingNotificationsPage(b.slug,50,pageParam??null),initialPageParam:null as Record<string,string>|null,getNextPageParam:(last)=>last.has_more?(last.next_cursor??undefined):undefined,enabled:access.data==='owner'||access.data==='manager',retry:false,refetchInterval:30_000,refetchOnWindowFocus:true})
+  const billingNoticeItems:OwnerBillingNotification[]=billingNotices.data?.pages.flatMap((p)=>p.items)??[]
   const planUsage=useQuery({queryKey:['owner','plan-usage',b.slug],queryFn:()=>owner.planUsage(b.slug),enabled:access.data==='owner'||access.data==='manager',retry:false,refetchOnWindowFocus:true})
   const archiveStatus=useQuery({queryKey:['owner','archive-status',b.slug],queryFn:()=>owner.archiveStatus(b.slug),enabled:access.data==='owner',retry:false})
   const role=access.data
@@ -295,7 +303,7 @@ export function Cabinet({ b, onLogout, impersonation }: { b: Business; onLogout:
             <span className="admin-mobile-trigger-icon" aria-hidden="true">☰</span><span><small>РАЗДЕЛ КАБИНЕТА</small><b>{TAB_LABELS[tab] ?? tab}</b></span><span className="admin-mobile-trigger-action">{mobileMenuOpen?'Свернуть':'Меню'}</span>
           </button>
           {mobileMenuOpen&&<nav className="admin-mobile-panel" id="owner-mobile-menu" aria-label="Разделы кабинета">
-            {groupList.map(g=><section className="admin-mobile-group" key={g.name}><h2>{g.name}</h2><div>{g.tabs.map(t=><button key={t} type="button" className={`admin-mobile-tab${tab===t?' is-current':''}`} aria-current={tab===t?'page':undefined} onClick={()=>{setTab(t);setMobileMenuOpen(false)}}>{TAB_LABELS[t]??t}{t==='Центр уведомлений'&&(priceNotices.data?.some(x=>!x.is_read)||billingNotices.data?.some(x=>!x.is_read))&&<i className="admin-unread-dot" aria-label="Есть непрочитанные уведомления"/>}</button>)}</div></section>)}
+            {groupList.map(g=><section className="admin-mobile-group" key={g.name}><h2>{g.name}</h2><div>{g.tabs.map(t=><button key={t} type="button" className={`admin-mobile-tab${tab===t?' is-current':''}`} aria-current={tab===t?'page':undefined} onClick={()=>{setTab(t);setMobileMenuOpen(false)}}>{TAB_LABELS[t]??t}{t==='Центр уведомлений'&&(priceNotices.data?.some(x=>!x.is_read)||billingNoticeItems.some(x=>!x.is_read))&&<i className="admin-unread-dot" aria-label="Есть непрочитанные уведомления"/>}</button>)}</div></section>)}
           </nav>}
         </div>
         <nav className="admin-side" aria-label="Разделы кабинета">
@@ -328,9 +336,9 @@ export function Cabinet({ b, onLogout, impersonation }: { b: Business; onLogout:
                         type="button"
                         className={`admin-group-tab${tab === t ? ' is-current' : ''}`}
                         aria-current={tab === t ? 'page' : undefined}
-                        onClick={() => {setTab(t);if(t==='Центр уведомлений'){const ids=priceNotices.data?.filter(x=>!x.is_read).map(x=>x.id)??[];if(ids.length)void owner.markPriceChangesRead(b.slug,ids).then(()=>qc.invalidateQueries({queryKey:['owner','price-changes',b.slug]}));const eventIds=billingNotices.data?.filter(x=>!x.is_read).map(x=>x.id)??[];if(eventIds.length)void owner.markBillingNotificationsRead(b.slug,eventIds).then(()=>qc.invalidateQueries({queryKey:['owner','billing-notifications',b.slug]}))}}}
+                        onClick={() => {setTab(t);if(t==='Центр уведомлений'){const ids=priceNotices.data?.filter(x=>!x.is_read).map(x=>x.id)??[];if(ids.length)void owner.markPriceChangesRead(b.slug,ids).then(()=>qc.invalidateQueries({queryKey:['owner','price-changes',b.slug]}));const eventIds=billingNoticeItems.filter(x=>!x.is_read).map(x=>x.id)??[];if(eventIds.length)void owner.markBillingNotificationsRead(b.slug,eventIds).then(()=>qc.invalidateQueries({queryKey:['owner','billing-notifications-page',b.slug]}))}}}
                       >
-                        {TAB_LABELS[t] ?? t}{t==='Центр уведомлений'&&(priceNotices.data?.some(x=>!x.is_read)||billingNotices.data?.some(x=>!x.is_read))&&<i className="admin-unread-dot" aria-label="Есть непрочитанные уведомления"/>}
+                        {TAB_LABELS[t] ?? t}{t==='Центр уведомлений'&&(priceNotices.data?.some(x=>!x.is_read)||billingNoticeItems.some(x=>!x.is_read))&&<i className="admin-unread-dot" aria-label="Есть непрочитанные уведомления"/>}
                       </button>
                     ))}
                   </div>
@@ -344,7 +352,7 @@ export function Cabinet({ b, onLogout, impersonation }: { b: Business; onLogout:
       {tab === 'Сотрудники' && role === 'owner' && <TeamAccess b={b} />}
       {tab === 'Сотрудники' && role === 'manager' && <TeamAccess b={b} canManageManagers={false} />}
       {tab === 'Мой доступ' && <MyAccess b={b} />}
-      {tab === 'Личный кабинет' && <OwnerAccount slug={b.slug} canExport={role==='owner'} canRespond={role==='owner'} latestSuspension={billingNotices.data?.find(e=>e.event_type==='suspended')} />}
+      {tab === 'Личный кабинет' && <OwnerAccount slug={b.slug} canExport={role==='owner'} canRespond={role==='owner'} latestSuspension={billingNoticeItems.find(e=>e.event_type==='suspended')} />}
       {tab === 'Центр уведомлений' && <OwnerNotificationCenter slug={b.slug} canRespond={role === 'owner'} />}
       {tab === 'Поддержка' && <OwnerSupportTickets slug={b.slug} />}
       {tab === 'Отчёты' && <Reports b={b} />}

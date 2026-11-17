@@ -11,10 +11,13 @@ const OWNER_RPCS = new Set([
   'owner_me',
   'owner_access',
   'owner_bookings',
+  'owner_bookings_page',
   'staff_bookings',
   'owner_stats',
   'owner_repeat_stats',
+  'owner_daily_metrics',
   'owner_audit_history',
+  'owner_audit_history_page',
   'owner_platform_announcements',
   'owner_platform_feature_flags',
   'owner_set_status',
@@ -38,6 +41,7 @@ const OWNER_RPCS = new Set([
   'owner_notification_status',
   'owner_telegram_unlink',
   'owner_waitlist',
+  'owner_waitlist_page',
   'owner_waitlist_status',
   'owner_subscription',
   'owner_plan_usage',
@@ -45,14 +49,21 @@ const OWNER_RPCS = new Set([
   'owner_pending_price_change',
   'owner_mark_price_changes_read',
   'owner_billing_notifications',
+  'owner_billing_notifications_page',
   'owner_mark_billing_notifications_read',
   'owner_respond_price_change',
   'owner_promo_codes',
   'owner_upsert_promo',
   'owner_delete_promo',
   'owner_reviews',
+  'owner_reviews_page',
   'owner_publish_review',
   'owner_source_stats',
+  'owner_update_schedule_settings',
+  'owner_schedule_exceptions',
+  'owner_upsert_schedule_exception',
+  'owner_delete_schedule_exception',
+  'owner_unblock',
 ]);
 
 const getConfig = () => ({
@@ -437,6 +448,9 @@ async function handler(req, res) {
           owner_delete_resource: 'resources',
           owner_waitlist_status: 'waitlist',
           owner_telegram_unlink: 'telegram_links',
+          owner_unblock: 'resource_occupancies',
+          owner_upsert_schedule_exception: 'schedule_exceptions',
+          owner_delete_schedule_exception: 'schedule_exceptions',
         };
 
         const recordId = args.p_booking || args.p_id;
@@ -499,6 +513,11 @@ async function handler(req, res) {
         'owner_delete_promo',
         'owner_publish_review',
         'owner_respond_price_change',
+        'owner_mark_billing_notifications_read',
+        'owner_update_schedule_settings',
+        'owner_upsert_schedule_exception',
+        'owner_delete_schedule_exception',
+        'owner_unblock',
       ]);
 
       if (impersonation && auditedOwnerMutations.has(body.fn)) {

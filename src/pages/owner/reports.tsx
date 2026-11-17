@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useState } from 'react'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { owner } from '../../lib/api'
 import { money } from '../../lib/format'
 import type { Business } from '../../lib/tenant'
@@ -9,7 +9,7 @@ export function Reports({ b }: { b: Business }) {
   const to = today(b); const from = new Date(Date.parse(`${to}T12:00:00Z`) - 29 * 864e5).toISOString().slice(0, 10);
   const stats = useQuery({ queryKey: ['owner','source-stats',b.slug,from,to], queryFn: () => owner.sourceStats(b.slug,from,to) });
   const kpis = useQuery({ queryKey: ['owner','report-stats',b.slug,from,to], queryFn: () => owner.stats(b.slug,from,to) });
-  const bookings = useQuery({ queryKey: ['owner','report-bookings',b.slug,from,to], queryFn: () => owner.bookings(b.slug,from,to) });
+  const bookings = useQuery({ queryKey: ['owner','report-bookings',b.slug,from,to], queryFn: () => owner.bookingsAll(b.slug,from,to) });
   const repeat = useQuery({ queryKey: ['owner','repeat-stats',b.slug,from,to], queryFn: () => owner.repeatStats(b.slug,from,to) });
   const resources = useQuery({ queryKey: ['owner','resources',b.slug], queryFn: () => owner.resources(b.slug) });
   let capacityMinutes=0; const keys=['sun','mon','tue','wed','thu','fri','sat'];
@@ -43,21 +43,33 @@ export function Reports({ b }: { b: Business }) {
 }
 
 export function WaitlistAdmin({ b }: { b: Business }) {
-  const qc = useQueryClient(); const q = useQuery({ queryKey: ['owner','waitlist',b.slug], queryFn: () => owner.waitlist(b.slug) });
-  const setStatus = useMutation({ mutationFn: ({ id,status }: {id:string;status:'waiting'|'contacted'|'closed'}) => owner.waitlistStatus(id,status), onSuccess: () => void qc.invalidateQueries({ queryKey: ['owner','waitlist',b.slug] }) });
+  const qc = useQueryClient();
+  const q = useInfiniteQuery({
+    queryKey: ['owner','waitlist-page',b.slug],
+    queryFn: ({ pageParam }) => owner.waitlistPage(b.slug, 50, pageParam ?? null),
+    initialPageParam: null as Record<string,string> | null,
+    getNextPageParam: (last) => last.has_more ? (last.next_cursor ?? undefined) : undefined,
+  });
+  const items = q.data?.pages.flatMap((p) => p.items) ?? [];
+  const setStatus = useMutation({ mutationFn: ({ id,status }: {id:string;status:'waiting'|'contacted'|'closed'}) => owner.waitlistStatus(id,status), onSuccess: () => void qc.invalidateQueries({ queryKey: ['owner','waitlist-page',b.slug] }) });
   return <div className="col"><div className="admin-subheading"><div><h2>Лист ожидания</h2><p className="muted small">Заявки клиентов на дни без свободных окон. О новых заявках придёт сообщение в Telegram.</p></div></div>
-    {q.isPending ? <p className="muted">Загрузка…</p> : q.isError ? <p className="err">Не удалось загрузить лист ожидания. <button className="link" onClick={() => void q.refetch()}>Повторить</button></p> : !q.data?.length ? <p className="muted">Заявок пока нет.</p> : q.data.map((w) => <div className="card col" key={w.id}><div className="row between"><b>{w.customer_name} · {w.preferred_day}</b><span className="pill">{{waiting:'Ожидает',contacted:'Связались',closed:'Закрыта'}[w.status] ?? w.status}</span></div><span>{w.service_name} · {w.car}</span><a href={`tel:${w.customer_phone.replace(/[^\d+]/g, '')}`}>{w.customer_phone}</a><div className="row wrap"><button className="btn ghost mini" disabled={setStatus.isPending} onClick={() => setStatus.mutate({id:w.id,status:'contacted'})}>Связались</button><button className="btn ghost mini" disabled={setStatus.isPending} onClick={() => setStatus.mutate({id:w.id,status:'closed'})}>Закрыть заявку</button></div></div>)}
+    {q.isPending ? <p className="muted">Загрузка…</p> : q.isError ? <p className="err">Не удалось загрузить лист ожидания. <button className="link" onClick={() => void q.refetch()}>Повторить</button></p> : !items.length ? <p className="muted">Заявок пока нет.</p> : items.map((w) => <div className="card col" key={w.id}><div className="row between"><b>{w.customer_name} · {w.preferred_day}</b><span className="pill">{{waiting:'Ожидает',contacted:'Связались',closed:'Закрыта'}[w.status] ?? w.status}</span></div><span>{w.service_name} · {w.car}</span><a href={`tel:${w.customer_phone.replace(/[^\d+]/g, '')}`}>{w.customer_phone}</a><div className="row wrap"><button className="btn ghost mini" disabled={setStatus.isPending} onClick={() => setStatus.mutate({id:w.id,status:'contacted'})}>Связались</button><button className="btn ghost mini" disabled={setStatus.isPending} onClick={() => setStatus.mutate({id:w.id,status:'closed'})}>Закрыть заявку</button></div></div>)}
+    {q.hasNextPage && <div className="row"><button className="btn ghost mini" disabled={q.isFetchingNextPage} onClick={() => void q.fetchNextPage()}>{q.isFetchingNextPage ? 'Загружаем…' : 'Показать ещё'}</button></div>}
     {setStatus.isError && <p className="err small">Не удалось обновить статус заявки.</p>}
   </div>;
 }
 
 export function AuditHistory({b}:{b:Business}) {
-  const [page,setPage]=useState(0);const limit=50;
-  const q=useQuery({queryKey:['owner','audit',b.slug,page],queryFn:()=>owner.auditHistory(b.slug,limit+1,page*limit)});
-  const items=q.data?.slice(0,limit)??[];const hasNext=(q.data?.length??0)>limit;
+  const [cursors,setCursors]=useState<Array<Record<string,string>|null>>([null]);
+  useEffect(()=>setCursors([null]),[b.slug]);
+  const cursor=cursors[cursors.length-1]??null;
+  const q=useQuery({queryKey:['owner','audit-page',b.slug,cursor],queryFn:()=>owner.auditHistoryPage(b.slug,50,cursor)});
+  const items=q.data?.items??[];const page=cursors.length;
+  const goNext=()=>{const next=q.data?.next_cursor;if(next)setCursors([...cursors,next])};
+  const goPrev=()=>setCursors(cursors.slice(0,-1));
   return <div className="col"><div className="admin-subheading"><div><h2>История изменений</h2><p className="muted small">Записи, услуги, команда, оплаты, настройки и действия поддержки.</p></div></div>
     {q.isPending?<p className="muted">Загрузка истории…</p>:q.isError?<p className="err">Не удалось загрузить историю. <button className="link" onClick={()=>void q.refetch()}>Повторить</button></p>:items.length===0?<p className="muted">Изменений пока нет.</p>:<div className="admin-audit-list">{items.map(e=><article className="card admin-audit-event" key={e.id}><div className="row between wrap"><b>{auditEntity(e.entity)} · {auditAction(e.action,e.entity)}</b><time className="muted small">{fmtT(b,e.created_at,'d MMM yyyy, HH:mm')}</time></div><p className="muted small">{auditDetail(e,b.currency,b.timezone)}{e.actor_email?` · ${e.entity==='support'?'Сотрудник поддержки':'Изменил'}: ${e.actor_email}`:e.entity==='subscription'?' · Сервис Renvio':''}</p></article>)}</div>}
-    {q.data&& (items.length>0||page>0)&&<nav className="admin-service-pagination" aria-label="История изменений"><button className="admin-page-button" disabled={page===0} onClick={()=>setPage(page-1)}>Назад</button><span className="muted small">Страница <b>{page+1}</b></span><button className="admin-page-button" disabled={!hasNext} onClick={()=>setPage(page+1)}>Далее</button></nav>}
+    {q.data&& (items.length>0||page>1)&&<nav className="admin-service-pagination" aria-label="История изменений"><button className="admin-page-button" disabled={page===1} onClick={goPrev}>Назад</button><span className="muted small">Страница <b>{page}</b></span><button className="admin-page-button" disabled={!q.data.has_more} onClick={goNext}>Далее</button></nav>}
   </div>
 }
 
@@ -77,9 +89,17 @@ export function Promos({ b }: { b: Business }) {
 }
 
 export function Reviews({ b }: { b: Business }) {
-  const qc=useQueryClient();const q=useQuery({queryKey:['owner','reviews',b.slug],queryFn:()=>owner.reviews(b.slug)});
-  const toggle=useMutation({mutationFn:({id,published}:{id:string;published:boolean})=>owner.publishReview(id,published),onSuccess:()=>void qc.invalidateQueries({queryKey:['owner','reviews',b.slug]})});
+  const qc=useQueryClient();
+  const q=useInfiniteQuery({
+    queryKey:['owner','reviews-page',b.slug],
+    queryFn:({pageParam})=>owner.reviewsPage(b.slug,50,pageParam??null),
+    initialPageParam:null as Record<string,string>|null,
+    getNextPageParam:(last)=>last.has_more?(last.next_cursor??undefined):undefined,
+  });
+  const items=q.data?.pages.flatMap((p)=>p.items)??[];
+  const toggle=useMutation({mutationFn:({id,published}:{id:string;published:boolean})=>owner.publishReview(id,published),onSuccess:()=>void qc.invalidateQueries({queryKey:['owner','reviews-page',b.slug]})});
   return <div className="col"><div className="admin-subheading"><div><h2>Отзывы клиентов</h2><p className="muted small">Отзывы доступны после завершённого визита. Публикация отображает отзыв на главной странице.</p></div></div>
-    {q.isPending?<p className="muted">Загрузка…</p>:q.isError?<p className="err">Не удалось загрузить отзывы.</p>:!q.data?.length?<p className="muted">Отзывы появятся после выполненных записей.</p>:q.data.map(r=><div className="card col" key={r.id}><div className="row between"><b>{r.customer_name} · {r.service_name}</b><span>{'★'.repeat(r.rating)}{'☆'.repeat(5-r.rating)}</span></div>{r.comment&&<p>{r.comment}</p>}<button className="btn ghost mini" disabled={toggle.isPending} onClick={()=>toggle.mutate({id:r.id,published:!r.published})}>{r.published?'Снять с публикации':'Опубликовать отзыв'}</button></div>)}
+    {q.isPending?<p className="muted">Загрузка…</p>:q.isError?<p className="err">Не удалось загрузить отзывы.</p>:!items.length?<p className="muted">Отзывы появятся после выполненных записей.</p>:items.map(r=><div className="card col" key={r.id}><div className="row between"><b>{r.customer_name} · {r.service_name}</b><span>{'★'.repeat(r.rating)}{'☆'.repeat(5-r.rating)}</span></div>{r.comment&&<p>{r.comment}</p>}<button className="btn ghost mini" disabled={toggle.isPending} onClick={()=>toggle.mutate({id:r.id,published:!r.published})}>{r.published?'Снять с публикации':'Опубликовать отзыв'}</button></div>)}
+    {q.hasNextPage&&<div className="row"><button className="btn ghost mini" disabled={q.isFetchingNextPage} onClick={()=>void q.fetchNextPage()}>{q.isFetchingNextPage?'Загружаем…':'Показать ещё'}</button></div>}
   </div>;
 }

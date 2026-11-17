@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 import { ru } from 'date-fns/locale'
@@ -29,7 +29,7 @@ export function Bookings({ b, role = 'owner' }: { b: Business; role?: 'owner'|'m
   const to = mode === 'day' ? day : weekDays[6]!
   const list = useQuery({
     queryKey: ['owner', 'bookings', b.slug, day, to],
-    queryFn: () => role === 'staff' ? owner.staffBookings(b.slug, day, to) : owner.bookings(b.slug, day, to),
+    queryFn: () => role === 'staff' ? owner.staffBookings(b.slug, day, to) : owner.bookingsAll(b.slug, day, to),
   })
   const stats = useQuery({
     queryKey: ['owner', 'stats', b.slug, day, to],
