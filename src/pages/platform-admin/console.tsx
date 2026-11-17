@@ -1,10 +1,22 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { Logo } from '../../components/BrandMark';
-import { Dashboard } from './dashboard';
-import { BillingDocuments, Payments, Plans, Subscriptions } from './billing';
-import { Admins, Audit, BusinessLeads, PlatformNotifications, PlatformServiceAdmin, Settings, SupportQueue } from './operations';
-import { CreateTenant, TenantCard, Tenants } from './tenants';
 import { PLATFORM_ROLE_LABEL, TABS, call, useLoad, type LeadPrefill, type Row, type Tab } from './shared';
+
+const Dashboard = lazy(() => import('./dashboard').then((m) => ({ default: m.Dashboard })));
+const BillingDocuments = lazy(() => import('./billing').then((m) => ({ default: m.BillingDocuments })));
+const Payments = lazy(() => import('./billing').then((m) => ({ default: m.Payments })));
+const Plans = lazy(() => import('./billing').then((m) => ({ default: m.Plans })));
+const Subscriptions = lazy(() => import('./billing').then((m) => ({ default: m.Subscriptions })));
+const Admins = lazy(() => import('./operations').then((m) => ({ default: m.Admins })));
+const Audit = lazy(() => import('./operations').then((m) => ({ default: m.Audit })));
+const BusinessLeads = lazy(() => import('./operations').then((m) => ({ default: m.BusinessLeads })));
+const PlatformNotifications = lazy(() => import('./operations').then((m) => ({ default: m.PlatformNotifications })));
+const PlatformServiceAdmin = lazy(() => import('./operations').then((m) => ({ default: m.PlatformServiceAdmin })));
+const Settings = lazy(() => import('./operations').then((m) => ({ default: m.Settings })));
+const SupportQueue = lazy(() => import('./operations').then((m) => ({ default: m.SupportQueue })));
+const CreateTenant = lazy(() => import('./tenants').then((m) => ({ default: m.CreateTenant })));
+const TenantCard = lazy(() => import('./tenants').then((m) => ({ default: m.TenantCard })));
+const Tenants = lazy(() => import('./tenants').then((m) => ({ default: m.Tenants })));
 
 export function Console({ onLogout, role, accountEmail }: { onLogout: () => void; onMfa: () => void; role: string; accountEmail: string }) {
   const [tab, setTab] = useState<Tab>(role === 'support' ? 'Поддержка' : 'Главная');
@@ -29,7 +41,7 @@ export function Console({ onLogout, role, accountEmail }: { onLogout: () => void
     <main className="page pf-wide">
       <header className="pf-app-header"><div className="pf-brand"><div><b className="pf-wordmark"><Logo height={12} /></b><span>Platform console</span></div></div><div className="pf-header-actions"><span className="pf-header-user">{PLATFORM_ROLE_LABEL[role] ?? 'Нет доступа'}{accountEmail && <><br/><small>{accountEmail}</small></>}</span><button className="pf-logout" onClick={onLogout}>Выйти</button></div></header>
       <div className="pf-console-layout"><nav className="pf-tabs" aria-label="Разделы платформы">{visibleTabs.map((t) => <button key={t} className={tab === t && !openTenant ? 'is-current' : ''} onClick={() => { setOpenTenant(null); setTab(t); if(t==='Уведомления'){const ids=platformNotices.data?.filter(x=>!x.is_read).map(x=>String(x.id))??[];if(ids.length)void call('notifications_read',{ids}).then(()=>platformNotices.reload())} }}>{t}{t==='Уведомления'&&platformNotices.data?.some(x=>!x.is_read)&&<i className="admin-unread-dot" aria-label="Есть непрочитанные уведомления"/>}</button>)}</nav>
-      <section className="pf-console-content">{openTenant ? <TenantCard id={openTenant} role={role} onBack={() => setOpenTenant(null)} />
+      <section className="pf-console-content"><Suspense fallback={<p className="muted">Загрузка раздела…</p>}>{openTenant ? <TenantCard id={openTenant} role={role} onBack={() => setOpenTenant(null)} />
         : tab === 'Главная' ? <Dashboard onOpen={setOpenTenant} onNavigate={setTab} />
         : tab === 'Организации' ? <Tenants onOpen={setOpenTenant} />
         : tab === 'Поддержка' ? <SupportQueue />
@@ -43,6 +55,6 @@ export function Console({ onLogout, role, accountEmail }: { onLogout: () => void
         : tab === 'Уведомления' ? <PlatformNotifications />
         : tab === 'Журнал' ? <Audit />
         : tab === 'Администраторы' ? <Admins />
-        : <Settings />}</section></div>
+        : <Settings />}</Suspense></section></div>
     </main>);
 }

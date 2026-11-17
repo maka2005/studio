@@ -8,6 +8,7 @@ import { isFullPhone, maskPhone, PHONE_PLACEHOLDER } from '../../lib/phone'
 import { supabase } from '../../lib/supabase'
 import { prepareImage, removeByUrl, uploadImage } from '../../lib/media'
 import { assetUrl, type Business } from '../../lib/tenant'
+import { TenantImage } from '../../components/TenantImage'
 import { Err } from './shared'
 
 const DAYS: [string, string][] = [
@@ -345,7 +346,7 @@ export function Media({ b }: { b: Business }) {
       <div className="card col">
         <b>Логотип</b>
         <div className="row">
-          <img className="thumb sq" src={assetUrl(b.slug, logo)} alt="" />
+          <TenantImage className="thumb sq" src={assetUrl(b.slug, logo)} alt="" width={72} height={72} sizes="72px" />
           <label className="btn ghost mini filebtn">
             {busy === 'logo' ? 'Загружаем…' : 'Заменить'}
             <input
@@ -369,7 +370,7 @@ export function Media({ b }: { b: Business }) {
       </div>
       <div className="card col">
         <b>Главное фото</b>
-        <img className="thumb wide" src={assetUrl(b.slug, hero)} alt="" />
+        <TenantImage className="thumb wide" src={assetUrl(b.slug, hero)} alt="" width={640} height={400} sizes="(max-width: 760px) 100vw, 640px" />
         <label className="btn ghost mini filebtn">
           {busy === 'hero' ? 'Загружаем…' : 'Заменить'}
           <input
@@ -393,7 +394,7 @@ export function Media({ b }: { b: Business }) {
       {works.length === 0 && <p className="muted">Пока нет ни одной работы.</p>}
       {works.map((w, i) => (
         <div className="card col" key={w.image + i}>
-          <img className="thumb wide" src={assetUrl(b.slug, w.image)} alt="" />
+          <TenantImage className="thumb wide" src={assetUrl(b.slug, w.image)} alt="" width={640} height={400} sizes="(max-width: 760px) 100vw, 320px" />
           <input
             className="field"
             aria-label="Подпись под фото"

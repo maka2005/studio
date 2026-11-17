@@ -7,6 +7,7 @@ import { Calendar, Grid, Home, User } from '../lib/icons';
 import { BookingFlow } from '../components/BookingFlow';
 import { LoadingScreen } from '../components/LoadingScreen';
 import { Logo } from '../components/BrandMark';
+import { TenantImage } from '../components/TenantImage';
 import { fetchBookingOpen } from '../lib/api';
 export function Shell() {
   const { slug = '' } = useParams();
@@ -27,7 +28,7 @@ export function Shell() {
   const base = `/s/${slug}`;
   const ctx: Ctx = { b, openBooking: (service) => setBooking({ service }) };
   return (<>
-    <header className="top"><Link to={base} className="brand"><img src={assetUrl(slug, b.images.logo)} alt="" width={40} height={40} />{b.short_name}</Link>
+    <header className="top"><Link to={base} className="brand"><TenantImage src={assetUrl(slug, b.images.logo)} alt="" width={40} height={40} sizes="40px" priority />{b.short_name}</Link>
       {b.client_profile && <Link to={`${base}/profile`} className="icon-btn" aria-label="Профиль"><User /></Link>}</header>
     {!isOwner && bookingOpen.data === false && <div className="page"><section className="card col" role="status">
       <b>Онлайн-запись временно приостановлена</b>

@@ -8,6 +8,7 @@ supabase/.temp
 coverage
 playwright-report
 test-results
+*.timestamp-*.mjs
 package-lock.json
 *.min.*
 # Legacy/large areas not yet formatted; expand incrementally

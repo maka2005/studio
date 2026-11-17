@@ -6,6 +6,7 @@ import { ru } from 'date-fns/locale'
 import { fetchServices, fetchSlots, owner, type OwnerBooking } from '../../lib/api'
 import { money, telHref } from '../../lib/format'
 import { isFullPhone, maskPhone, PHONE_PLACEHOLDER } from '../../lib/phone'
+import { useDebouncedValue } from '../../lib/useDebouncedValue'
 import type { Business } from '../../lib/tenant'
 import { Sheet } from '../../components/Sheet'
 import { Err, STATUS, fmtT, today, useAct } from './shared'
@@ -18,6 +19,7 @@ export function Bookings({ b, role = 'owner' }: { b: Business; role?: 'owner'|'m
   const [add, setAdd] = useState(false)
   const [block, setBlock] = useState(false)
   const [search, setSearch] = useState('')
+  const debouncedSearch = useDebouncedValue(search, 200)
   const [statusFilter, setStatusFilter] = useState('all')
   const [resourceFilter, setResourceFilter] = useState('all')
   const resources = useQuery({ queryKey: ['owner','resources',b.slug], queryFn: () => owner.resources(b.slug) })
@@ -36,9 +38,14 @@ export function Bookings({ b, role = 'owner' }: { b: Business; role?: 'owner'|'m
     queryFn: () => owner.stats(b.slug, day, to),
     enabled: role !== 'staff',
   })
-  const refresh = () => void qc.invalidateQueries({ queryKey: ['owner'] })
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: ['owner', 'bookings', b.slug] })
+    void qc.invalidateQueries({ queryKey: ['owner', 'stats', b.slug] })
+    void qc.invalidateQueries({ queryKey: ['owner', 'report-bookings', b.slug] })
+    void qc.invalidateQueries({ queryKey: ['slots', b.slug] })
+  }
   const visible = (list.data ?? []).filter((x) => {
-    const q = search.trim().toLocaleLowerCase('ru')
+    const q = debouncedSearch.trim().toLocaleLowerCase('ru')
     const matchesSearch = !q || [x.customer_name, x.customer_phone, x.car, x.service_name, x.resource_name]
       .some((value) => value.toLocaleLowerCase('ru').includes(q))
     return matchesSearch && (statusFilter === 'all' || x.status === statusFilter) && (resourceFilter === 'all' || x.resource_name === resources.data?.find((r) => r.id === resourceFilter)?.name)

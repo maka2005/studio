@@ -1,15 +1,25 @@
-import { useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ownerRequest } from '../../lib/ownerSession'
 import { fetchServices, owner, type OwnerBillingNotification } from '../../lib/api'
 import { LoadingScreen } from '../../components/LoadingScreen'
 import type { Business } from '../../lib/tenant'
 import { ExportButton, TAB_GROUPS, TAB_LABELS, TABS, billingEventDetail, billingEventTitle } from './shared'
-import { Bookings } from './bookings'
-import { MyAccess, TeamAccess, TeamResources } from './team'
-import { AuditHistory, Promos, Reports, Reviews, WaitlistAdmin } from './reports'
-import { Services } from './services'
-import { Docs, Media, Notify, Settings } from './settings'
+// Тяжёлые разделы кабинета грузятся только при открытии вкладки.
+const Bookings = lazy(() => import('./bookings').then((m) => ({ default: m.Bookings })))
+const MyAccess = lazy(() => import('./team').then((m) => ({ default: m.MyAccess })))
+const TeamAccess = lazy(() => import('./team').then((m) => ({ default: m.TeamAccess })))
+const TeamResources = lazy(() => import('./team').then((m) => ({ default: m.TeamResources })))
+const AuditHistory = lazy(() => import('./reports').then((m) => ({ default: m.AuditHistory })))
+const Promos = lazy(() => import('./reports').then((m) => ({ default: m.Promos })))
+const Reports = lazy(() => import('./reports').then((m) => ({ default: m.Reports })))
+const Reviews = lazy(() => import('./reports').then((m) => ({ default: m.Reviews })))
+const WaitlistAdmin = lazy(() => import('./reports').then((m) => ({ default: m.WaitlistAdmin })))
+const Services = lazy(() => import('./services').then((m) => ({ default: m.Services })))
+const Docs = lazy(() => import('./settings').then((m) => ({ default: m.Docs })))
+const Media = lazy(() => import('./settings').then((m) => ({ default: m.Media })))
+const Notify = lazy(() => import('./settings').then((m) => ({ default: m.Notify })))
+const Settings = lazy(() => import('./settings').then((m) => ({ default: m.Settings })))
 
 function hasWorkingHours(hours: Business['hours']) {
   return Object.values(hours || {}).some((slot) => Array.isArray(slot) && slot[0] && slot[1])
@@ -245,6 +255,22 @@ export function Cabinet({ b, onLogout, impersonation }: { b: Business; onLogout:
   const visibleTabs=roleTabs.filter(t=>!(t==='Отзывы'&&planUsage.data?.features.reviews===false))
   const groupList=TAB_GROUPS.map(g=>({name:g.name,tabs:g.tabs.filter((t)=>visibleTabs.includes(t)) as (typeof TABS)[number][]})).filter(g=>g.tabs.length>0)
   const activeGroup=groupList.find(g=>g.tabs.includes(tab))
+  // Предзагрузка по наведению/фокусу: данные вкладки уже в кэше к моменту клика.
+  const prefetchTab=(t:(typeof TABS)[number])=>{
+    if(role!=='owner'&&role!=='manager')return
+    const warm=(queryKey:unknown[],queryFn:()=>Promise<unknown>)=>void qc.prefetchQuery({queryKey,queryFn,staleTime:30_000})
+    // Infinite-strap queries need InfiniteData in the cache, otherwise the tab sees an empty list.
+    const warmInfinite=(queryKey:unknown[],queryFn:()=>Promise<unknown>)=>void qc.prefetchInfiniteQuery({queryKey,queryFn,initialPageParam:null,staleTime:30_000})
+    switch(t){
+      case 'Услуги': warm(['owner','services',b.slug],()=>fetchServices(b.slug,true));break
+      case 'Ожидание': warmInfinite(['owner','waitlist-page',b.slug],()=>owner.waitlistPage(b.slug,50,null));break
+      case 'Отзывы': warmInfinite(['owner','reviews-page',b.slug],()=>owner.reviewsPage(b.slug,50,null));break
+      case 'История': warm(['owner','audit-page',b.slug,null],()=>owner.auditHistoryPage(b.slug,50,null));break
+      case 'Промокоды': warm(['owner','promos',b.slug],()=>owner.promos(b.slug));break
+      case 'Команда и посты': warm(['owner','resources',b.slug],()=>owner.resources(b.slug));break
+      case 'Сотрудники': if(role==='owner')warm(['owner','team',b.slug],()=>owner.team(b.slug,'list'));break
+    }
+  }
   useEffect(()=>{if(activeGroup)setExpandedGroups(prev=>({...prev,[activeGroup.name]:true}))},[activeGroup?.name])
   if (me.isPending) return <LoadingScreen label="Проверяем доступ…" />
   if (me.isError)
@@ -303,7 +329,7 @@ export function Cabinet({ b, onLogout, impersonation }: { b: Business; onLogout:
             <span className="admin-mobile-trigger-icon" aria-hidden="true">☰</span><span><small>РАЗДЕЛ КАБИНЕТА</small><b>{TAB_LABELS[tab] ?? tab}</b></span><span className="admin-mobile-trigger-action">{mobileMenuOpen?'Свернуть':'Меню'}</span>
           </button>
           {mobileMenuOpen&&<nav className="admin-mobile-panel" id="owner-mobile-menu" aria-label="Разделы кабинета">
-            {groupList.map(g=><section className="admin-mobile-group" key={g.name}><h2>{g.name}</h2><div>{g.tabs.map(t=><button key={t} type="button" className={`admin-mobile-tab${tab===t?' is-current':''}`} aria-current={tab===t?'page':undefined} onClick={()=>{setTab(t);setMobileMenuOpen(false)}}>{TAB_LABELS[t]??t}{t==='Центр уведомлений'&&(priceNotices.data?.some(x=>!x.is_read)||billingNoticeItems.some(x=>!x.is_read))&&<i className="admin-unread-dot" aria-label="Есть непрочитанные уведомления"/>}</button>)}</div></section>)}
+            {groupList.map(g=><section className="admin-mobile-group" key={g.name}><h2>{g.name}</h2><div>{g.tabs.map(t=><button key={t} type="button" className={`admin-mobile-tab${tab===t?' is-current':''}`} aria-current={tab===t?'page':undefined} onMouseEnter={()=>prefetchTab(t)} onFocus={()=>prefetchTab(t)} onClick={()=>{setTab(t);setMobileMenuOpen(false)}}>{TAB_LABELS[t]??t}{t==='Центр уведомлений'&&(priceNotices.data?.some(x=>!x.is_read)||billingNoticeItems.some(x=>!x.is_read))&&<i className="admin-unread-dot" aria-label="Есть непрочитанные уведомления"/>}</button>)}</div></section>)}
           </nav>}
         </div>
         <nav className="admin-side" aria-label="Разделы кабинета">
@@ -336,6 +362,8 @@ export function Cabinet({ b, onLogout, impersonation }: { b: Business; onLogout:
                         type="button"
                         className={`admin-group-tab${tab === t ? ' is-current' : ''}`}
                         aria-current={tab === t ? 'page' : undefined}
+                        onMouseEnter={() => prefetchTab(t)}
+                        onFocus={() => prefetchTab(t)}
                         onClick={() => {setTab(t);if(t==='Центр уведомлений'){const ids=priceNotices.data?.filter(x=>!x.is_read).map(x=>x.id)??[];if(ids.length)void owner.markPriceChangesRead(b.slug,ids).then(()=>qc.invalidateQueries({queryKey:['owner','price-changes',b.slug]}));const eventIds=billingNoticeItems.filter(x=>!x.is_read).map(x=>x.id)??[];if(eventIds.length)void owner.markBillingNotificationsRead(b.slug,eventIds).then(()=>qc.invalidateQueries({queryKey:['owner','billing-notifications-page',b.slug]}))}}}
                       >
                         {TAB_LABELS[t] ?? t}{t==='Центр уведомлений'&&(priceNotices.data?.some(x=>!x.is_read)||billingNoticeItems.some(x=>!x.is_read))&&<i className="admin-unread-dot" aria-label="Есть непрочитанные уведомления"/>}
@@ -348,24 +376,26 @@ export function Cabinet({ b, onLogout, impersonation }: { b: Business; onLogout:
           })}
         </nav>
         <div className="admin-main">
-      {tab === 'Записи' && <Bookings b={b} role={role??undefined} />}
-      {tab === 'Сотрудники' && role === 'owner' && <TeamAccess b={b} />}
-      {tab === 'Сотрудники' && role === 'manager' && <TeamAccess b={b} canManageManagers={false} />}
-      {tab === 'Мой доступ' && <MyAccess b={b} />}
-      {tab === 'Личный кабинет' && <OwnerAccount slug={b.slug} canExport={role==='owner'} canRespond={role==='owner'} latestSuspension={billingNoticeItems.find(e=>e.event_type==='suspended')} />}
-      {tab === 'Центр уведомлений' && <OwnerNotificationCenter slug={b.slug} canRespond={role === 'owner'} />}
-      {tab === 'Поддержка' && <OwnerSupportTickets slug={b.slug} />}
-      {tab === 'Отчёты' && <Reports b={b} />}
-      {tab === 'Команда и посты' && <TeamResources b={b} />}
-      {tab === 'История' && <AuditHistory b={b} />}
-      {tab === 'Ожидание' && <WaitlistAdmin b={b} />}
-      {tab === 'Промокоды' && <Promos b={b} />}
-      {tab === 'Отзывы' && <Reviews b={b} />}
-      {tab === 'Услуги' && <Services b={b} />}
-      {tab === 'Студия' && <Settings b={b} />}
-      {tab === 'Фото' && <Media b={b} />}
-      {tab === 'Уведомления' && <Notify b={b} />}
-      {tab === 'Документы' && <Docs b={b} />}
+          <Suspense fallback={<p className="muted" role="status" aria-busy="true">Загрузка раздела…</p>}>
+            {tab === 'Записи' && <Bookings b={b} role={role??undefined} />}
+            {tab === 'Сотрудники' && role === 'owner' && <TeamAccess b={b} />}
+            {tab === 'Сотрудники' && role === 'manager' && <TeamAccess b={b} canManageManagers={false} />}
+            {tab === 'Мой доступ' && <MyAccess b={b} />}
+            {tab === 'Личный кабинет' && <OwnerAccount slug={b.slug} canExport={role==='owner'} canRespond={role==='owner'} latestSuspension={billingNoticeItems.find(e=>e.event_type==='suspended')} />}
+            {tab === 'Центр уведомлений' && <OwnerNotificationCenter slug={b.slug} canRespond={role === 'owner'} />}
+            {tab === 'Поддержка' && <OwnerSupportTickets slug={b.slug} />}
+            {tab === 'Отчёты' && <Reports b={b} />}
+            {tab === 'Команда и посты' && <TeamResources b={b} />}
+            {tab === 'История' && <AuditHistory b={b} />}
+            {tab === 'Ожидание' && <WaitlistAdmin b={b} />}
+            {tab === 'Промокоды' && <Promos b={b} />}
+            {tab === 'Отзывы' && <Reviews b={b} />}
+            {tab === 'Услуги' && <Services b={b} />}
+            {tab === 'Студия' && <Settings b={b} />}
+            {tab === 'Фото' && <Media b={b} />}
+            {tab === 'Уведомления' && <Notify b={b} />}
+            {tab === 'Документы' && <Docs b={b} />}
+          </Suspense>
         </div>
       </div>
     </section>

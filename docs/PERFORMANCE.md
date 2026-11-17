@@ -109,3 +109,21 @@ select 'jobs', count(*) from public.notification_jobs_archive;
 New read RPCs use a 5s statement timeout; maintenance helpers use 30s. For the
 Vercel API and Edge Functions, keep upstream `AbortSignal` timeouts below the
 database timeout so clients receive a controlled error instead of a 504.
+
+## Frontend & delivery
+
+- React Query defaults in `src/main.tsx`: `staleTime: 30s`, `gcTime: 5m`,
+  `refetchOnWindowFocus: false`, mutations do not retry. Owner cabinet tabs warm
+  their query cache on hover/focus, and mutations invalidate only the affected
+  query keys (bookings, stats, slots, reports) instead of the whole `['owner']`
+  tree.
+- Owner cabinet, platform admin and their heavy sections are lazy routes/chunks.
+  Keep new sections behind `React.lazy` + `Suspense` so the initial bundle stays small.
+- Tenant images use `TenantImage`: Supabase Storage render URLs provide `width`
+  variants through `srcset`, automatic WebP negotiation, explicit dimensions and
+  lazy loading. Above-the-fold logos can pass `priority`.
+- `vercel.json` caches hashed `/assets` and `/tenants` assets for a year, keeps
+  personal pages (`/s/:slug/owner`, `/platform/admin`) and personal APIs
+  (`/api/owner`, `/api/platform`, `/api/csp-report`) on `no-store`, and leaves
+  `/api/health` with its short shared cache. Search inputs are debounced in owner
+  bookings and platform tenants to avoid a request per keystroke.

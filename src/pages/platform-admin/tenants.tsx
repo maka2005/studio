@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { maskPhone, PHONE_PLACEHOLDER } from '../../lib/phone';
+import { maskPhone, PHONE_PLACEHOLDER } from '../../lib/phone'
+import { useDebouncedValue } from '../../lib/useDebouncedValue';
 import { businessTypeCode } from '../../lib/businessTypes';
 import { notify } from '../../components/Toaster';
 import { Badge, METHODS, PHASE, State, SubscriptionActionModal, Table, call, errText, fmtDate, fmtDateTime, iso, kzt, newKey, platformFile, resendInvite, resumeFlow, runSubAction, slugFromName, subscriptionEventDetail, subscriptionEventTitle, useLoad, type LeadPrefill, type Row } from './shared';
@@ -9,7 +10,9 @@ export function Tenants({ onOpen }: { onOpen: (id: string) => void }) {
   const [search, setSearch] = useState(''); const [phase, setPhase] = useState(''); const [plan, setPlan] = useState(''); const [applied, setApplied] = useState({ search: '', phase: '', plan: '' });
   const [savedFilters,setSavedFilters]=useState<Record<string,{search:string;phase:string;plan:string}>>(()=>{try{return JSON.parse(localStorage.getItem('platform-tenant-filters')||'{}')}catch{return {}}});
   const [page,setPage]=useState(0); const pageSize=50;
+  const debouncedSearch=useDebouncedValue(search,300);
   useEffect(()=>setPage(0),[applied]);
+  useEffect(()=>setApplied(prev=>prev.search===debouncedSearch?prev:{...prev,search:debouncedSearch}),[debouncedSearch]);
   const { data, err, loading, reload } = useLoad<Row[]>('tenants', { search: applied.search, phase: applied.phase, plan: applied.plan, limit:pageSize+1, offset:page*pageSize }, [applied,page]);
   const rows=(data??[]).slice(0,pageSize); const hasNext=(data?.length??0)>pageSize;
   const [msg, setMsg] = useState('');

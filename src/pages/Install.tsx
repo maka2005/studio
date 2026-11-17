@@ -2,6 +2,7 @@ import { useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { Link, useOutletContext } from 'react-router-dom';
 import { assetUrl, type Ctx } from '../lib/tenant';
 import { ArrowLeft, Copy, Download } from '../lib/icons';
+import { TenantImage } from '../components/TenantImage';
 import { installEvent, isStandalone, subscribeInstall } from '../lib/install';
 import './install.css';
 
@@ -52,7 +53,7 @@ export function Install() {
   };
   return (<div className="page"><div className="install-wrap">
     <Link to={`/s/${b.slug}`} className="back-link"><ArrowLeft size={18} /> На главную</Link>
-    <div className="card install-hero"><div className="row"><img src={assetUrl(b.slug, b.images.logo)} alt="" width={52} height={52} /><div><b>{b.short_name}</b><p className="muted small">Приложение студии</p></div></div>
+    <div className="card install-hero"><div className="row"><TenantImage src={assetUrl(b.slug, b.images.logo)} alt="" width={52} height={52} sizes="52px" /><div><b>{b.short_name}</b><p className="muted small">Приложение студии</p></div></div>
       <h1>Добавьте студию на главный экран</h1><p className="muted">Своя иконка на устройстве. Быстрый доступ к услугам и вашей записи.</p>
       <button className="btn" disabled={standalone} onClick={() => void install()}><Download /> {standalone ? 'Уже установлено' : 'Установить сейчас'}</button>
       {note && <p className="muted small" role="status">{note}</p>}</div>

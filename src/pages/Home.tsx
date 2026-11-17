@@ -5,6 +5,7 @@ import { owner } from '../lib/api';
 import { money, plural, telHref } from '../lib/format';
 import { Arrow, ArrowRight, Car, Clock, Download, Grid, Phone, Photo, Pin, Tag, Wrench } from '../lib/icons';
 import { Reveal } from '../components/Reveal';
+import { TenantImage } from '../components/TenantImage';
 import { ServiceList } from './ServiceList';
 import { useServices } from '../lib/useServices';
 import '../lib/install';   // ловит событие установки с самого запуска
@@ -39,7 +40,7 @@ export function Home() {
         {!!reviews.data?.length && <><h2 style={{ marginTop: 24 }}>Отзывы клиентов</h2><div className="review-list">{reviews.data.map((r,i)=><article className="card col" key={`${r.created_at}-${i}`}><span aria-label={`Оценка ${r.rating} из 5`}>{'★'.repeat(r.rating)}{'☆'.repeat(5-r.rating)}</span>{r.comment&&<p>{r.comment}</p>}<span className="muted small">Клиент студии</span></article>)}</div></>}
         {b.gallery.length > 0 && <><h2 style={{ marginTop: 24 }}>Работы студии</h2>
           <div className="gallery">{b.gallery.map((g) => <figure key={g.image}><div className="shot" style={{ backgroundImage: img(g.image) }} /><figcaption>{g.caption}</figcaption></figure>)}</div></>}</Reveal></div>
-    <Reveal className="install-block"><div className="card install"><div className="row"><img src={assetUrl(b.slug, b.images.logo)} alt="" width={48} height={48} /><div><b>{b.short_name}</b><p className="muted small">Приложение студии</p></div></div>
+    <Reveal className="install-block"><div className="card install"><div className="row"><TenantImage src={assetUrl(b.slug, b.images.logo)} alt="" width={48} height={48} sizes="48px" /><div><b>{b.short_name}</b><p className="muted small">Приложение студии</p></div></div>
       <h2 className="xl">{b.cards.install.title}</h2><p className="muted">{b.cards.install.text}</p>
       <Link className="btn" to={`/s/${b.slug}/install`}><Download /> Добавить на экран <ArrowRight /></Link>
       <p className="muted small">Бесплатно — установите через браузер.</p></div></Reveal>

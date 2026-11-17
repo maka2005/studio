@@ -1,12 +1,15 @@
-import { useCallback, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { RecoveryPassword } from '../components/RecoveryPassword';
 import { Toaster } from '../components/Toaster';
 import { recoveryLink, supabase } from '../lib/supabase';
 import '../styles.css';
 import './platform.css';
-import { Login, MfaEnroll, MfaVerify } from './platform-admin/auth';
-import { Console } from './platform-admin/console';
 import { call, errText, platformAuth } from './platform-admin/shared';
+
+const Login = lazy(() => import('./platform-admin/auth').then((m) => ({ default: m.Login })));
+const MfaEnroll = lazy(() => import('./platform-admin/auth').then((m) => ({ default: m.MfaEnroll })));
+const MfaVerify = lazy(() => import('./platform-admin/auth').then((m) => ({ default: m.MfaVerify })));
+const Console = lazy(() => import('./platform-admin/console').then((m) => ({ default: m.Console })));
 
 // Админка платформы. Все данные приходят из Edge Function platform-admin, которая на сервере
 // проверяет JWT, запись в platform_admins и (если включено) MFA. Проверки здесь — только удобство интерфейса.
@@ -59,12 +62,13 @@ export function PlatformAdmin() {
     }} />;
   }
 
-  if (step === 'loading') return <main className="page"><p className="muted">Загрузка…</p></main>;
+  const pending = <main className="page"><p className="muted">Загрузка…</p></main>;
+  if (step === 'loading') return pending;
   if (step === 'denied') return (
     <main className="page"><section className="card col"><h1>403</h1><p className="muted">У этого аккаунта нет доступа к платформе.</p>
       <button className="btn ghost" onClick={async () => { await platformAuth('logout'); setStep('login'); }}>Выйти</button></section></main>);
-  if (step === 'login') return <Login msg={msg} onDone={check} />;
-  if (step === 'mfa') return <MfaVerify onDone={check} />;
-  if (step === 'enroll') return <MfaEnroll onDone={check} />;
-  return <><Toaster /><Console role={role} accountEmail={accountEmail} onLogout={async () => { await platformAuth('logout'); setStep('login'); }} onMfa={() => setStep('mfa')} /></>;
+  if (step === 'login') return <Suspense fallback={pending}><Login msg={msg} onDone={check} /></Suspense>;
+  if (step === 'mfa') return <Suspense fallback={pending}><MfaVerify onDone={check} /></Suspense>;
+  if (step === 'enroll') return <Suspense fallback={pending}><MfaEnroll onDone={check} /></Suspense>;
+  return <><Toaster /><Suspense fallback={pending}><Console role={role} accountEmail={accountEmail} onLogout={async () => { await platformAuth('logout'); setStep('login'); }} onMfa={() => setStep('mfa')} /></Suspense></>;
 }

@@ -15,6 +15,8 @@ export default tseslint.config(
       'coverage/**',
       'playwright-report/**',
       'test-results/**',
+      // Vitest creates short-lived config files while transforming TS config.
+      '*.timestamp-*.mjs',
       'studio-changed-files*/**',
       'tenants/**/images/**',
     ],

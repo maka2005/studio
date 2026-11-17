@@ -70,22 +70,30 @@ const PlatformAdmin = lazy(() => import('./pages/PlatformAdmin').then((m) => ({ 
 const ServiceStatus = lazy(() => import('./pages/ServiceStatus').then((m) => ({ default: m.ServiceStatus })));
 const Marketing = lazy(() => import('./marketing/App'));
 
+// Единые правила кэша: данные считаются свежими 30 секунд и живут 5 минут без активных подписчиков.
+// Это убирает лишние refetch при переключении вкладок, но оставляет проверку при явном запросе.
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,
+      gcTime: 5 * 60_000,
+      refetchOnWindowFocus: false,
+      retry: (failureCount, error) => {
+        const status = (error as { status?: number; context?: Response })?.status
+          ?? (error as { context?: Response })?.context?.status
+        const message = String((error as Error)?.message ?? '')
+        if (status === 401 || status === 429) return false
+        if (/rate_limited|session_expired/i.test(message)) return false
+        return failureCount < 1
+      },
+    },
+    mutations: { retry: false },
+  },
+});
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <QueryClientProvider client={new QueryClient({
-      defaultOptions: {
-        queries: {
-          retry: (failureCount, error) => {
-            const status = (error as { status?: number; context?: Response })?.status
-              ?? (error as { context?: Response })?.context?.status
-            const message = String((error as Error)?.message ?? '')
-            if (status === 401 || status === 429) return false
-            if (/rate_limited|session_expired/i.test(message)) return false
-            return failureCount < 1
-          },
-        },
-      },
-    })}>
+    <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <Suspense fallback={<div role="status" aria-busy="true" style={{ minHeight: '60vh' }} />}>
           <Routes>
