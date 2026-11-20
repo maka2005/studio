@@ -41,8 +41,8 @@ begin
 end $$;
 
 revoke all on function public.platform_list_subscriptions(uuid,text,int,int),
-  public.platform_notifications(uuid,int,int) from public, anon;
+  public.platform_notifications(uuid,int,int) from public, anon, authenticated;
 grant execute on function public.platform_list_subscriptions(uuid,text,int,int),
-  public.platform_notifications(uuid,int,int) to authenticated, service_role;
+  public.platform_notifications(uuid,int,int) to service_role;
 
 notify pgrst, 'reload schema';

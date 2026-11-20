@@ -1,4 +1,5 @@
 import { withEdgeObservability } from '../_shared/observability.ts';
+import { readTextBody, WebhookError } from '../_shared/webhook_guard.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 // IP клиента. Запросы приходят с серверов Vercel, поэтому cf-connecting-ip там общий для всех. Реальный IP (x-real-ip) принимаем только вместе с секретом прокси.
 const PROXY_SECRET = Deno.env.get('PLATFORM_PROXY_SECRET') ?? '';
@@ -9,7 +10,7 @@ const ipOf = (r: Request) => (viaProxy(r) ? r.headers.get('x-real-ip')?.trim() :
 const site=(Deno.env.get('SITE_URL')??'').trim();
 const allowed=new Set<string>(); try{if(site)allowed.add(new URL(site).origin)}catch{/* configured by deployment */}
 try{if(['localhost','127.0.0.1'].includes(new URL(Deno.env.get('SUPABASE_URL')??'').hostname)){allowed.add('http://localhost:5173');allowed.add('http://127.0.0.1:5173')}}catch{/* configured by deployment */}
-const headers=(req:Request)=>{const origin=req.headers.get('origin')??'';return {'Access-Control-Allow-Origin':allowed.has(origin)?origin:'null','Vary':'Origin','Access-Control-Allow-Headers':'authorization, x-client-info, apikey, content-type','Access-Control-Allow-Methods':'POST, OPTIONS','Content-Type':'application/json'}};
+const headers=(req:Request)=>{const origin=req.headers.get('origin')??'';return {...(allowed.has(origin)?{'Access-Control-Allow-Origin':origin}:{}),'Vary':'Origin','Access-Control-Allow-Headers':'authorization, x-client-info, apikey, content-type','Access-Control-Allow-Methods':'POST, OPTIONS','Content-Type':'application/json'}};
 const json=(req:Request,value:unknown,status=200)=>new Response(JSON.stringify(value),{status,headers:headers(req)});
 const emailOk=(v:string)=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 const sha=async(v:string)=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(v)))].map(x=>x.toString(16).padStart(2,'0')).join('');
@@ -18,7 +19,13 @@ Deno.serve(withEdgeObservability('owner-team', async (req) => {
  if(req.method==='OPTIONS')return new Response('ok',{headers:headers(req)});
  if(req.method!=='POST')return json(req,{error:'method_not_allowed'},405);
  const origin=req.headers.get('origin'); if(origin&&!allowed.has(origin))return json(req,{error:'forbidden'},403);
- const p=await req.json().catch(()=>null) as Record<string,unknown>|null;
+ let p: Record<string, unknown> | null = null;
+ try {
+   const parsed=JSON.parse(await readTextBody(req,64*1024));
+   if(parsed&&typeof parsed==='object'&&!Array.isArray(parsed))p=parsed as Record<string,unknown>;
+ } catch (error) {
+   if(error instanceof WebhookError)return json(req,{error:error.message},error.status);
+ }
  const action=typeof p?.action==='string'?p.action:'';
  const url=Deno.env.get('SUPABASE_URL')??'', anon=Deno.env.get('SUPABASE_ANON_KEY')??'', service=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')??'';
  if(!url||!anon||!service)return json(req,{error:'temporarily_unavailable'},503);

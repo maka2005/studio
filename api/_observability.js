@@ -5,7 +5,7 @@ const randomId = () => {
 const getRequestId = (req) => {
   const fromHeader = req?.headers?.['x-request-id'] || req?.headers?.['x-correlation-id'];
   const id = String(Array.isArray(fromHeader) ? fromHeader[0] : fromHeader || '').trim();
-  return id && id.length <= 128 ? id : randomId();
+  return /^[A-Za-z0-9._:-]{1,128}$/.test(id) ? id : randomId();
 };
 
 export function withObservability(handler, opts = {}) {

@@ -1,4 +1,5 @@
 import { withEdgeObservability } from '../_shared/observability.ts';
+import { readTextBody, WebhookError } from '../_shared/webhook_guard.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { strToU8, zipSync } from 'npm:fflate@0.8.2';
 
@@ -47,7 +48,13 @@ Deno.serve(withEdgeObservability('tenant-export', async (req) => {
   if (authError || !user) return json(req, { error: 'unauthorized' }, 401);
   const admin = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } });
 
-  const body = await req.json().catch(() => null) as Record<string, unknown> | null;
+  let body: Record<string, unknown> | null = null;
+  try {
+    const parsed = JSON.parse(await readTextBody(req, 16 * 1024));
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) body = parsed as Record<string, unknown>;
+  } catch (error) {
+    if (error instanceof WebhookError) return json(req, { error: error.message }, error.status);
+  }
   const slug = typeof body?.slug === 'string' ? body.slug.trim().toLowerCase() : '';
   const tenantId = typeof body?.tenant_id === 'string' && UUID.test(body.tenant_id) ? body.tenant_id : '';
   if (!/^[a-z0-9-]{2,40}$/.test(slug) && !tenantId) return json(req, { error: 'bad_request' }, 400);
@@ -57,13 +64,21 @@ Deno.serve(withEdgeObservability('tenant-export', async (req) => {
   if (tenantError) return json(req, { error: 'temporarily_unavailable' }, 503);
   if (!tenant) return json(req, { error: 'not_found' }, 404);
 
-  // доступ: владелец этой организации ИЛИ суперадмин платформы
-  const [{ data: member }, { data: isAdmin }] = await Promise.all([
+  // доступ: владелец этой организации ИЛИ owner-админ платформы с MFA
+  const [{ data: member }, { data: superAdmin }] = await Promise.all([
     admin.from('tenant_members').select('role').eq('tenant_id', tenant.id).eq('user_id', user.id).maybeSingle(),
-    admin.rpc('is_platform_admin', { p_user: user.id }),
+    admin.from('platform_admins').select('user_id')
+      .eq('user_id', user.id).eq('is_active', true).eq('role', 'owner').maybeSingle(),
   ]);
   const byOwner = member?.role === 'owner';
-  if (!byOwner && isAdmin !== true) return json(req, { error: 'forbidden' }, 403);
+  if (!byOwner && !superAdmin) return json(req, { error: 'forbidden' }, 403);
+  if (!byOwner && Deno.env.get('PLATFORM_REQUIRE_MFA') === 'true') {
+    let aal = 'aal1';
+    try {
+      aal = String(JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).aal ?? 'aal1');
+    } catch { /* safest default is aal1 */ }
+    if (aal !== 'aal2') return json(req, { error: 'mfa_required' }, 403);
+  }
   if (byOwner) {
     const { data: allowed, error: featureError } = await admin.rpc('tenant_feature_enabled', { p_tenant: tenant.id, p_feature: 'export' });
     if (featureError) return json(req, { error: 'temporarily_unavailable' }, 503);

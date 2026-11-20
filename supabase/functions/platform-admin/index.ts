@@ -1,5 +1,6 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { withEdgeObservability } from '../_shared/observability.ts';
+import { readTextBody, redact, WebhookError } from '../_shared/webhook_guard.ts';
 
 // Единственная точка входа админки платформы. Правила:
 //  - JWT проверяется на сервере (auth.getUser), затем наличие user_id в platform_admins;
@@ -62,7 +63,7 @@ async function findUserByEmail(admin: ReturnType<typeof createClient>, email: st
     if (row?.id) return { id: String(row.id), email: String(row.email ?? normalized) };
     if (data === null || (Array.isArray(data) && data.length === 0)) return null;
   } else {
-    console.warn('platform_find_auth_user_by_email rpc failed, falling back to admin lookup:', error.message);
+    console.warn('platform_find_auth_user_by_email rpc failed, falling back to admin lookup:', redact(error.message));
   }
   // Fallback for environments where the RPC migration is not applied yet.
   for (let page = 1; page <= 20; page++) {
@@ -96,9 +97,18 @@ const PROXY_SECRET = Deno.env.get('PLATFORM_PROXY_SECRET') ?? '';
 const safeEqual = (a: string, b: string) => { if (a.length !== b.length) return false; let d = 0; for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i); return d === 0; };
 const viaProxy = (req: Request) => PROXY_SECRET.length >= 16 && safeEqual(req.headers.get('x-proxy-secret') ?? '', PROXY_SECRET);
 const clientIp = (req: Request) => (viaProxy(req) ? req.headers.get('x-client-ip')?.trim() : '') || req.headers.get('cf-connecting-ip')?.trim() || 'unknown';
+let turnstileWarned = false;
+
 async function turnstileOk(token: string, ip: string): Promise<boolean> {
   const secret = Deno.env.get('TURNSTILE_SECRET_KEY') ?? '';
-  if (!secret) return true; // капча не настроена — проверка отключена
+  if (!secret) {
+    if (Deno.env.get('TURNSTILE_REQUIRED') === 'true') return false;
+    if (!turnstileWarned) {
+      console.warn(JSON.stringify({ level: 'warn', event: 'turnstile_not_configured', detail: 'captcha check is disabled; set TURNSTILE_SECRET_KEY or TURNSTILE_REQUIRED' }));
+      turnstileWarned = true;
+    }
+    return true;
+  }
   if (!token || token.length > 2048) return false;
   const form = new URLSearchParams({ secret, response: token });
   if (ip && ip !== 'unknown') form.set('remoteip', ip);
@@ -115,7 +125,7 @@ async function ensureOwnerMembership(admin: ReturnType<typeof createClient>, ten
   const { data } = await admin.from('tenant_members').select('user_id').eq('tenant_id', tenantId).eq('user_id', userId).eq('role', 'owner').maybeSingle();
   if (data) return true;
   const { error } = await admin.from('tenant_members').upsert({ tenant_id: tenantId, user_id: userId, role: 'owner' }, { onConflict: 'tenant_id,user_id' });
-  if (error) { console.error('ensure owner membership failed:', error.message); return false; }
+  if (error) { console.error('ensure owner membership failed:', redact(error.message)); return false; }
   return true;
 }
 
@@ -128,7 +138,14 @@ Deno.serve(withEdgeObservability('platform-admin', async (req, { requestId }) =>
 
   const url = Deno.env.get('SUPABASE_URL') ?? '', anon = Deno.env.get('SUPABASE_ANON_KEY') ?? '', service = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
   if (!url || !anon || !service) return json({ error: 'temporarily_unavailable' }, 503);
-  const body = obj(await req.json().catch(() => null));
+  let parsedBody: unknown = null;
+  try {
+    parsedBody = JSON.parse(await readTextBody(req, 64 * 1024));
+  } catch (error) {
+    if (error instanceof WebhookError) return json({ error: error.message }, error.status);
+    return json({ error: 'bad_request' }, 400);
+  }
+  const body = obj(parsedBody);
   const action = str(body.action, 40);
   if (!action) return json({ error: 'bad_request' }, 400);
 
@@ -157,7 +174,7 @@ Deno.serve(withEdgeObservability('platform-admin', async (req, { requestId }) =>
 
     if (!instant) {
       const { error } = await admin.from('platform_business_leads').insert(row);
-      if (error) { console.error('public lead save failed:', error.message); return json({ error: 'temporarily_unavailable' }, 503); }
+      if (error) { console.error('public lead save failed:', redact(error.message)); return json({ error: 'temporarily_unavailable' }, 503); }
       return json({ ok: true, mode: 'lead' });
     }
 
@@ -175,7 +192,7 @@ Deno.serve(withEdgeObservability('platform-admin', async (req, { requestId }) =>
     const existing = await findUserByEmail(admin, ownerEmail);
     if (existing) {
       const { error } = await admin.from('platform_business_leads').insert(row);
-      if (error) { console.error('demo lead save failed:', error.message); return json({ error: 'temporarily_unavailable' }, 503); }
+      if (error) { console.error('demo lead save failed:', redact(error.message)); return json({ error: 'temporarily_unavailable' }, 503); }
       return json(ACCEPTED); // одинаковый ответ для новых и уже зарегистрированных почт — иначе можно перебором узнать, кто в системе
     }
     const emailRate = await admin.rpc('consume_platform_rate', { p_scope: 'platform_lead', p_key: `${connect ? 'connect' : 'demo'}:email:${await sha256Hex(ownerEmail)}`, p_limit: 2, p_window: 86400 });
@@ -199,7 +216,7 @@ Deno.serve(withEdgeObservability('platform-admin', async (req, { requestId }) =>
       if (!error) { result = data as { tenant_id?: string; slug?: string }; break; }
       if (error.message?.includes('slug_taken')) continue;
       failure = KNOWN.find((k) => error.message?.includes(k)) ?? 'operation_failed';
-      console.error('demo create failed:', error.message);
+      console.error('demo create failed:', redact(error.message));
       break;
     }
     if (!result?.tenant_id || !result.slug) {
@@ -214,7 +231,7 @@ Deno.serve(withEdgeObservability('platform-admin', async (req, { requestId }) =>
     if (!(await ensureOwnerMembership(admin, result.tenant_id, owner.id))) return json({ error: 'operation_failed' }, 500);
     const anonClient = createClient(url, anon, { auth: { persistSession: false, autoRefreshToken: false } });
     const invite = site ? await anonClient.auth.resetPasswordForEmail(ownerEmail, { redirectTo: `${site.replace(/\/$/, '')}/s/${result.slug}/owner` }) : { error: new Error('no_site') };
-    if (invite.error) console.error('demo invite failed:', invite.error.message);
+    if (invite.error) console.error('demo invite failed:', redact(invite.error.message));
     let trialEndsAt: string | null = null;
     if (connect && (result as { subscription_id?: string }).subscription_id) {
       const { data: sub } = await admin.from('subscriptions').select('ends_at').eq('id', (result as { subscription_id?: string }).subscription_id).maybeSingle();
@@ -234,7 +251,7 @@ Deno.serve(withEdgeObservability('platform-admin', async (req, { requestId }) =>
   if (action === 'public_plans') {
     const admin=createClient(url,service,{auth:{persistSession:false,autoRefreshToken:false}});
     const {data,error}=await admin.from('plans').select('code,name,description,price_kzt,period_months,limits').eq('is_active',true).neq('code','LEGACY').order('sort_order',{ascending:true});
-    if(error){console.error('public plans failed:',error.message);return json({error:'temporarily_unavailable'},503)}
+    if(error){console.error('public plans failed:',redact(error.message));return json({error:'temporarily_unavailable'},503)}
     return json({data:data??[],trial_days:await getTrialDays(admin)});
   }
 
@@ -634,7 +651,7 @@ Deno.serve(withEdgeObservability('platform-admin', async (req, { requestId }) =>
           // транзакция в БД откатилась целиком; созданный пользователь переиспользуется при повторе
           const code = KNOWN.find((k) => error.message?.includes(k));
           if (code) return json({ error: code }, ERROR_STATUS[code] ?? 400);
-          console.error('create_tenant failed:', error.message);
+          console.error('create_tenant failed:', redact(error.message));
           return json({ error: 'operation_failed' }, 500);
         }
         if (!(await ensureOwnerMembership(admin, String((data as { tenant_id?: string }).tenant_id), owner.id))) return json({ error: 'operation_failed' }, 500);
@@ -655,7 +672,7 @@ Deno.serve(withEdgeObservability('platform-admin', async (req, { requestId }) =>
         await admin.rpc('platform_log', { p_actor: actor, p_action: 'owner.resend_invite', p_tenant: null, p_payload: { email, slug, sent: !error } });
         if (error) {
           const detail = `${error.code ?? ''} ${error.message ?? ''}`.toLowerCase();
-          console.error('resend_invite email delivery failed:', { status: error.status, code: error.code, message: error.message });
+          console.error('resend_invite email delivery failed:', { status: error.status, code: error.code, message: redact(error.message) });
           const reason = /rate.?limit|too many requests/.test(detail) ? 'invite_rate_limited'
             : /redirect|validation_failed/.test(detail) ? 'invite_redirect_not_allowed'
             : /email_address_not_authorized|smtp|email_provider_disabled/.test(detail) ? 'invite_email_provider_error'
@@ -671,7 +688,7 @@ Deno.serve(withEdgeObservability('platform-admin', async (req, { requestId }) =>
     if (error) {
       const code = KNOWN.find((k) => error.message?.includes(k));
       if (code) return json({ error: code }, ERROR_STATUS[code] ?? 400);
-      console.error(`${action} failed:`, error.message);
+      console.error(`${action} failed:`, redact(error.message));
       return json({ error: 'operation_failed' }, 500);
     }
     return json({ ok: true, data });

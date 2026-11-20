@@ -43,7 +43,34 @@
 
   &__actions {
     display: flex;
+    align-items: center;
     gap: 12px;
+  }
+
+  &__locale {
+    display: inline-flex;
+    gap: 2px;
+    padding: 2px;
+    border: 1px solid $color-border;
+    border-radius: 999px;
+  }
+
+  &__locale-btn {
+    min-width: 34px;
+    padding: 4px 8px;
+    color: $color-text-muted;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    background: transparent;
+    border: 0;
+    border-radius: 999px;
+    cursor: pointer;
+
+    &.is-active {
+      color: #fff;
+      background: $color-primary;
+    }
   }
 
   &__burger {
@@ -101,7 +128,12 @@
 
     &__actions {
       flex-direction: column;
+      align-items: stretch;
       margin-top: 16px;
+    }
+
+    &__locale {
+      align-self: flex-start;
     }
   }
 }

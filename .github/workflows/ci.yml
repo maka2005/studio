@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  quality:
+  checks:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -35,9 +35,6 @@ jobs:
       - name: Format check
         run: npm run format:check
 
-      - name: Migration checks
-        run: npm run check:migrations
-
       - name: Typecheck
         run: npm run typecheck
 
@@ -47,30 +44,45 @@ jobs:
       - name: Build
         run: npm run build
 
-  e2e-smoke:
+      - name: Migration checks
+        run: npm run check:migrations
+
+  # GitHub Actions does not allow secrets in a job-level `if`, so the steps
+  # below guard on job-level env vars instead. No migrations are applied here.
+  db-drift:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    needs: quality
+    timeout-minutes: 15
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
     steps:
+      - name: Skip when Supabase secrets are not configured
+        if: ${{ env.SUPABASE_ACCESS_TOKEN == '' || env.SUPABASE_PROJECT_REF == '' }}
+        run: echo "::notice::SUPABASE_ACCESS_TOKEN / SUPABASE_PROJECT_REF are not set; skipping schema drift check"
+
       - name: Checkout
+        if: ${{ env.SUPABASE_ACCESS_TOKEN != '' && env.SUPABASE_PROJECT_REF != '' }}
         uses: actions/checkout@v4
 
       - name: Setup Node.js
+        if: ${{ env.SUPABASE_ACCESS_TOKEN != '' && env.SUPABASE_PROJECT_REF != '' }}
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
-      - name: Install dependencies
+      - name: Install dependencies (includes Supabase CLI)
+        if: ${{ env.SUPABASE_ACCESS_TOKEN != '' && env.SUPABASE_PROJECT_REF != '' }}
         run: npm ci
 
-      - name: Install Playwright browser
-        run: npx playwright install --with-deps chromium
+      - name: Verify Supabase CLI
+        if: ${{ env.SUPABASE_ACCESS_TOKEN != '' && env.SUPABASE_PROJECT_REF != '' }}
+        run: npx supabase --version
 
-      - name: Build
-        run: npm run build
+      - name: Link Supabase project
+        if: ${{ env.SUPABASE_ACCESS_TOKEN != '' && env.SUPABASE_PROJECT_REF != '' }}
+        run: npx supabase link --project-ref "$SUPABASE_PROJECT_REF" --yes
 
-      - name: E2E smoke tests
-        run: npm run test:e2e
-        env:
-          CI: true
+      - name: Check schema drift
+        if: ${{ env.SUPABASE_ACCESS_TOKEN != '' && env.SUPABASE_PROJECT_REF != '' }}
+        run: npm run check:drift

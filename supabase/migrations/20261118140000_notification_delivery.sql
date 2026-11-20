@@ -308,11 +308,15 @@ grant execute on function
   public.owner_notification_retry(text,uuid),
   public.owner_notification_bounces(text,integer,integer)
   to authenticated;
+revoke all on function
+  public.platform_notification_delivery(text,text,integer,integer),
+  public.platform_notification_bounces(integer,integer),
+  public.record_email_bounce(text,jsonb)
+  from public, anon, authenticated;
 grant execute on function
   public.platform_notification_delivery(text,text,integer,integer),
   public.platform_notification_bounces(integer,integer),
   public.record_email_bounce(text,jsonb)
   to service_role;
-revoke all on function public.record_email_bounce(text,jsonb) from public, anon, authenticated;
 
 notify pgrst, 'reload schema';

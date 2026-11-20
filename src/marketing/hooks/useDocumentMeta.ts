@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { useLocale, type Locale } from '../../lib/locale';
 import { SITE } from '../config/site';
 
 type JsonLd = Record<string, unknown>;
@@ -24,8 +25,30 @@ function setMeta(attr: 'name' | 'property', key: string, content: string) {
   el.content = content;
 }
 
-/** Выставляет title, description, canonical, Open Graph, Twitter Card, robots и JSON-LD для текущей страницы. */
-export function useDocumentMeta({ title, description, path, jsonLd, image = '/og-image.png', noindex = false }: DocumentMeta) {
+function setAlternate(hreflang: string, href: string) {
+  let el = document.querySelector<HTMLLinkElement>(`link[rel="alternate"][hreflang="${hreflang}"]`);
+  if (!el) {
+    el = document.createElement('link');
+    el.rel = 'alternate';
+    el.hreflang = hreflang;
+    document.head.appendChild(el);
+  }
+  el.href = href;
+}
+
+const withLang = (url: string, locale: Locale) =>
+  `${url}${url.includes('?') ? '&' : '?'}lang=${locale}`;
+
+/** Выставляет title, description, canonical, Open Graph, Twitter Card, robots, hreflang и JSON-LD для текущей страницы. */
+export function useDocumentMeta({
+  title,
+  description,
+  path,
+  jsonLd,
+  image = '/og-image.png',
+  noindex = false,
+}: DocumentMeta) {
+  const { locale } = useLocale();
   const ld = jsonLd ? JSON.stringify(jsonLd) : '';
 
   useEffect(() => {
@@ -33,10 +56,14 @@ export function useDocumentMeta({ title, description, path, jsonLd, image = '/og
     const img = SITE.url + image;
     document.title = title;
     setMeta('name', 'description', description);
-    setMeta('name', 'robots', noindex ? 'noindex, nofollow' : 'index, follow, max-image-preview:large, max-snippet:-1');
+    setMeta(
+      'name',
+      'robots',
+      noindex ? 'noindex, nofollow' : 'index, follow, max-image-preview:large, max-snippet:-1',
+    );
     setMeta('property', 'og:type', 'website');
     setMeta('property', 'og:site_name', SITE.name);
-    setMeta('property', 'og:locale', 'ru_KZ');
+    setMeta('property', 'og:locale', locale === 'kk' ? 'kk_KZ' : 'ru_KZ');
     setMeta('property', 'og:title', title);
     setMeta('property', 'og:description', description);
     setMeta('property', 'og:url', url);
@@ -57,6 +84,11 @@ export function useDocumentMeta({ title, description, path, jsonLd, image = '/og
     }
     canonical.href = url;
 
+    setAlternate('ru', withLang(url, 'ru'));
+    setAlternate('kk', withLang(url, 'kk'));
+    setAlternate('ru-KZ', withLang(url, 'ru'));
+    setAlternate('kk-KZ', withLang(url, 'kk'));
+
     let script: HTMLScriptElement | null = null;
     if (ld) {
       script = document.createElement('script');
@@ -68,5 +100,5 @@ export function useDocumentMeta({ title, description, path, jsonLd, image = '/og
     return () => {
       script?.remove();
     };
-  }, [title, description, path, image, noindex, ld]);
+  }, [title, description, path, image, noindex, ld, locale]);
 }

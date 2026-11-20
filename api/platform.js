@@ -1,3 +1,4 @@
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { withObservability } from './_observability.js';
 
 const COOKIE = process.env.NODE_ENV === 'production' ? '__Host-platform_admin' : 'platform_admin';
@@ -8,6 +9,9 @@ const OWNER_REFRESH = SECURE ? '__Host-studio_owner_refresh' : 'studio_owner_ref
 const IMP_SESSION = SECURE ? '__Host-studio_owner_imp_session' : 'studio_owner_imp_session';
 const IMP_ADMIN = SECURE ? '__Host-studio_owner_imp_admin' : 'studio_owner_imp_admin';
 const IMP_EXP = SECURE ? '__Host-studio_owner_imp_exp' : 'studio_owner_imp_exp';
+// CSRF double-submit: читается JS, поэтому без HttpOnly (в проде — только Secure/__Host-).
+const CSRF = SECURE ? '__Host-platform_csrf' : 'platform_csrf';
+const CSRF_MAX_AGE = 60 * 60 * 24 * 30;
 
 const getConfig = () => ({
   url: (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').replace(/\/$/, ''),
@@ -43,17 +47,34 @@ const send = (res, status, body, headers = {}) => {
 const cookieHeader = (value, age) =>
   `${COOKIE}=${encodeURIComponent(value)}; Path=/; HttpOnly; ${process.env.NODE_ENV === 'production' ? 'Secure; ' : ''}SameSite=Strict; Max-Age=${age}`;
 
-const readCookie = (header = '') => {
+const csrfCookie = (value, age = CSRF_MAX_AGE) =>
+  `${CSRF}=${encodeURIComponent(value)}; Path=/; ${SECURE ? 'Secure; ' : ''}SameSite=Strict; Max-Age=${age}`;
+
+const readCookie = (header = '', name = COOKIE) => {
   const item = header
     .split(';')
     .map((x) => x.trim())
-    .find((x) => x.startsWith(COOKIE + '='));
+    .find((x) => x.startsWith(name + '='));
   try {
-    return item ? decodeURIComponent(item.slice(COOKIE.length + 1)) : '';
+    return item ? decodeURIComponent(item.slice(name.length + 1)) : '';
   } catch {
     return '';
   }
 };
+
+const readCsrfCookie = (header) => readCookie(header, CSRF);
+
+const safeEqual = (a, b) => {
+  if (typeof a !== 'string' || typeof b !== 'string' || !a || !b) return false;
+  const left = createHash('sha256').update(a).digest();
+  const right = createHash('sha256').update(b).digest();
+  return timingSafeEqual(left, right);
+};
+
+// Origin/SameSite проверка выше остаётся; double-submit требуется только для POST.
+const csrfValid = (req) =>
+  req.method !== 'POST' ||
+  safeEqual(req.headers['x-csrf-token'], readCsrfCookie(req.headers.cookie));
 
 const originAllowed = (req) => {
   if (req.headers['sec-fetch-site'] === 'cross-site') {
@@ -79,12 +100,26 @@ const originAllowed = (req) => {
   }
 };
 
+const MAX_BODY_BYTES = 64 * 1024;
+
 const parseBody = async (req) => {
+  if (Number(req.headers['content-length'] || 0) > MAX_BODY_BYTES) {
+    const error = new Error('payload_too_large');
+    error.status = 413;
+    throw error;
+  }
   if (req.body && typeof req.body === 'object') {
     return req.body;
   }
   const parts = [];
+  let total = 0;
   for await (const part of req) {
+    total += part.length;
+    if (total > MAX_BODY_BYTES) {
+      const error = new Error('payload_too_large');
+      error.status = 413;
+      throw error;
+    }
     parts.push(Buffer.from(part));
   }
   return JSON.parse(Buffer.concat(parts).toString('utf8') || '{}');
@@ -135,15 +170,18 @@ const decodeSession = (value) => {
   }
 };
 
-const updateCookie = (res, session) => {
-  res.setHeader('Set-Cookie', cookieHeader(encodeSession(session), IDLE_SECONDS));
+const updateCookie = (res, session, csrf = randomUUID()) => {
+  res.setHeader('Set-Cookie', [
+    cookieHeader(encodeSession(session), IDLE_SECONDS),
+    csrfCookie(csrf),
+  ]);
 };
 
 const ownerCookie = (name, value, age) =>
   `${name}=${encodeURIComponent(value)}; Path=/; HttpOnly; ${SECURE ? 'Secure; ' : ''}SameSite=Strict; Max-Age=${age}`;
 
 const clearCookie = (res) => {
-  res.setHeader('Set-Cookie', cookieHeader('', 0));
+  res.setHeader('Set-Cookie', [cookieHeader('', 0), csrfCookie('', 0)]);
 };
 
 const edge = async (cfg, token, action, body = {}) => {
@@ -173,6 +211,11 @@ async function handler(req, res) {
   const cfg = getConfig();
   if (!cfg.url || !cfg.anon) {
     return send(res, 503, { error: 'temporarily_unavailable' });
+  }
+
+  const csrf = readCsrfCookie(req.headers.cookie) || randomUUID();
+  if (!csrfValid(req)) {
+    return send(res, 403, { error: 'csrf_failed' });
   }
 
   let body = {};
@@ -254,7 +297,7 @@ async function handler(req, res) {
       if (!r.ok || !session.access_token || !session.refresh_token) {
         return send(res, 401, { error: 'invalid_credentials' });
       }
-      updateCookie(res, session);
+      updateCookie(res, session, csrf);
       const user = await authFetch(cfg, session.access_token, '/auth/v1/user');
       if (user.ok) {
         const me = await edge(cfg, session.access_token, 'whoami');
@@ -282,8 +325,7 @@ async function handler(req, res) {
       if (!me.ok) {
         return send(res, me.status, { error: me.payload?.error || 'authorization_check_failed' });
       }
-      res.setHeader(
-        'Set-Cookie',
+      res.setHeader('Set-Cookie', [
         cookieHeader(
           encodeSession({
             access_token: access,
@@ -291,8 +333,9 @@ async function handler(req, res) {
             expires_at: jwtExpiry(access),
           }),
           IDLE_SECONDS
-        )
-      );
+        ),
+        csrfCookie(csrf),
+      ]);
       const meData = me.payload?.data || me.payload || {};
       if (meData.mfa_required !== true) {
         await edge(cfg, access, 'admin_login_event', {
@@ -330,7 +373,7 @@ async function handler(req, res) {
       return send(res, 401, { error: 'unauthorized' });
     }
 
-    updateCookie(res, session);
+    updateCookie(res, session, csrf);
 
     if (req.method === 'GET' && action === 'session') {
       const u = await authFetch(cfg, session.access_token, '/auth/v1/user');
@@ -411,7 +454,7 @@ async function handler(req, res) {
         return send(res, verified.status, { error: 'mfa_verify_failed' });
       }
       if (result.access_token && result.refresh_token) {
-        updateCookie(res, result);
+        updateCookie(res, result, csrf);
       }
       if (result.access_token) {
         const me = await edge(cfg, result.access_token, 'whoami');
@@ -488,8 +531,10 @@ async function handler(req, res) {
 
     return send(res, 404, { error: 'not_found' });
   } catch (error) {
+    const status = Number(error?.status) || (error instanceof SyntaxError ? 400 : 400);
+    const code = status === 413 ? 'payload_too_large' : 'bad_request';
     console.warn(JSON.stringify({ level: 'warn', at: new Date().toISOString(), service: 'vercel-api', handler: 'platform', request_id: req.requestId, event: 'platform_api_error', error: String(error?.message || error).slice(0, 500) }));
-    return send(res, 400, { error: 'bad_request' });
+    return send(res, status, { error: code });
   }
 }
 

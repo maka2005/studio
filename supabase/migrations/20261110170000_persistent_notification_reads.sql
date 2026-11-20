@@ -60,8 +60,10 @@ begin
   on conflict(audit_log_id,actor_id) do nothing;
 end $$;
 
-revoke all on function public.owner_pending_price_change(text),public.owner_mark_price_changes_read(text,uuid[]),public.platform_notifications(uuid,int),public.platform_mark_notifications_read(uuid,uuid[]) from public,anon;
-grant execute on function public.owner_pending_price_change(text),public.owner_mark_price_changes_read(text,uuid[]),public.platform_notifications(uuid,int),public.platform_mark_notifications_read(uuid,uuid[]) to authenticated,service_role;
+revoke all on function public.owner_pending_price_change(text),public.owner_mark_price_changes_read(text,uuid[]) from public,anon;
+grant execute on function public.owner_pending_price_change(text),public.owner_mark_price_changes_read(text,uuid[]) to authenticated;
+revoke all on function public.platform_notifications(uuid,int),public.platform_mark_notifications_read(uuid,uuid[]) from public,anon,authenticated;
+grant execute on function public.platform_notifications(uuid,int),public.platform_mark_notifications_read(uuid,uuid[]) to service_role;
 
 -- A declined renewal ends at the end of the already paid term; it is not silently renewed.
 create or replace function public.tenant_access_state(p_tenant uuid) returns text

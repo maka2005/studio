@@ -1,3 +1,5 @@
+import { installCsrfFetchGuard } from './csrf';
+
 declare global {
   interface Window {
     dataLayer?: unknown[];
@@ -17,6 +19,13 @@ function loadScript(src: string, attrs: Record<string, string> = {}) {
 }
 
 export function initObservability() {
+  // Часть страниц отправляет POST в /api/owner и /api/platform напрямую: общий guard добавляет
+  // x-csrf-token один раз на старте приложения, чтобы не держать токен в каждом обработчике.
+  try {
+    installCsrfFetchGuard();
+  } catch {
+    // Защита не должна ломать запуск приложения.
+  }
   try {
     const gaId = import.meta.env.VITE_GA_MEASUREMENT_ID as string | undefined;
     const ymId = import.meta.env.VITE_YANDEX_METRIKA_ID as string | undefined;

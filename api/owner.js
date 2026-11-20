@@ -1,3 +1,4 @@
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { withObservability } from './_observability.js';
 
 const SECURE_COOKIE = process.env.NODE_ENV === 'production';
@@ -6,6 +7,9 @@ const REFRESH = SECURE_COOKIE ? '__Host-studio_owner_refresh' : 'studio_owner_re
 const IMP_SESSION = SECURE_COOKIE ? '__Host-studio_owner_imp_session' : 'studio_owner_imp_session';
 const IMP_ADMIN = SECURE_COOKIE ? '__Host-studio_owner_imp_admin' : 'studio_owner_imp_admin';
 const IMP_EXP = SECURE_COOKIE ? '__Host-studio_owner_imp_exp' : 'studio_owner_imp_exp';
+// CSRF double-submit: this one must stay readable by JS (no HttpOnly), unlike the session cookies.
+const CSRF = SECURE_COOKIE ? '__Host-studio_owner_csrf' : 'studio_owner_csrf';
+const CSRF_MAX_AGE = 60 * 60 * 24 * 30;
 
 const OWNER_RPCS = new Set([
   'owner_me',
@@ -105,7 +109,14 @@ const cookies = (header = '') =>
     header.split(';').map((part) => {
       const i = part.indexOf('=');
       if (i < 0) return ['', ''];
-      return [part.slice(0, i).trim(), decodeURIComponent(part.slice(i + 1).trim())];
+      const name = part.slice(0, i).trim();
+      const raw = part.slice(i + 1).trim();
+      try {
+        return [name, decodeURIComponent(raw)];
+      } catch {
+        // A malformed percent escape must not turn into a 500 on every request.
+        return [name, raw];
+      }
     })
   );
 
@@ -114,7 +125,28 @@ const cookie = (name, value, maxAge) =>
     SECURE_COOKIE ? 'Secure; ' : ''
   }SameSite=Strict; Max-Age=${maxAge}`;
 
-const clearCookies = () => [cookie(ACCESS, '', 0), cookie(REFRESH, '', 0)];
+const csrfCookie = (value, maxAge = CSRF_MAX_AGE) =>
+  `${CSRF}=${encodeURIComponent(value)}; Path=/; ${SECURE_COOKIE ? 'Secure; ' : ''}SameSite=Strict; Max-Age=${maxAge}`;
+
+// Хешируем оба значения, чтобы сравнение всегда шло по буферам фиксированной длины.
+const safeEqual = (a, b) => {
+  if (typeof a !== 'string' || typeof b !== 'string' || !a || !b) return false;
+  const left = createHash('sha256').update(a).digest();
+  const right = createHash('sha256').update(b).digest();
+  return timingSafeEqual(left, right);
+};
+
+// Origin/SameSite проверка выше остаётся; этот вызов добавляет double-submit для POST.
+const csrfValid = (req, jar) =>
+  req.method !== 'POST' || safeEqual(req.headers['x-csrf-token'], jar[CSRF]);
+
+const sessionCsrf = (jar) => jar[CSRF] || randomUUID();
+
+const clearCookies = () => [
+  cookie(ACCESS, '', 0),
+  cookie(REFRESH, '', 0),
+  csrfCookie('', 0),
+];
 
 const clearImpersonationCookies = () => [
   cookie(IMP_SESSION, '', 0),
@@ -145,22 +177,37 @@ const originAllowed = (req) => {
   }
 };
 
+const MAX_BODY_BYTES = 64 * 1024;
+
 const parseBody = async (req) => {
+  if (Number(req.headers['content-length'] || 0) > MAX_BODY_BYTES) {
+    const error = new Error('payload_too_large');
+    error.status = 413;
+    throw error;
+  }
   if (req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body)) {
     return req.body;
   }
   const chunks = [];
+  let total = 0;
   for await (const chunk of req) {
+    total += chunk.length;
+    if (total > MAX_BODY_BYTES) {
+      const error = new Error('payload_too_large');
+      error.status = 413;
+      throw error;
+    }
     chunks.push(Buffer.from(chunk));
   }
   return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
 };
 
-const setSessionCookies = (res, session, maxAge = 60 * 60 * 24 * 30) => {
+const setSessionCookies = (res, session, maxAge = 60 * 60 * 24 * 30, csrf = randomUUID()) => {
   const maxAccess = Math.max(1, Math.min(maxAge, Number(session.expires_in) || 3600));
   res.setHeader('Set-Cookie', [
     cookie(ACCESS, session.access_token, maxAccess),
     cookie(REFRESH, session.refresh_token, maxAge),
+    csrfCookie(csrf),
   ]);
 };
 
@@ -215,7 +262,7 @@ const getSession = async (req, res, cfg) => {
     return null;
   }
 
-  setSessionCookies(res, session, remaining);
+  setSessionCookies(res, session, remaining, sessionCsrf(jar));
   access = session.access_token;
   return { access, user: session.user };
 };
@@ -251,10 +298,13 @@ async function handler(req, res) {
   }
 
   const action = String(req.query?.action || '');
+  const jar = cookies(req.headers.cookie);
+
+  if (!csrfValid(req, jar)) {
+    return send(res, 403, { error: 'csrf_failed' });
+  }
 
   try {
-    const jar = cookies(req.headers.cookie);
-
     if (req.method === 'POST' && action === 'impersonate_start') {
       const body = await parseBody(req);
       const adminToken = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
@@ -280,6 +330,7 @@ async function handler(req, res) {
       res.setHeader('Set-Cookie', [
         cookie(ACCESS, d.owner_session.access_token, maxAge),
         cookie(REFRESH, d.owner_session.refresh_token, maxAge),
+        csrfCookie(sessionCsrf(jar)),
         cookie(IMP_SESSION, d.session_id, maxAge),
         cookie(IMP_ADMIN, adminToken, maxAge),
         cookie(IMP_EXP, String(new Date(d.expires_at).getTime()), maxAge),
@@ -297,6 +348,11 @@ async function handler(req, res) {
         await platformAction(cfg, jar[IMP_ADMIN], 'impersonation_end', {
           session_id: jar[IMP_SESSION],
         });
+      }
+      if (jar[ACCESS]) {
+        await supabaseFetch(cfg.url, cfg.anon, jar[ACCESS], '/auth/v1/logout', {
+          method: 'POST',
+        }).catch(() => {});
       }
 
       return send(
@@ -342,6 +398,11 @@ async function handler(req, res) {
           session_id: jar[IMP_SESSION],
         });
       }
+      if (jar[ACCESS]) {
+        await supabaseFetch(cfg.url, cfg.anon, jar[ACCESS], '/auth/v1/logout', {
+          method: 'POST',
+        }).catch(() => {});
+      }
 
       return send(
         res,
@@ -378,7 +439,7 @@ async function handler(req, res) {
         return send(res, result.status, payload);
       }
 
-      setSessionCookies(res, payload.session);
+      setSessionCookies(res, payload.session, 60 * 60 * 24 * 30, sessionCsrf(jar));
       return send(res, 200, { user: payload.user || null });
     }
 
@@ -570,7 +631,7 @@ async function handler(req, res) {
       }
 
       const body = req.method === 'GET' ? {} : await parseBody(req);
-      const slug = String(body.slug || '');
+      const slug = String(req.query?.slug ?? body.slug ?? '');
       if (!/^[a-z0-9-]{2,40}$/.test(slug)) {
         return send(res, 400, { error: 'bad_request' });
       }
@@ -832,8 +893,8 @@ async function handler(req, res) {
 
     return send(res, 404, { error: 'not_found' });
   } catch (error) {
-    const message = error instanceof SyntaxError ? 'bad_request' : 'internal_error';
-    const status = message === 'bad_request' ? 400 : 500;
+    const status = Number(error?.status) || (error instanceof SyntaxError ? 400 : 500);
+    const message = status === 413 ? 'payload_too_large' : status === 400 ? 'bad_request' : 'internal_error';
     if (status === 500) {
       console.error(JSON.stringify({ level: 'error', at: new Date().toISOString(), service: 'vercel-api', handler: 'owner', request_id: req.requestId, event: 'owner_api_error', error: String(error?.message || error).slice(0, 500) }));
     }

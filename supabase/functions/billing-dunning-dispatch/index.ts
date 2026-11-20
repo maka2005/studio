@@ -1,4 +1,5 @@
 import { withEdgeObservability } from '../_shared/observability.ts';
+import { redact, safeEqual } from '../_shared/webhook_guard.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import nodemailer from 'npm:nodemailer@6.9.16';
 
@@ -8,6 +9,7 @@ type BillingEmail={id:string;recipient_email:string;kind:string;dedupe_key:strin
 
 function emailContent(kind:string,payload:Record<string,unknown>,siteUrl:string,supportEmail:string){
   const organization=String(payload.organization_name??'ваша организация');
+  const organizationHtml=escapeHtml(organization);
   const slug=String(payload.slug??'');
   const plan=String(payload.plan_name??payload.plan_code??'текущий тариф');
   const amount=Number(payload.price_kzt??payload.amount_kzt??0).toLocaleString('ru-RU');
@@ -18,13 +20,13 @@ function emailContent(kind:string,payload:Record<string,unknown>,siteUrl:string,
   const subject=kind==='ending_7d'?`Renvio: до окончания подписки ${days} дней`:kind==='ending_3d'?`Renvio: подписка закончится через ${days} дня`:kind==='payment_failed'?'Renvio: платёж не подтверждён':'Renvio: подписка приостановлена';
   let message='';
   if(kind==='ending_7d'||kind==='ending_3d'){
-    message=`Срок подписки организации «${organization}» заканчивается ${endDate?`<b>${escapeHtml(endDate)}</b>`:`через ${days} дн.`}. Тариф: <b>${escapeHtml(plan)}</b>; стоимость продления — <b>${amount} ₸</b>. Чтобы сохранить доступ без перерыва, свяжитесь с поддержкой и запросите продление.`;
+    message=`Срок подписки организации «${organizationHtml}» заканчивается ${endDate?`<b>${escapeHtml(endDate)}</b>`:`через ${days} дн.`}. Тариф: <b>${escapeHtml(plan)}</b>; стоимость продления — <b>${amount} ₸</b>. Чтобы сохранить доступ без перерыва, свяжитесь с поддержкой и запросите продление.`;
   }else if(kind==='payment_failed'){
     const reason=String(payload.reason??'');
-    message=`Платёж на <b>${amount} ₸</b> для организации «${organization}» не был подтверждён. Если оплата уже отправлена, напишите в поддержку и приложите подтверждение перевода.${reason?`<br><br>Комментарий: ${escapeHtml(reason)}`:''}`;
+    message=`Платёж на <b>${amount} ₸</b> для организации «${organizationHtml}» не был подтверждён. Если оплата уже отправлена, напишите в поддержку и приложите подтверждение перевода.${reason?`<br><br>Комментарий: ${escapeHtml(reason)}`:''}`;
   }else{
     const reason=String(payload.reason??'');
-    message=`Подписка организации «${organization}» приостановлена. Онлайн-запись и уведомления отключены, данные организации сохранены. Для восстановления доступа свяжитесь с поддержкой Renvio и запросите реквизиты для оплаты тарифа «${escapeHtml(plan)}» (${amount} ₸).${reason?`<br><br>Причина приостановки: ${escapeHtml(reason)}`:''}`;
+    message=`Подписка организации «${organizationHtml}» приостановлена. Онлайн-запись и уведомления отключены, данные организации сохранены. Для восстановления доступа свяжитесь с поддержкой Renvio и запросите реквизиты для оплаты тарифа «${escapeHtml(plan)}» (${amount} ₸).${reason?`<br><br>Причина приостановки: ${escapeHtml(reason)}`:''}`;
   }
   const cabinetUrl=`${siteUrl.replace(/\/+$/,'')}/s/${encodeURIComponent(slug)}/owner`;
   const html=`<!doctype html><html lang="ru"><body style="margin:0;background:#f4f6fa;color:#172033;font:16px/1.55 Arial,sans-serif"><main style="max-width:600px;margin:32px auto;padding:32px;background:#fff;border:1px solid #e2e7ef;border-radius:16px"><p style="margin:0 0 16px;color:#3976ef;font-weight:700">RENVIO · ПОДПИСКА</p><h1 style="margin:0 0 20px;font-size:24px">${escapeHtml(subject.replace('Renvio: ',''))}</h1><p>${message}</p><p style="margin:24px 0"><a href="${escapeHtml(cabinetUrl)}" style="display:inline-block;padding:12px 18px;background:#3976ef;color:#fff;text-decoration:none;border-radius:9px;font-weight:700">Открыть кабинет организации</a></p><p>Если вопрос касается оплаты или приостановки, напишите в поддержку: <a href="mailto:${escapeHtml(supportEmail)}">${escapeHtml(supportEmail)}</a>.</p><hr style="border:0;border-top:1px solid #e2e7ef;margin:24px 0"><p style="color:#68758a;font-size:13px">Это автоматическое уведомление о состоянии подписки Renvio.</p></main></body></html>`;
@@ -34,7 +36,8 @@ function emailContent(kind:string,payload:Record<string,unknown>,siteUrl:string,
 
 Deno.serve(withEdgeObservability('billing-dunning-dispatch', async (req) => {
   if(req.method!=='POST')return new Response('method_not_allowed',{status:405});
-  if(!env('CRON_SECRET')||req.headers.get('x-cron-secret')!==env('CRON_SECRET'))return new Response('forbidden',{status:403});
+  const cronSecret=env('CRON_SECRET');
+  if(cronSecret.length<16||!safeEqual(req.headers.get('x-cron-secret')||'',cronSecret))return new Response('forbidden',{status:403});
 
   // Почта: SMTP (например Gmail с паролем приложения) или Resend. SMTP приоритетнее, если заданы SMTP_USER и SMTP_PASS.
   const smtpUser=env('SMTP_USER');
@@ -71,7 +74,7 @@ Deno.serve(withEdgeObservability('billing-dunning-dispatch', async (req) => {
           const info=await transporter.sendMail({from,to:job.recipient_email,replyTo:supportEmail,subject,html,text});
           messageId=String(info.messageId??'smtp');
         }catch(smtpError){
-          await admin.rpc('finish_platform_billing_email',{p_id:job.id,p_sent:false,p_error:String((smtpError as Error).message).slice(0,200)});failed++;continue;
+          await admin.rpc('finish_platform_billing_email',{p_id:job.id,p_sent:false,p_error:redact((smtpError as Error).message,200)});failed++;continue;
         }
       }else{
         const response=await fetch('https://api.resend.com/emails',{
@@ -80,7 +83,7 @@ Deno.serve(withEdgeObservability('billing-dunning-dispatch', async (req) => {
         });
         const result=await response.json().catch(()=>({}));
         if(!response.ok||!result.id){
-          const message=String(result.message??`email_provider_http_${response.status}`).slice(0,200);
+          const message=redact(result.message??`email_provider_http_${response.status}`,200);
           await admin.rpc('finish_platform_billing_email',{p_id:job.id,p_sent:false,p_error:message});failed++;continue;
         }
         messageId=String(result.id);
@@ -89,7 +92,7 @@ Deno.serve(withEdgeObservability('billing-dunning-dispatch', async (req) => {
       if(finishError)throw finishError;
       sent++;
     }catch(error){
-      await admin.rpc('finish_platform_billing_email',{p_id:job.id,p_sent:false,p_error:String((error as Error).message).slice(0,200)});
+      await admin.rpc('finish_platform_billing_email',{p_id:job.id,p_sent:false,p_error:redact((error as Error).message,200)});
       failed++;
     }
   }

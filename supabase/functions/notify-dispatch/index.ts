@@ -1,4 +1,5 @@
 import { withEdgeObservability } from '../_shared/observability.ts';
+import { redact, safeEqual } from '../_shared/webhook_guard.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { buildCustomerMessage, buildMessage, buildOwnerTemplateMessage, escapeHtml, isDeadChat, type Kind } from './format.ts';
 const env = (k: string) => Deno.env.get(k) ?? '';
@@ -39,11 +40,15 @@ async function send(token: string, chat: number, text: string, url: string) {
 
 // Вызывается по расписанию (Supabase Cron). Секрет в заголовке не даёт запускать функцию посторонним.
 Deno.serve(withEdgeObservability('notify-dispatch', async (req) => {
-  if (!env('CRON_SECRET') || req.headers.get('x-cron-secret') !== env('CRON_SECRET')) return new Response('forbidden', { status: 403 });
+  const cronSecret = env('CRON_SECRET');
+  if (cronSecret.length < 16 || !safeEqual(req.headers.get('x-cron-secret') || '', cronSecret)) return new Response('forbidden', { status: 403 });
   const token = env('TELEGRAM_BOT_TOKEN'); if (!token) return new Response('telegram not configured', { status: 503 });
   const admin = createClient(env('SUPABASE_URL'), env('SUPABASE_SERVICE_ROLE_KEY'));
   const { data: jobs, error } = await admin.rpc('lease_notification_jobs', { p_limit: 20 });
-  if (error) return new Response(error.message, { status: 500 });
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', event: 'notify_lease_failed', error: redact(error.message) }));
+    return new Response('internal_error', { status: 500 });
+  }
   let sent = 0, retry = 0;
   for (const j of (jobs ?? []) as { id: string; tenant_id: string; kind: Kind; booking_id: string | null; payload?: Record<string, unknown> }[]) {
     let templateCode: string | null = null;

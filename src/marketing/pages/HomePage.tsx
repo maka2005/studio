@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { useLocale } from '../../lib/locale';
 import { useDocumentMeta } from '../hooks/useDocumentMeta';
 import { usePlans, useTrialDays } from '../hooks/usePlans';
 import { homeBreadcrumbs, seo } from '../data/content';
@@ -17,15 +18,19 @@ import { FinalCta } from '../components/home/FinalCta';
 export function HomePage() {
   const plans = usePlans();
   const trialDays = useTrialDays();
+  const { locale } = useLocale();
   const jsonLd = useMemo(
     () => [
       organizationLd(),
-      websiteLd(),
-      softwareLd(plans.map((p) => ({ name: p.name, price: p.price }))),
+      websiteLd(locale),
+      softwareLd(
+        plans.map((p) => ({ name: p.name, price: p.price })),
+        locale,
+      ),
       faqLd(trialDays),
       breadcrumbLd(homeBreadcrumbs),
     ],
-    [plans, trialDays],
+    [plans, trialDays, locale],
   );
 
   useDocumentMeta({ ...seo.home, jsonLd });

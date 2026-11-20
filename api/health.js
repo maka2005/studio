@@ -28,15 +28,12 @@ async function check(key, label, url, init = {}) {
   }
 }
 
-function resolveSiteUrl(req) {
+function resolveSiteUrl() {
+  // Never build an outbound fetch target from request-controlled headers.
   const configured = String(process.env.SITE_URL || '').replace(/\/$/, '');
-  if (configured) return configured;
-  const forwardedHost = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim().toLowerCase();
-  if (/^[a-z0-9.-]+(?::\d+)?$/.test(forwardedHost) && !forwardedHost.includes('..')) {
-    const proto = String(req.headers['x-forwarded-proto'] || 'https').split(',')[0].trim() || 'https';
-    return `${proto}://${forwardedHost}`;
-  }
-  return '';
+  if (/^https:\/\/[a-z0-9.-]+(?::\d+)?$/i.test(configured)) return configured;
+  const preview = String(process.env.VERCEL_URL || '').trim().toLowerCase();
+  return /^[a-z0-9-]+\.vercel\.app$/.test(preview) ? `https://${preview}` : '';
 }
 
 import { withObservability } from './_observability.js';
@@ -53,7 +50,7 @@ async function handler(req, res) {
   const headers = anon ? { apikey: anon } : {};
   const configured = Boolean(url && anon);
   const origin = process.env.SITE_URL || 'https://servio.kz';
-  const siteUrl = resolveSiteUrl(req);
+  const siteUrl = resolveSiteUrl();
   const [web, database, auth, edge] = await Promise.all([
     check('web', 'Веб-приложение', siteUrl),
     check('database', 'База данных', configured ? `${url}/rest/v1/platform_service_status?select=id&limit=1` : '', { headers }),

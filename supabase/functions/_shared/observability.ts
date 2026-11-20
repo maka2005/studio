@@ -2,7 +2,7 @@ export type LogLevel = 'info' | 'warn' | 'error';
 
 export const getRequestId = (req: Request) => {
   const id = (req.headers.get('x-request-id') || req.headers.get('x-correlation-id') || '').trim();
-  return id && id.length <= 128 ? id : crypto.randomUUID();
+  return /^[A-Za-z0-9._:-]{1,128}$/.test(id) ? id : crypto.randomUUID();
 };
 
 export const jsonLog = (level: LogLevel, payload: Record<string, unknown>) => {

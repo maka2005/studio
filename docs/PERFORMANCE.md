@@ -156,7 +156,22 @@ records the applied template id through the new four-argument
 `finish_notification_job`.
 
 `record_email_bounce` is service-role only and is exposed through the
-`email-bounce-webhook` Edge Function (`x-webhook-secret`, secret
-`BOUNCE_WEBHOOK_SECRET` with `CRON_SECRET` fallback). Repeating the same provider
-event is a no-op. Owner RPCs are templates/list/retry/bounces; platform RPCs are
-delivery/bounces and are available to every admin role as read-only actions.
+`email-bounce-webhook` Edge Function (`x-webhook-secret`; dedicated
+`BOUNCE_WEBHOOK_SECRET` is preferred, `CRON_SECRET` is still accepted for
+backward compatibility). Bodies are capped at 64 KB, secrets are compared in
+constant time, and an optional HMAC envelope (`x-webhook-timestamp`,
+`x-webhook-nonce`, `x-webhook-signature`) adds a five-minute replay window.
+Repeating the same provider event is a no-op at two levels: the
+`processed_webhook_events` ledger (`consume_webhook_event`, cleaned daily by
+`webhook-cleanup-processed-events`) and the `(provider, event_id, recipient)`
+unique key on `bounce_suppressions`. A later hard bounce now escalates an
+earlier soft bounce. Telegram updates are deduplicated by `update_id`.
+
+Platform reporting RPCs (`platform_notification_delivery`,
+`platform_notification_bounces`, `platform_notifications`,
+`platform_mark_notifications_read`, `platform_list_subscriptions`) and the
+schedule helpers (`effective_day_hours`, `slot_in_break`) are service-role
+only. Owner RPCs are templates/list/retry/bounces. Operational failures are
+written to `platform_alert_events` through `record_ops_alert`; the hourly
+`platform-collect-cron-failures-hourly` job reports failed cron runs, and the
+`ops-alert` Edge Function can forward them to `ALERT_WEBHOOK_URL`.

@@ -62,7 +62,7 @@ begin
 end $$;
 
 revoke all on function public.effective_day_hours(uuid, date) from public, anon, authenticated;
-grant execute on function public.effective_day_hours(uuid, date) to anon, authenticated, service_role;
+grant execute on function public.effective_day_hours(uuid, date) to service_role;
 
 -- Helper: is a start inside any configured break for that weekday/date window context?
 -- Breaks are configured in tenant config as {"mon":[["13:00","14:00"]], ...} (local times).
@@ -104,7 +104,7 @@ begin
 end $$;
 
 revoke all on function public.slot_in_break(uuid, timestamptz, int) from public, anon, authenticated;
-grant execute on function public.slot_in_break(uuid, timestamptz, int) to anon, authenticated, service_role;
+grant execute on function public.slot_in_break(uuid, timestamptz, int) to service_role;
 
 create or replace function public.get_slots(p_slug text, p_service uuid, p_day date)
 returns table(slot timestamptz, free bool)

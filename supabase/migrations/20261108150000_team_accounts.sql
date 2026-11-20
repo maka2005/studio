@@ -69,3 +69,4 @@ end $$;
 
 revoke all on function public.owner_team_can_manage(text,uuid),public.owner_team_list(text,uuid),public.owner_team_set(text,uuid,uuid,text,uuid),public.owner_team_remove(text,uuid,uuid) from public,anon,authenticated;
 grant execute on function public.owner_team_can_manage(text,uuid),public.owner_team_list(text,uuid),public.owner_team_set(text,uuid,uuid,text,uuid),public.owner_team_remove(text,uuid,uuid) to service_role;
+revoke all on function public.owner_tenant_owner(text) from public,anon,authenticated,service_role;

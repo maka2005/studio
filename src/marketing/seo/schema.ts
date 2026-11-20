@@ -1,7 +1,11 @@
+import type { Locale } from '../../lib/locale';
 import { SITE } from '../config/site';
 import { faqItems } from '../data/content';
 
 const abs = (path: string) => SITE.url + path;
+
+/** Языковая метка schema.org для текущей локали сайта. */
+export const localeTag = (locale: Locale = 'ru'): string => (locale === 'kk' ? 'kk-KZ' : 'ru-KZ');
 
 export const organizationLd = () => ({
   '@context': 'https://schema.org',
@@ -16,7 +20,7 @@ export const organizationLd = () => ({
         contactPoint: {
           '@type': 'ContactPoint',
           contactType: 'sales',
-          availableLanguage: ['ru'],
+          availableLanguage: ['ru', 'kk'],
           ...(SITE.contacts.email ? { email: SITE.contacts.email } : {}),
           ...(SITE.contacts.phone ? { telephone: SITE.contacts.phone } : {}),
         },
@@ -24,17 +28,17 @@ export const organizationLd = () => ({
     : {}),
 });
 
-export const websiteLd = () => ({
+export const websiteLd = (locale: Locale = 'ru') => ({
   '@context': 'https://schema.org',
   '@type': 'WebSite',
   '@id': abs('/#website'),
   name: SITE.name,
   url: abs('/'),
-  inLanguage: 'ru-KZ',
+  inLanguage: localeTag(locale),
   publisher: { '@id': abs('/#organization') },
 });
 
-export const softwareLd = (plans: { name: string; price: number }[]) => ({
+export const softwareLd = (plans: { name: string; price: number }[], locale: Locale = 'ru') => ({
   '@context': 'https://schema.org',
   '@type': 'SoftwareApplication',
   name: SITE.name,
@@ -43,7 +47,7 @@ export const softwareLd = (plans: { name: string; price: number }[]) => ({
   description:
     'Облачная система для СТО, автосервисов, детейлинг-студий, автомоек и шиномонтажа: онлайн-запись, расписание, сотрудники, аналитика.',
   url: abs('/'),
-  inLanguage: 'ru',
+  inLanguage: locale,
   offers: plans.map((p) => ({
     '@type': 'Offer',
     name: p.name,

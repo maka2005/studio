@@ -1,7 +1,9 @@
+import { csrfFetch } from './csrf';
+
 export type OwnerUser = { id: string; email?: string; user_metadata?: Record<string, unknown> }
 
 export async function ownerRequest<T = Record<string, unknown>>(action: string, body?: unknown, method: 'GET' | 'POST' = 'POST'): Promise<T> {
-  const response = await fetch(`/api/owner?action=${encodeURIComponent(action)}`, {
+  const response = await csrfFetch('owner', `/api/owner?action=${encodeURIComponent(action)}`, {
     method,
     credentials: 'same-origin',
     headers: method === 'POST' ? { 'Content-Type': 'application/json' } : undefined,
@@ -18,7 +20,7 @@ export async function ownerRequest<T = Record<string, unknown>>(action: string, 
 
 // Скачивание ZIP с данными организации через прокси (токен владельца остаётся в HttpOnly-cookie).
 export async function downloadOwnerExport(slug: string): Promise<void> {
-  const response = await fetch('/api/owner?action=export', {
+  const response = await csrfFetch('owner', '/api/owner?action=export', {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },

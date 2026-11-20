@@ -1,3 +1,4 @@
+import { useLocale } from '../../../lib/locale';
 import './ProductPreview.scss';
 
 const days = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт'];
@@ -10,6 +11,7 @@ const staff = [
 
 /** Иллюстрация интерфейса Renvio: календарь, показатели и всплывающие уведомления. Данные вымышленные. */
 export function ProductPreview() {
+  const { t } = useLocale();
   return (
     <div className="preview" role="img" aria-label="Иллюстрация: календарь записей Renvio с загрузкой мастеров и уведомлением о новой записи">
       <div className="preview__window" aria-hidden="true">
@@ -23,7 +25,7 @@ export function ProductPreview() {
             <b>Renvio</b>
             <i className="is-active">Календарь</i>
             <i>Записи</i>
-            <i>Услуги</i>
+            <i>{t.services}</i>
             <i>Сотрудники</i>
             <i>Отчёты</i>
           </aside>
