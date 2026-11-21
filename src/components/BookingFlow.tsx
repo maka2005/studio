@@ -7,7 +7,7 @@ import type { Business } from '../lib/tenant';
 import { createBooking, fetchServices, fetchSlots, joinWaitlist } from '../lib/api';
 import { duration, money, randomToken } from '../lib/format';
 import { isFullPhone, maskPhone, PHONE_PLACEHOLDER } from '../lib/phone';
-import { ArrowLeft, ArrowRight } from '../lib/icons';
+import { ArrowLeft, ArrowRight, Check, Close } from '../lib/icons';
 import { Sheet } from './Sheet';
 import { LEGAL_VERSION } from '../lib/legal';
 import { supabase } from '../lib/supabase';
@@ -152,7 +152,10 @@ export function BookingFlow({ b, initialService, bookingOpen, onClose }: {
             {[allServicesCategory(locale), ...svcCategories].map((item) => <button key={item} className={`chip ${serviceCategory === item || (item === allServicesCategory(locale) && serviceCategory === ALL_SERVICES_CATEGORY) ? 'sel' : ''}`} aria-pressed={serviceCategory === item} onClick={() => { setServiceCategory(item); setServiceIds([]); }}>{item}</button>)}
           </div>}
           <p className="muted small">{m.booking.selectHint}</p>
-          {chosen.length > 0 && <div className="row between"><span className="strong">{m.booking.selected(chosen.length)}</span><button className="link" onClick={() => setServiceIds([])}>{m.booking.clearSelection}</button></div>}
+          {chosen.length > 0 && <div className="selection-bar">
+            <span className="selection-bar__count"><Check size={15} />{m.booking.selected(chosen.length)}</span>
+            <button type="button" className="clear-selection" onClick={() => setServiceIds([])}><Close size={14} />{m.booking.clearSelection}</button>
+          </div>}
           {filteredServices.length === 0 ? <p className="muted">{m.booking.notFound}</p> : filteredServices.map((s) => <button key={s.id} disabled={servicesUnavailable} aria-pressed={serviceIds.includes(s.id)} className={`card pick ${serviceIds.includes(s.id) ? 'sel' : ''}`} onClick={() => toggleService(s.id)}>
             <span><b>{s.name}</b><br /><span className="muted small">{s.category} · {duration(s.duration_minutes)}</span></span><b>{money(s.price_cents / 100, b.currency)}</b></button>)}
         </>}

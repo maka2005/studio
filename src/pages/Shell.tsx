@@ -49,9 +49,10 @@ export function Shell() {
   return (<>
     <header className="top"><Link to={base} className="brand"><TenantImage src={assetUrl(slug, b.images.logo)} alt="" width={40} height={40} sizes="40px" priority />{b.short_name}</Link>
       <div className="row">
-        {!isOwner && <div className="row" role="group" aria-label={m.shell.language}>
-          <button className="chip" aria-pressed={locale === 'ru'} onClick={() => setLocale('ru')}>RU</button>
-          <button className="chip" aria-pressed={locale === 'kk'} onClick={() => setLocale('kk')}>KK</button>
+        {!isOwner && <div className="lang-switch" role="group" aria-label={m.shell.language}>
+          <button type="button" aria-pressed={locale === 'ru'} onClick={() => setLocale('ru')}>RU</button>
+          <span className="lang-switch__divider" aria-hidden="true" />
+          <button type="button" aria-pressed={locale === 'kk'} onClick={() => setLocale('kk')}>KK</button>
         </div>}
         {b.client_profile && <Link to={`${base}/profile`} className="icon-btn" aria-label={m.shell.profile}><User /></Link>}</div></header>
     {!isOwner && openState === false && <div className="page"><section className="card col" role="status">

@@ -26,14 +26,21 @@ function hasWorkingHours(hours: Business['hours']) {
   return Object.values(hours || {}).some((slot) => Array.isArray(slot) && slot[0] && slot[1])
 }
 
+// Скрытие чеклиста не зависит от прохождения шагов и хранится локально, как и скрытие уведомлений.
+const onboardingHideKey = (slug: string) => `servio-hidden-onboarding:${slug}`
+
 function OnboardingChecklist({
   b,
   role,
   onGo,
+  hidden,
+  onHide,
 }: {
   b: Business
   role?: string
   onGo: (tab: (typeof TABS)[number]) => void
+  hidden: boolean
+  onHide: () => void
 }) {
   const services = useQuery({
     queryKey: ['owner', 'onboarding-services', b.slug],
@@ -99,6 +106,7 @@ function OnboardingChecklist({
     ]
   }, [b.address, b.hours, onGo, services.data, services.isError, services.isPending, telegram.data, telegram.isError, telegram.isPending])
 
+  if (hidden) return null
   if (role !== 'owner' && role !== 'manager') return null
   const doneCount = items.filter((i) => i.done).length
   if (doneCount === items.length) return null
@@ -111,7 +119,12 @@ function OnboardingChecklist({
           <h2>Чеклист настройки студии</h2>
           <p className="muted small">Заполните основные разделы, чтобы клиенты могли записываться и получать информацию.</p>
         </div>
-        <b>{doneCount}/{items.length}</b>
+        <div className="row wrap" style={{ gap: 8 }}>
+          <b>{doneCount}/{items.length}</b>
+          <button type="button" className="btn ghost mini onboarding-hide" aria-label="Скрыть обучение" onClick={onHide}>
+            Скрыть обучение
+          </button>
+        </div>
       </div>
       <div className="col" style={{ gap: 10 }}>
         {items.map((item) => (
@@ -240,6 +253,7 @@ export function Cabinet({ b, onLogout, impersonation }: { b: Business; onLogout:
   const qc=useQueryClient()
   const [tab, setTab] = useState<(typeof TABS)[number]>('Записи')
   const [dismissedAnnouncements,setDismissedAnnouncements]=useState<string[]>(()=>{try{const value=localStorage.getItem(`servio-hidden-announcements:${b.slug}`);const parsed=value?JSON.parse(value):[];return Array.isArray(parsed)?parsed.filter((id):id is string=>typeof id==='string'):[]}catch{return[]}})
+  const [onboardingHidden,setOnboardingHidden]=useState(()=>{try{return localStorage.getItem(onboardingHideKey(b.slug))==='1'}catch{return false}})
   const [expandedGroups,setExpandedGroups]=useState<Record<string,boolean>>({})
   const [mobileMenuOpen,setMobileMenuOpen]=useState(false)
   const priceNotices=useQuery({queryKey:['owner','price-changes',b.slug],queryFn:()=>owner.pendingPriceChanges(b.slug),refetchInterval:60_000,enabled:true})
@@ -303,6 +317,8 @@ export function Cabinet({ b, onLogout, impersonation }: { b: Business; onLogout:
     window.location.assign('/platform/admin');
   };
   const dismissAnnouncement=(id:string)=>setDismissedAnnouncements(current=>{const next=[...new Set([...current,id])];try{localStorage.setItem(`servio-hidden-announcements:${b.slug}`,JSON.stringify(next))}catch{/* localStorage unavailable */}return next});
+  const hideOnboarding=()=>{setOnboardingHidden(true);try{localStorage.setItem(onboardingHideKey(b.slug),'1')}catch{/* localStorage unavailable */}};
+  const showOnboarding=()=>{setOnboardingHidden(false);try{localStorage.removeItem(onboardingHideKey(b.slug))}catch{/* localStorage unavailable */}};
   return (
     <section className="pad admin-shell">
       {archiveStatus.data?.archived&&<aside className="owner-subscription-alert card" role="alert"><b>Организация находится в архиве</b><p>Доступ к управлению и онлайн-записи приостановлен. Данные сохранены. Перед закрытием скачайте копию данных или свяжитесь с поддержкой Renvio для восстановления доступа.{archiveStatus.data.deletion_requested_at&&' Также зарегистрирован запрос на удаление данных.'}</p>{role==='owner'&&<ExportButton slug={b.slug}/>}</aside>}
@@ -318,11 +334,18 @@ export function Cabinet({ b, onLogout, impersonation }: { b: Business; onLogout:
           <h1>Кабинет студии</h1>
           <p className="muted">Записи, клиенты и дела студии — в одном месте.</p>
         </div>
-        <button className="btn ghost mini admin-logout" onClick={onLogout}>
-          Выйти
-        </button>
+        <div className="row wrap" style={{ gap: 8 }}>
+          {onboardingHidden && (role === 'owner' || role === 'manager') && (
+            <button type="button" className="link onboarding-restore" onClick={showOnboarding}>
+              Показать обучение
+            </button>
+          )}
+          <button className="btn ghost mini admin-logout" onClick={onLogout}>
+            Выйти
+          </button>
+        </div>
       </div>
-      <OnboardingChecklist b={b} role={role ?? undefined} onGo={setTab} />
+      <OnboardingChecklist b={b} role={role ?? undefined} onGo={setTab} hidden={onboardingHidden} onHide={hideOnboarding} />
       {platformAnnouncements.data?.filter(a=>!dismissedAnnouncements.includes(a.id)).map(a=><aside className="owner-subscription-alert card owner-platform-announcement" key={a.id}><div><b>{a.title}</b><p>{a.body}</p></div><button className="owner-announcement-dismiss" type="button" aria-label={`Скрыть уведомление: ${a.title}`} onClick={()=>dismissAnnouncement(a.id)}>Скрыть</button></aside>)}
       {Object.entries(platformFlags.data??{}).some(([,enabled])=>enabled)&&<aside className="owner-account-card card"><b>Для вашей студии доступны новые возможности</b><p className="muted small">{Object.entries(platformFlags.data??{}).filter(([,enabled])=>enabled).map(([key])=>key).join(' · ')}</p></aside>}
       <div className="admin-layout">
