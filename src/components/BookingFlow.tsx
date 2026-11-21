@@ -2,34 +2,21 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { z } from 'zod';
-import { addMinutes } from 'date-fns';
-import { ru } from 'date-fns/locale';
 import { formatInTimeZone } from 'date-fns-tz';
 import type { Business } from '../lib/tenant';
-import { createBooking, fetchBookingOpen, fetchServices, fetchSlots, joinWaitlist } from '../lib/api';
+import { createBooking, fetchServices, fetchSlots, joinWaitlist } from '../lib/api';
 import { duration, money, randomToken } from '../lib/format';
 import { isFullPhone, maskPhone, PHONE_PLACEHOLDER } from '../lib/phone';
 import { ArrowLeft, ArrowRight } from '../lib/icons';
 import { Sheet } from './Sheet';
 import { LEGAL_VERSION } from '../lib/legal';
 import { supabase } from '../lib/supabase';
-import { saveToken } from '../lib/tokens';
+import { saveToken, saveWaitlistToken } from '../lib/tokens';
 import { CustomerTelegramOptIn } from './CustomerTelegramOptIn';
-import { ALL_SERVICES_CATEGORY, filterServices, serviceCategories } from '../lib/serviceCatalog';
+import { PushOptIn } from './PushOptIn';
+import { ALL_SERVICES_CATEGORY, allServicesCategory, filterServices, serviceCategories } from '../lib/serviceCatalog';
 import { extraField, isAutoBusiness } from '../lib/businessTypes';
-
-const Contact = z.object({
-  name: z.string().trim().min(1, 'Введите имя').max(80),
-  phone: z.string().trim().refine(isFullPhone, 'Введите номер полностью: +7 (777) 123-45-67'),
-  car: z.string().trim().min(2, 'Укажите автомобиль').max(60),
-});
-/** Для не-авто категорий дополнительное поле необязательно. */
-const ContactOptional = Contact.extend({ car: z.string().trim().max(60) });
-const TITLES = ['Выберите услугу', 'Выберите время', 'Ваши контакты', 'Проверьте запись'];
-const ERR: Record<string, string> = { slot_taken: 'Это время только что заняли. Выберите другое.', invalid_slot: 'Это время недоступно для записи.',
-  past_start: 'Это время уже прошло.', consent_required: 'Нужно согласие на обработку данных.', bad_name: 'Проверьте имя.',
-  bad_phone: 'Проверьте номер телефона.', bad_car: 'Проверьте автомобиль.', rate_limited: 'Слишком много попыток записи. Попробуйте позже.',
-  promo_invalid: 'Промокод не действует или закончился лимит.', booking_closed: 'Онлайн-запись временно недоступна.', booking_unavailable: 'Сервис записи временно недоступен. Попробуйте позже.' };
+import { clientDateLocale, clientErrText, useClientMessages } from '../lib/clientLocale';
 
 function attributionSource(): string {
   const raw = new URLSearchParams(location.search).get('utm_source')?.toLowerCase();
@@ -40,13 +27,23 @@ function attributionSource(): string {
   return 'direct';
 }
 
-export function BookingFlow({ b, initialService, onClose }: { b: Business; initialService?: string; onClose: () => void }) {
+export function BookingFlow({ b, initialService, bookingOpen, onClose }: {
+  b: Business; initialService?: string; bookingOpen?: boolean | null; onClose: () => void;
+}) {
+  const { locale, m } = useClientMessages();
   const isAuto = isAutoBusiness(b.business_type);
-  const field = extraField(b.business_type);
+  const field = isAuto
+    ? { label: m.field.autoLabel, placeholder: m.field.autoPlaceholder, error: m.field.autoError, empty: extraField(b.business_type).empty }
+    : { label: m.field.otherLabel, placeholder: m.field.otherPlaceholder, error: m.field.otherError, empty: extraField(b.business_type).empty };
+  const Contact = z.object({
+    name: z.string().trim().min(1, m.booking.nameError).max(80),
+    phone: z.string().trim().refine(isFullPhone, m.booking.phoneError),
+    car: isAuto ? z.string().trim().min(2, field.error).max(60) : z.string().trim().max(60),
+  });
   const svcQ = useQuery({ queryKey: ['services', b.slug], queryFn: () => fetchServices(b.slug) });
-  const openQ = useQuery({ queryKey: ['booking-open', b.slug], queryFn: () => fetchBookingOpen(b.slug), staleTime: 60_000 });
   const [step, setStep] = useState(1);
-  const [serviceId, setServiceId] = useState<string | null>(null);
+  // Several services are booked as one visit: the backend schedules them back-to-back.
+  const [serviceIds, setServiceIds] = useState<string[]>([]);
   const [serviceSearch, setServiceSearch] = useState('');
   const [serviceCategory, setServiceCategory] = useState(ALL_SERVICES_CATEGORY);
   const today = formatInTimeZone(new Date(), b.timezone, 'yyyy-MM-dd');
@@ -58,128 +55,172 @@ export function BookingFlow({ b, initialService, onClose }: { b: Business; initi
   const [msg, setMsg] = useState<string | null>(null); const [agree, setAgree] = useState(false);
   const key = useRef(crypto.randomUUID()); const token = useRef(randomToken());
   const preset = useRef(false);
+  const servicesUnavailable = svcQ.isError;
+  // При ошибке загрузки показываем услуги из конфигурации, но запрещаем ложную запись.
+  const services: { id: string; name: string; category: string; price_cents: number; duration_minutes: number }[] = servicesUnavailable
+    ? b.services.map((s, i) => ({ id: `config:${i}`, name: s.name, category: s.category ?? m.common.other, price_cents: Math.round(s.price * 100), duration_minutes: s.duration_minutes }))
+    : svcQ.data ?? [];
   useEffect(() => {
-    if (preset.current || !initialService || !svcQ.data) return;
+    if (preset.current || !initialService || servicesUnavailable || !svcQ.data) return;
     const s = svcQ.data.find((x) => x.id === initialService || x.name === initialService);
-    if (s) { preset.current = true; setServiceId(s.id); setStep(2); }
-  }, [svcQ.data, initialService]);
-  const svc = svcQ.data?.find((s) => s.id === serviceId);
-  const svcCategories = serviceCategories(svcQ.data ?? []);
-  const filteredServices = filterServices(svcQ.data ?? [], serviceSearch, serviceCategory);
+    if (s) { preset.current = true; setServiceIds([s.id]); setStep(2); }
+  }, [svcQ.data, servicesUnavailable, initialService]);
+  const chosen = serviceIds.map((id) => services.find((s) => s.id === id)).filter((s): s is NonNullable<typeof s> => !!s);
+  const totalCents = chosen.reduce((sum, s) => sum + s.price_cents, 0);
+  const toggleService = (id: string) => setServiceIds((prev) =>
+    prev.includes(id) ? prev.filter((item) => item !== id)
+      : prev.length >= 3 ? prev : [...prev, id]);
+  // Preview of the sequential plan; the database applies the real tenant buffer.
+  const plan = (() => {
+    if (!slot) return [] as { service: NonNullable<(typeof services)[number]>; start: string; end: string }[];
+    let cursor = Date.parse(slot);
+    const bufferMs = (b.buffer_minutes ?? 0) * 60_000;
+    return chosen.map((service) => {
+      const start = new Date(cursor).toISOString();
+      cursor += service.duration_minutes * 60_000;
+      const end = new Date(cursor).toISOString();
+      cursor += bufferMs;
+      return { service, start, end };
+    });
+  })();
+  const svcCategories = serviceCategories(services, locale);
+  const filteredServices = filterServices(services, serviceSearch, serviceCategory, locale);
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => {
     const d = new Date(new Date(`${today}T12:00:00Z`).getTime() + i * 864e5);
-    return { iso: d.toISOString().slice(0, 10), wd: d.toLocaleDateString('ru-RU', { weekday: 'short', timeZone: 'UTC' }), n: d.getUTCDate() };
-  }), [today]);
-  const slotsQ = useQuery({ queryKey: ['slots', b.slug, serviceId, day], queryFn: () => fetchSlots(b.slug, serviceId!, day), enabled: !!serviceId && step === 2 });
-  const fmt = (iso: string, f: string) => formatInTimeZone(new Date(iso), b.timezone, f, { locale: ru });
+    return { iso: d.toISOString().slice(0, 10), wd: d.toLocaleDateString(locale === 'kk' ? 'kk-KZ' : 'ru-RU', { weekday: 'short', timeZone: 'UTC' }), n: d.getUTCDate() };
+  }), [today, locale]);
+  const slotsQ = useQuery({ queryKey: ['slots', b.slug, serviceIds[0], day], queryFn: () => fetchSlots(b.slug, serviceIds[0]!, day), enabled: !!serviceIds[0] && step === 2 && !servicesUnavailable });
+  const fmt = (iso: string, f: string) => formatInTimeZone(new Date(iso), b.timezone, f, { locale: clientDateLocale(locale) });
   const mut = useMutation({
-    mutationFn: () => createBooking({ slug: b.slug, service: serviceId!, start: slot!, ...form, car: isAuto ? form.car : form.car.trim() || field.empty, key: key.current, token: token.current, consent: LEGAL_VERSION, promo: promo.trim() || undefined, source: attributionSource() }),
+    mutationFn: () => createBooking({ slug: b.slug, service: serviceIds[0], services: serviceIds, start: slot!, ...form, car: isAuto ? form.car : form.car.trim() || field.empty, key: key.current, token: token.current, consent: LEGAL_VERSION, promo: promo.trim() || undefined, source: attributionSource() }),
     onSuccess: () => {
       saveToken(b.slug, token.current);   // если клиент уже вошёл, запись сразу привязывается к профилю
       void supabase.auth.getSession().then(({ data }) => { if (data.session) void supabase.rpc('claim_booking', { p_token: token.current }); });
       setStep(5);
     },
     onError: (e: Error) => {
-      const code = Object.keys(ERR).find((c) => e.message.includes(c));
-      setMsg(code === 'bad_car' ? field.error : code ? ERR[code]! : 'Не удалось записаться. Проверьте соединение и повторите.');
+      const code = Object.keys(m.errors).find((c) => e.message.includes(c));
+      setMsg(code === 'bad_car' ? field.error : clientErrText(e, m.errors));
       if (code) { setSlot(null); setStep(2); void slotsQ.refetch(); }
     },
   });
   const next = () => {
     setMsg(null);
     if (step === 3) {
-      const r = (isAuto ? Contact : ContactOptional).safeParse(form);
+      const r = Contact.safeParse(form);
       if (!r.success) { setErrs(Object.fromEntries(r.error.issues.map((i) => [String(i.path[0]), i.message]))); return; }
       setErrs({}); setForm(r.data);
     }
     setStep(step + 1);
   };
-  const canNext = step === 1 ? !!serviceId : step === 2 ? !!slot : step === 3 ? agree : true;
+  const canNext = step === 1 ? chosen.length > 0 && !servicesUnavailable : step === 2 ? !!slot : step === 3 ? agree : true;
 
-  if (step === 5 && svc && slot) return (
-    <Sheet title="Запись подтверждена" onClose={onClose}>
-      <div className="card col"><b>{svc.name}</b><span>{fmt(slot, "d MMMM 'в' HH:mm")}</span>{mut.data?.discount_cents ? <span className="muted"><s>{money(svc.price_cents / 100, b.currency)}</s> · скидка {money(mut.data.discount_cents / 100, b.currency)}</span> : null}<span className="muted">{money((mut.data?.price_cents ?? svc.price_cents) / 100, b.currency)}</span></div>
-      <p className="muted small">Все детали и возможность отмены доступны в разделе «Моя запись» на этом устройстве.</p>
+  if (step === 5 && chosen.length && slot) return (
+    <Sheet title={m.booking.successTitle} onClose={onClose}>
+      <div className="card col">
+        {plan.map((p, i) => <div className="kv" key={`${p.service.id}-${i}`}><span>{p.service.name}</span><b>{fmt(p.start, "d MMMM 'в' HH:mm")}</b></div>)}
+        {!!mut.data?.some((row) => row.discount_cents > 0) && <span className="muted"><s>{money(totalCents / 100, b.currency)}</s> · {m.booking.discount} {money(mut.data.reduce((sum, row) => sum + row.discount_cents, 0) / 100, b.currency)}</span>}
+        <b>{money((mut.data?.reduce((sum, row) => sum + row.price_cents, 0) ?? totalCents) / 100, b.currency)}</b>
+      </div>
+      <p className="muted small">{m.booking.successNote}</p>
       {b.client_telegram_enabled && <CustomerTelegramOptIn slug={b.slug} token={token.current} />}
-      <Link className="btn" to={`/s/${b.slug}/booking`} onClick={onClose}>Моя запись <ArrowRight /></Link>
+      <PushOptIn token={token.current} kind="booking" />
+      <Link className="btn" to={`/s/${b.slug}/booking`} onClick={onClose}>{m.booking.successLink} <ArrowRight /></Link>
     </Sheet>);
 
-  if (openQ.data === false) return (
-    <Sheet title="Запись временно недоступна" onClose={onClose}>
-      <div className="card col"><p>Онлайн-запись в этой студии сейчас закрыта. Свяжитесь со студией по телефону{b.phone ? `: ${b.phone}` : ''}.</p></div>
-      <button className="btn ghost" onClick={onClose}>Закрыть</button>
+  if (bookingOpen === false) return (
+    <Sheet title={m.booking.closedTitle} onClose={onClose}>
+      <div className="card col"><p>{m.booking.closedText(b.phone)}</p></div>
+      <button className="btn ghost" onClick={onClose}>{m.common.close}</button>
     </Sheet>);
 
   return (
-    <Sheet title={TITLES[step - 1]!} sub={`Шаг ${step} из 4`} onClose={onClose}>
+    <Sheet title={m.booking.titles[step - 1]!} sub={m.booking.step(step)} onClose={onClose}>
       <div className="bars">{[1, 2, 3, 4].map((i) => <i key={i} className={i <= step ? 'on' : ''} />)}</div>
       {msg && <p role="alert" className="err">{msg}</p>}
-      {step > 1 && svc && <div className="row between strong"><span>{svc.name}</span><span>{money(svc.price_cents / 100, b.currency)}</span></div>}
+      {step > 1 && chosen.length > 0 && <div className="card col">
+        <span className="muted small">{m.booking.selected(chosen.length)}</span>
+        {chosen.map((item) => <div className="row between" key={item.id}><span>{item.name}</span><span>{money(item.price_cents / 100, b.currency)}</span></div>)}
+      </div>}
 
-      {step === 1 && (svcQ.isPending ? <p className="muted">Загрузка услуг…</p> : svcQ.isError ? <p className="err">Не удалось загрузить услуги. <button className="link" onClick={() => svcQ.refetch()}>Повторить</button></p>
-        : svcQ.data.length === 0 ? <p className="muted">Услуг пока нет.</p>
-        : <>
-          <label className="sr-only" htmlFor={`booking-service-search-${b.slug}`}>Найти услугу</label>
-          <input id={`booking-service-search-${b.slug}`} className="field" type="search" placeholder="Найти услугу по названию" value={serviceSearch} onChange={(e) => { setServiceSearch(e.target.value); setServiceId(null); }} />
-          {svcCategories.length > 1 && <div className="service-category-filter" aria-label="Категории услуг">
-            {[ALL_SERVICES_CATEGORY, ...svcCategories].map((item) => <button key={item} className={`chip ${serviceCategory === item ? 'sel' : ''}`} aria-pressed={serviceCategory === item} onClick={() => { setServiceCategory(item); setServiceId(null); }}>{item}</button>)}
+      {step === 1 && (svcQ.isPending ? <p className="muted">{m.common.loading}</p> : <>
+        {servicesUnavailable && <p className="err small" role="status">{m.booking.fallbackNote} <button className="link" onClick={() => void svcQ.refetch()}>{m.common.retry}</button></p>}
+        {services.length === 0 ? <p className="muted">{m.booking.noServices}</p> : <>
+          <label className="sr-only" htmlFor={`booking-service-search-${b.slug}`}>{m.booking.searchLabel}</label>
+          <input id={`booking-service-search-${b.slug}`} className="field" type="search" placeholder={m.booking.searchPlaceholder} value={serviceSearch} onChange={(e) => { setServiceSearch(e.target.value); setServiceIds([]); }} />
+          {svcCategories.length > 1 && <div className="service-category-filter" aria-label={m.booking.categoriesLabel}>
+            {[allServicesCategory(locale), ...svcCategories].map((item) => <button key={item} className={`chip ${serviceCategory === item || (item === allServicesCategory(locale) && serviceCategory === ALL_SERVICES_CATEGORY) ? 'sel' : ''}`} aria-pressed={serviceCategory === item} onClick={() => { setServiceCategory(item); setServiceIds([]); }}>{item}</button>)}
           </div>}
-          {filteredServices.length === 0 ? <p className="muted">Услуги не найдены. Измените поиск или категорию.</p> : filteredServices.map((s) => <button key={s.id} className={`card pick ${s.id === serviceId ? 'sel' : ''}`} onClick={() => setServiceId(s.id)}>
+          <p className="muted small">{m.booking.selectHint}</p>
+          {chosen.length > 0 && <div className="row between"><span className="strong">{m.booking.selected(chosen.length)}</span><button className="link" onClick={() => setServiceIds([])}>{m.booking.clearSelection}</button></div>}
+          {filteredServices.length === 0 ? <p className="muted">{m.booking.notFound}</p> : filteredServices.map((s) => <button key={s.id} disabled={servicesUnavailable} aria-pressed={serviceIds.includes(s.id)} className={`card pick ${serviceIds.includes(s.id) ? 'sel' : ''}`} onClick={() => toggleService(s.id)}>
             <span><b>{s.name}</b><br /><span className="muted small">{s.category} · {duration(s.duration_minutes)}</span></span><b>{money(s.price_cents / 100, b.currency)}</b></button>)}
-        </>)}
+        </>}
+      </>)}
 
       {step === 2 && <>
         <div className="days">{days.map((d) => <button key={d.iso} className={`day ${d.iso === day ? 'sel' : ''}`} onClick={() => { setDay(d.iso); setSlot(null); }}><span>{d.wd}</span><b>{d.n}</b></button>)}</div>
-        <label className="muted small" htmlFor="other-date">Другая дата</label>
+        <label className="muted small" htmlFor="other-date">{m.booking.otherDate}</label>
         <input id="other-date" className="field" type="date" min={today} value={day} onChange={(e) => { if (e.target.value >= today) { setDay(e.target.value); setSlot(null); } }} />
-        {slotsQ.isPending ? <p className="muted">Ищем свободное время…</p> : slotsQ.isError ? <p className="err">Не удалось загрузить расписание. <button className="link" onClick={() => slotsQ.refetch()}>Попробовать ещё раз</button></p>
-          : slotsQ.data.length === 0 ? <p className="muted">На эту дату записи нет. Выберите другой день — покажем доступное время.</p>
-          : !slotsQ.data.some((s) => s.free) ? <><p className="muted">На эту дату свободных мест уже нет. Оставьте заявку — студия свяжется с вами, если время освободится.</p><WaitlistForm slug={b.slug} service={serviceId!} day={day} isAuto={isAuto} /></>
+        {slotsQ.isPending ? <p className="muted">{m.booking.loadSlots}</p> : slotsQ.isError ? <p className="err">{m.booking.slotsError} <button className="link" onClick={() => slotsQ.refetch()}>{m.common.retry}</button></p>
+          : slotsQ.data.length === 0 ? <p className="muted">{m.booking.noSlots}</p>
+          : !slotsQ.data.some((s) => s.free) ? <><p className="muted">{m.booking.noFree}</p><WaitlistForm slug={b.slug} service={serviceIds[0]!} day={day} isAuto={isAuto} onClose={onClose} /></>
           : <div className="chips">{slotsQ.data.map((s) => <button key={s.slot} disabled={!s.free} aria-pressed={slot === s.slot}
               className={`chip ${slot === s.slot ? 'sel' : ''}`} onClick={() => setSlot(s.slot)}>{fmt(s.slot, 'HH:mm')}</button>)}</div>}
-        <p className="muted small">Выберите время, отмеченное как свободное.</p>
-        {slot && svc && <p className="muted small">{isAuto ? 'Ориентировочно автомобиль будет готов' : 'Ориентировочно услуга завершится'}: {formatInTimeZone(addMinutes(new Date(slot), svc.duration_minutes), b.timezone, "d MMMM 'в' HH:mm", { locale: ru })}</p>}
+        <p className="muted small">{m.booking.chooseFree}</p>
+        {plan.length > 0 && <div className="card col">
+          <span className="muted small">{m.booking.visitPlan}</span>
+          {plan.map((p, i) => <div className="kv" key={`${p.service.id}-${i}`}><span>{p.service.name}</span><b>{fmt(p.start, "d MMMM 'в' HH:mm")} — {fmt(p.end, 'HH:mm')}</b></div>)}
+        </div>}
       </>}
 
       {step === 3 && (['name', 'phone', 'car'] as const).map((f) => (
-        <div key={f}><label className="muted small" htmlFor={f}>{{ name: 'Имя', phone: 'Телефон', car: field.label }[f]}</label>
+        <div key={f}><label className="muted small" htmlFor={f}>{{ name: m.booking.nameLabel, phone: m.booking.phoneLabel, car: field.label }[f]}</label>
           <input id={f} className="field" value={form[f]} type={f === 'phone' ? 'tel' : 'text'} inputMode={f === 'phone' ? 'tel' : 'text'} autoComplete={{ name: 'name', phone: 'tel', car: 'off' }[f]}
-            placeholder={f === 'phone' ? PHONE_PLACEHOLDER : f === 'car' && !isAuto ? field.placeholder : undefined} maxLength={f === 'phone' ? 18 : f === 'car' ? 60 : undefined}
+            placeholder={f === 'phone' ? PHONE_PLACEHOLDER : f === 'car' ? field.placeholder : undefined} maxLength={f === 'phone' ? 24 : f === 'car' ? 60 : undefined}
             onChange={(e) => setForm({ ...form, [f]: f === 'phone' ? maskPhone(e.target.value, form.phone) : e.target.value })} aria-invalid={!!errs[f]} />
           {errs[f] && <p className="err small">{errs[f]}</p>}</div>))}
 
       {step === 3 && (<label className="check"><input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
-        <span className="small">Я принимаю <a href={`/s/${b.slug}/legal/terms`} target="_blank" rel="noreferrer">Условия использования</a> и даю <a href={`/s/${b.slug}/legal/consent`} target="_blank" rel="noreferrer">согласие на обработку персональных данных</a>. С <a href={`/s/${b.slug}/legal/privacy`} target="_blank" rel="noreferrer">Политикой конфиденциальности</a> ознакомлен(а).</span></label>)}
+        <span className="small">{m.booking.consentBefore}<a href={`/s/${b.slug}/legal/terms`} target="_blank" rel="noreferrer">{m.common.terms}</a>{m.booking.consentAnd}<a href={`/s/${b.slug}/legal/consent`} target="_blank" rel="noreferrer">{m.common.consent}</a>{m.booking.consentPrivacyLead}<a href={`/s/${b.slug}/legal/privacy`} target="_blank" rel="noreferrer">{m.common.privacy}</a>{m.booking.consentAfter}</span></label>)}
 
-      {step === 4 && svc && slot && <div className="card col">
-        <b>{svc.name}</b><span>{fmt(slot, "d MMMM 'в' HH:mm")} · {duration(svc.duration_minutes)}</span>
-        <span className="muted">{form.name}, {form.phone}</span>{isAuto || form.car.trim() ? <span className="muted">{isAuto ? form.car : `Пожелания: ${form.car.trim()}`}</span> : null}<b>{money(svc.price_cents / 100, b.currency)}</b>
-        <label className="muted small" htmlFor="promo-code">Промокод</label><input id="promo-code" className="field" maxLength={24} autoCapitalize="characters" placeholder="Если есть" value={promo} onChange={(e) => setPromo(e.target.value.toUpperCase())} />
-        <span className="muted small">Если промокод действителен, скидка будет учтена при подтверждении.</span></div>}
+      {step === 4 && chosen.length > 0 && slot && <div className="card col">
+        {plan.map((p, i) => <div key={`${p.service.id}-${i}`}><b>{p.service.name}</b><span className="muted small">{fmt(p.start, "d MMMM 'в' HH:mm")} · {duration(p.service.duration_minutes)}</span></div>)}
+        <span className="muted">{form.name}, {form.phone}</span>{isAuto || form.car.trim() ? <span className="muted">{isAuto ? form.car : `${m.booking.wishLabel}: ${form.car.trim()}`}</span> : null}<b>{money(totalCents / 100, b.currency)}</b>
+        <label className="muted small" htmlFor="promo-code">{m.booking.promoLabel}</label><input id="promo-code" className="field" maxLength={24} autoCapitalize="characters" placeholder={m.booking.promoPlaceholder} value={promo} onChange={(e) => setPromo(e.target.value.toUpperCase())} />
+        <span className="muted small">{m.booking.promoHint}</span></div>}
 
       <button className="btn" disabled={!canNext || mut.isPending} onClick={() => (step === 4 ? mut.mutate() : next())}>
-        {step === 4 ? (mut.isPending ? 'Подтверждаем…' : 'Подтвердить запись') : step === 3 ? 'Проверить запись' : 'Продолжить'} <ArrowRight /></button>
-      {step > 1 && <button className="back" onClick={() => setStep(step - 1)}><ArrowLeft /> Назад</button>}
+        {step === 4 ? (mut.isPending ? m.booking.confirming : m.booking.confirm) : step === 3 ? m.booking.check : m.common.next} <ArrowRight /></button>
+      {step > 1 && <button className="back" onClick={() => setStep(step - 1)}><ArrowLeft /> {m.booking.back}</button>}
     </Sheet>);
 }
 
-function WaitlistForm({ slug, service, day, isAuto }: { slug: string; service: string; day: string; isAuto: boolean }) {
+function WaitlistForm({ slug, service, day, isAuto, onClose }: { slug: string; service: string; day: string; isAuto: boolean; onClose: () => void }) {
+  const { m } = useClientMessages();
   const field = extraField(isAuto ? 'autoservice' : 'barbershop');
   const [form, setForm] = useState({ name: '', phone: '', car: '' });
   const [agree, setAgree] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
-  const m = useMutation({ mutationFn: () => joinWaitlist({ slug, service, day, ...form, car: isAuto ? form.car : form.car.trim() || field.empty, consent: LEGAL_VERSION }), onSuccess: () => { setDone(true); setMessage(null); }, onError: (e: Error) => {
-    const code = ['already_waiting', 'rate_limited', 'bad_date'].find((x) => e.message.includes(x));
-    setMessage(code === 'already_waiting' ? 'Вы уже оставили заявку на эту услугу в этот день.' : code === 'rate_limited' ? 'Слишком много заявок. Попробуйте позже.' : 'Не удалось отправить заявку. Проверьте данные и повторите.');
-  } });
-  if (done) return <p className="note" role="status">Заявка принята. Если появится свободное время, студия свяжется с вами.</p>;
-  return <div className="card col"><b>Оставить заявку на свободное время</b>
-    <input className="field" aria-label="Имя для листа ожидания" placeholder="Ваше имя" maxLength={80} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-    <input className="field" aria-label="Телефон для листа ожидания" placeholder={PHONE_PLACEHOLDER} type="tel" maxLength={18} autoComplete="tel" inputMode="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: maskPhone(e.target.value, form.phone) })} />
-    <input className="field" aria-label={isAuto ? 'Автомобиль для листа ожидания' : 'Пожелания для листа ожидания'} placeholder={field.placeholder} maxLength={60} value={form.car} onChange={(e) => setForm({ ...form, car: e.target.value })} />
-    <label className="check"><input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} /><span className="small">Разрешаю студии связаться со мной и согласен(на) на обработку данных. <a href={`/s/${slug}/legal/privacy`} target="_blank" rel="noreferrer">Политика конфиденциальности</a></span></label>
+  const [doneToken, setDoneToken] = useState<string | null>(null);
+  const mut = useMutation({
+    mutationFn: () => joinWaitlist({ slug, service, day, ...form, car: isAuto ? form.car : form.car.trim() || field.empty, consent: LEGAL_VERSION }),
+    onSuccess: (token) => { saveWaitlistToken(slug, token); setDoneToken(token); setMessage(null); },
+    onError: (e: Error) => setMessage(clientErrText(e, m.errors)),
+  });
+  if (doneToken !== null) return (
+    <div className="card col">
+      <p className="note" role="status">{m.waitlistForm.success}</p>
+      {doneToken && <Link className="btn ghost" to={`/s/${slug}/waitlist#t=${doneToken}`} onClick={onClose}>{m.waitlistForm.myRequest} <ArrowRight /></Link>}
+      {doneToken && <PushOptIn token={doneToken} kind="waitlist" />}
+    </div>);
+  return <div className="card col"><b>{m.waitlistForm.title}</b>
+    <input className="field" aria-label={m.waitlistForm.nameLabel} placeholder={m.waitlistForm.namePlaceholder} maxLength={80} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+    <input className="field" aria-label={m.waitlistForm.phoneLabel} placeholder={PHONE_PLACEHOLDER} type="tel" maxLength={24} autoComplete="tel" inputMode="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: maskPhone(e.target.value, form.phone) })} />
+    <input className="field" aria-label={isAuto ? m.waitlistForm.carAutoLabel : m.waitlistForm.carOtherLabel} placeholder={field.placeholder} maxLength={60} value={form.car} onChange={(e) => setForm({ ...form, car: e.target.value })} />
+    <label className="check"><input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} /><span className="small">{m.waitlistForm.consent} <a href={`/s/${slug}/legal/privacy`} target="_blank" rel="noreferrer">{m.common.privacy}</a></span></label>
     {message && <p className="err small" role="alert">{message}</p>}
-    <button className="btn" disabled={m.isPending || !agree || !form.name.trim() || !isFullPhone(form.phone) || (isAuto && !form.car.trim())} onClick={() => m.mutate()}>{m.isPending ? 'Отправляем…' : 'Оставить заявку'}</button>
+    {!isFullPhone(form.phone) && form.phone.length > 0 && <p className="muted small">{m.booking.phoneError}</p>}
+    <button className="btn" disabled={mut.isPending || !agree || !form.name.trim() || !isFullPhone(form.phone) || (isAuto && !form.car.trim())} onClick={() => mut.mutate()}>{mut.isPending ? m.waitlistForm.sending : m.waitlistForm.submit}</button>
   </div>;
 }

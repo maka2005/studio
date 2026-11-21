@@ -53,5 +53,6 @@ export async function loadBusiness(slug: string): Promise<Business> {
   if (!r.ok) throw new Error('Студия не найдена');
   return normalizeBusiness(Business.parse(await r.json()));
 }
-export type Ctx = { b: Business; openBooking: (service?: string) => void };
+/** bookingOpen: null/undefined — проверка статуса ещё не завершилась или недоступна; блокируем только false. */
+export type Ctx = { b: Business; openBooking: (service?: string) => void; bookingOpen?: boolean | null };
 export const assetUrl = (slug: string, p: string) => (/^(https?:|\/)/.test(p) ? p : `/tenants/${slug}/${p}`);

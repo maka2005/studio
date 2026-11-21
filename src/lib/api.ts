@@ -3,7 +3,9 @@ import { ownerRequest } from './ownerSession';
 export type Svc = { id: string; name: string; category: string; price_cents: number; duration_minutes: number; active: boolean };
 export type Slot = { slot: string; free: boolean };
 export type MyBooking = { id: string; tenant_slug: string; service_name: string; service_id: string; starts_at: string; ends_at: string;
-  price_cents: number; status: string; customer_name: string; car: string; can_cancel: boolean; reviewed: boolean };
+  price_cents: number; status: string; customer_name: string; car: string; can_cancel: boolean; reviewed: boolean;
+  can_reschedule: boolean; cancel_hours: number; reschedule_hours: number; token: string };
+export type CreatedBooking = { booking_id: string; starts_at: string; ends_at: string; price_cents: number; discount_cents: number; promo_code: string | null };
 export async function fetchServices(slug: string, includeInactive = false): Promise<Svc[]> {
   if (includeInactive) return ownerRequest<Svc[]>('services', { slug, includeInactive: true });
   let query = supabase.from('services').select('id,name,category,price_cents,duration_minutes,active,tenants!inner(slug)').eq('tenants.slug', slug);
@@ -22,15 +24,52 @@ export async function fetchSlots(slug: string, service: string, day: string): Pr
   if (data?.error) throw new Error(String(data.error));
   return (data?.slots ?? []) as Slot[];
 }
-// Открыта ли онлайн-запись (подписка организации). При сбое проверки считаем запись открытой:
+// Открыта ли онлайн-запись (подписка организации). null = статус неизвестен: UI не блокируем,
 // окончательное решение всё равно принимает сервер (booking-create / get_slots).
-export async function fetchBookingOpen(slug: string): Promise<boolean> {
-  const { data, error } = await supabase.functions.invoke('public-api', { body: { action: 'booking_status', slug } });
-  // Fail closed: when status cannot be verified, never expose booking UI.
-  if (error || data?.error) return false;
-  return data?.open !== false;
+export async function fetchBookingOpen(slug: string): Promise<boolean | null> {
+  try {
+    const { data, error } = await supabase.functions.invoke('public-api', { body: { action: 'booking_status', slug } });
+    if (error || data?.error) return null;
+    return data?.open === false ? false : true;
+  } catch {
+    return null;
+  }
 }
-export async function createBooking(a: { slug: string; service: string; start: string; name: string; phone: string; car: string; key: string; token: string; consent: string; promo?: string; source?: string }) {
+/** Вызов публичного API с единой распаковкой ошибок (503 и `{ error }` приходят одинаково). */
+async function publicApi<T>(body: Record<string, unknown>): Promise<T> {
+  const { data, error } = await supabase.functions.invoke('public-api', { body });
+  if (error) {
+    const response = (error as { context?: Response }).context;
+    const parsed = await response?.clone().json().catch(() => null);
+    const code = parsed?.error ?? (error as Error).message;
+    throw new Error(String(code || 'request_failed'));
+  }
+  if (data?.error) throw new Error(String(data.error));
+  return data as T;
+}
+export type RescheduleResult = { ok?: boolean; starts_at: string; ends_at: string };
+export type WaitlistOffer = { slot: string; expires_at: string; offer_token: string };
+export type WaitlistItem = { id: string; service_name: string; service_id: string | null; preferred_day: string;
+  status: string; created_at: string; offer: WaitlistOffer | null };
+export type WaitlistRead = { item: WaitlistItem | null };
+export type WaitlistClaim = { booking: { token: string; booking_id: string; starts_at: string; ends_at: string; service_id: string } };
+export type PushKind = 'booking' | 'waitlist';
+export async function rescheduleBooking(token: string, start: string): Promise<RescheduleResult> {
+  return publicApi<RescheduleResult>({ action: 'booking_reschedule', token, start });
+}
+export async function readWaitlist(token: string): Promise<WaitlistRead> {
+  return publicApi<WaitlistRead>({ action: 'waitlist_read', token });
+}
+export async function cancelWaitlist(token: string): Promise<void> {
+  await publicApi<{ ok?: boolean }>({ action: 'waitlist_cancel', token });
+}
+export async function claimWaitlistOffer(offerToken: string): Promise<WaitlistClaim> {
+  return publicApi<WaitlistClaim>({ action: 'waitlist_claim', offerToken });
+}
+export async function subscribePush(token: string, kind: PushKind, subscription: PushSubscriptionJSON): Promise<void> {
+  await publicApi<{ ok?: boolean }>({ action: 'push_subscribe', token, kind, subscription });
+}
+export async function createBooking(a: { slug: string; service?: string; services?: string[]; start: string; name: string; phone: string; car: string; key: string; token: string; consent: string; promo?: string; source?: string }): Promise<CreatedBooking[]> {
   const { data, error } = await supabase.functions.invoke('booking-create', { body: a });
   if (error) {
     const context = (error as { context?: Response }).context;
@@ -39,9 +78,15 @@ export async function createBooking(a: { slug: string; service: string; start: s
     throw error;
   }
   if (data?.error) throw new Error(String(data.error));
-  return data?.booking as { booking_id: string; starts_at: string; ends_at: string; price_cents: number; discount_cents: number; promo_code: string | null };
+  const rows = data?.bookings ?? (data?.booking ? [data.booking] : []);
+  return rows as CreatedBooking[];
 }
-export async function getBooking(token: string): Promise<MyBooking | null> {
+export async function getBookings(tokens: string[]): Promise<MyBooking[]> {
+  if (!tokens.length) return [];
+  const data = await publicApi<{ bookings?: MyBooking[] }>({ action: 'bookings_read', tokens });
+  return data.bookings ?? [];
+}
+export async function getBooking(token: string): Promise<Omit<MyBooking, 'token'> | null> {
   const { data, error } = await supabase.functions.invoke('public-api', { body: { action: 'booking_read', token } });
   if (error) {
     const body = await (error as { context?: Response }).context?.clone().json().catch(() => null);
@@ -60,7 +105,7 @@ export async function cancelBooking(token: string) {
   }
   if (data?.error) throw new Error(String(data.error));
 }
-export async function joinWaitlist(a: { slug: string; service: string; day: string; name: string; phone: string; car: string; consent: string }) {
+export async function joinWaitlist(a: { slug: string; service: string; day: string; name: string; phone: string; car: string; consent: string }): Promise<string> {
   const { data, error } = await supabase.functions.invoke('public-api', { body: { action: 'waitlist', ...a } });
   if (error) {
     const body = await (error as { context?: Response }).context?.clone().json().catch(() => null);
@@ -68,6 +113,7 @@ export async function joinWaitlist(a: { slug: string; service: string; day: stri
     throw error;
   }
   if (data?.error) throw new Error(String(data.error));
+  return typeof data?.token === 'string' ? data.token : '';
 }
 export async function submitReview(token: string, rating: number, comment: string) {
   const { data, error } = await supabase.functions.invoke('public-api', { body: { action: 'review', token, rating, comment } });
@@ -252,5 +298,10 @@ const MSG: [string, string][] = [['slot_taken', 'Это время занято.
   ['bad_name', 'Проверьте имя клиента.'], ['bad_phone', 'Проверьте номер телефона.'], ['bad_car', 'Укажите автомобиль.'],
   ['bad_config', 'Проверьте введённые настройки.'], ['bad_url', 'Ссылка должна начинаться с https://'],
   ['bad_range', 'Неверный диапазон дат.'], ['bad_hours', 'Неверное время работы.'], ['not_found', 'Запись не найдена.'],
-  ['consent_required', 'Нужно согласие на обработку данных.'], ['feature_disabled', 'Эта функция не входит в ваш тариф. Обратитесь к администратору платформы.'], ['plan_limit_employees', 'Достигнут лимит сотрудников по тарифу. Измените тариф или обратитесь в поддержку.'], ['plan_limit_services', 'Достигнут лимит услуг по тарифу. Измените тариф или обратитесь в поддержку.'], ['plan_limit_bookings_per_month', 'Достигнут лимит записей на этот месяц. Измените тариф или обратитесь в поддержку.'], ['service_in_use', 'Услуга уже используется в записи или заявке. Снимите отметку «Показывается клиентам», чтобы скрыть её.'], ['resource_in_use', 'У этого рабочего ресурса уже есть записи или блокировки. Его нельзя удалить, пока они с ним связаны.'], ['duplicate_resource', 'У этого рабочего ресурса уже есть записи или блокировки. Его нельзя удалить, пока они с ним связаны.'], ['bad_notification_settings', 'Проверьте время напоминания, период повторного визита и длину текста.'], ['bad_template', 'Проверьте текст шаблона: допустимы подстановки {studio}, {service}, {date}, {time}, {address}, {customer}, {phone}, {car}, {price}, длина — до 2000 символов.']];
+  ['consent_required', 'Нужно согласие на обработку данных.'], ['feature_disabled', 'Эта функция не входит в ваш тариф. Обратитесь к администратору платформы.'], ['plan_limit_employees', 'Достигнут лимит сотрудников по тарифу. Измените тариф или обратитесь в поддержку.'], ['plan_limit_services', 'Достигнут лимит услуг по тарифу. Измените тариф или обратитесь в поддержку.'], ['plan_limit_bookings_per_month', 'Достигнут лимит записей на этот месяц. Измените тариф или обратитесь в поддержку.'], ['service_in_use', 'Услуга уже используется в записи или заявке. Снимите отметку «Показывается клиентам», чтобы скрыть её.'], ['resource_in_use', 'У этого рабочего ресурса уже есть записи или блокировки. Его нельзя удалить, пока они с ним связаны.'], ['duplicate_resource', 'У этого рабочего ресурса уже есть записи или блокировки. Его нельзя удалить, пока они с ним связаны.'], ['bad_notification_settings', 'Проверьте время напоминания, период повторного визита и длину текста.'], ['bad_template', 'Проверьте текст шаблона: допустимы подстановки {studio}, {service}, {date}, {time}, {address}, {customer}, {phone}, {car}, {price}, длина — до 2000 символов.'],
+  ['too_late', 'Слишком поздно: это время уже нельзя изменить.'], ['already_waiting', 'Вы уже оставили заявку на эту услугу в этот день.'],
+  ['bad_date', 'Проверьте выбранную дату.'], ['offer_expired', 'Предложение уже истекло. Заявка остаётся в листе ожидания.'],
+  ['bad_offer', 'Ссылка на предложение недействительна.'], ['bad_request', 'Проверьте введённые данные.'],
+  ['temporarily_unavailable', 'Сервис временно недоступен. Попробуйте позже.'], ['booking_unavailable', 'Сервис записи временно недоступен. Попробуйте позже.'], ['booking_closed', 'Онлайн-запись временно недоступна.'],
+  ['promo_invalid', 'Промокод не действует или закончился лимит.']];
 export const errText = (e: unknown) => { const m = String((e as Error)?.message ?? e); return MSG.find(([k]) => m.includes(k))?.[1] ?? 'Не удалось выполнить действие. Повторите.'; };

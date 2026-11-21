@@ -58,12 +58,24 @@ window.addEventListener('error', (event) => {
 initObservability();
 initLocale();
 
+// Push-уведомления: service worker нужен только на защищённом происхождении.
+// Регистрация после load и без блокировки рендера маркетинговой части.
+const registerServiceWorker = () => {
+  if (!('serviceWorker' in navigator)) return;
+  const secure = window.location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(window.location.hostname);
+  if (!secure) return;
+  void navigator.serviceWorker.register('/sw.js').catch(() => { /* SW может быть ещё не задеплоен */ });
+};
+if (document.readyState === 'complete') registerServiceWorker();
+else window.addEventListener('load', registerServiceWorker, { once: true });
+
 // Стили приложения записи (styles.css) подключаются только внутри Shell, админки и страницы статуса:
 // их общие классы (.btn, .card, .hero, h1, body) иначе ломают вёрстку маркетингового сайта.
 const Shell = lazy(() => import('./pages/Shell').then((m) => ({ default: m.Shell })));
 const Home = lazy(() => import('./pages/Home').then((m) => ({ default: m.Home })));
 const ServicesPage = lazy(() => import('./pages/ServiceList').then((m) => ({ default: m.ServicesPage })));
 const MyBooking = lazy(() => import('./pages/MyBooking').then((m) => ({ default: m.MyBooking })));
+const WaitlistStatus = lazy(() => import('./pages/WaitlistStatus').then((m) => ({ default: m.WaitlistStatus })));
 const Owner = lazy(() => import('./pages/Owner').then((m) => ({ default: m.Owner })));
 const Profile = lazy(() => import('./pages/Profile').then((m) => ({ default: m.Profile })));
 const Install = lazy(() => import('./pages/Install').then((m) => ({ default: m.Install })));
@@ -105,6 +117,8 @@ createRoot(document.getElementById('root')!).render(
               <Route index element={<Home />} />
               <Route path="services" element={<ServicesPage />} />
               <Route path="booking" element={<MyBooking />} />
+              <Route path="waitlist" element={<WaitlistStatus />} />
+              <Route path="waitlist/claim" element={<WaitlistStatus claimOnly />} />
               <Route path="profile" element={<Profile />} />
               <Route path="install" element={<Install />} />
               <Route path="legal/:doc" element={<Legal />} />

@@ -18,7 +18,8 @@ describe('phone helpers', () => {
 
   it('validates full phone numbers', () => {
     expect(isFullPhone(PHONE_PLACEHOLDER)).toBe(true);
-    expect(isFullPhone('+7 (777) 123-45-6')).toBe(false);
+    // Международный формат: допускаем от 10 до 15 цифр.
+    expect(isFullPhone('+7 (777) 123-45-6')).toBe(true);
     expect(phoneDigitsCount('+7 (777) 123-45-67')).toBe(11);
   });
 });
