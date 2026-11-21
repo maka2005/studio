@@ -47,6 +47,15 @@ test.describe('полная воронка публичной записи', () 
     await expect(page.getByText('Тестовая услуга').first()).toBeVisible();
     await expect(page.getByText('Подтверждена', { exact: true })).toBeVisible();
     await expect(page.getByText(/10:00/).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Напомнить', exact: true })).toBeVisible();
+    // Без разрешения на уведомления показываем причину, а не скачиваем .ics.
+    const downloaded = page.waitForEvent('download', { timeout: 1000 }).then(
+      () => true,
+      () => false,
+    );
+    await page.getByRole('button', { name: 'Напомнить', exact: true }).click();
+    await expect(page.getByText(/Уведомления запрещены в настройках браузера/)).toBeVisible();
+    expect(await downloaded).toBe(false);
 
     await page.getByRole('button', { name: 'Перенести', exact: true }).click();
     await expect(page.getByText('Перенести запись')).toBeVisible();
@@ -62,9 +71,16 @@ test.describe('полная воронка публичной записи', () 
 
     await page.getByRole('button', { name: 'Отменить запись', exact: true }).click();
     await page.getByRole('button', { name: 'Да, отменить запись' }).click();
+    // Отменённая запись уходит из активных и появляется в архиве.
+    await expect(page.getByText('Отменена', { exact: true })).toHaveCount(0, {
+      timeout: 10_000,
+    });
+    await page.getByRole('tab', { name: 'Архив' }).click();
     await expect(page.getByText('Отменена', { exact: true })).toBeVisible({
       timeout: 10_000,
     });
+    await expect(page.getByRole('button', { name: 'Перенести', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Напомнить', exact: true })).toHaveCount(0);
   });
 
   test('несколько услуг в одном визите → все записи видны в «Моей записи»', async ({ page }) => {
@@ -103,6 +119,31 @@ test.describe('полная воронка публичной записи', () 
     await expect(page.getByRole('heading', { name: 'Вторая услуга' })).toBeVisible();
     await expect(page.getByText('Визит 1 / 2')).toBeVisible();
     await expect(page.getByText('Визит 2 / 2')).toBeVisible();
+  });
+
+  test('активные записи отделены от архива, кнопки действия — только в активных', async ({
+    page,
+  }) => {
+    await mockBookingFunnelApi(page, { history: true });
+
+    await page.goto(`/s/graphite/booking#t=${BOOKING_TOKEN}`);
+    await expect(page.getByRole('heading', { name: 'Моя запись' }).first()).toBeVisible({
+      timeout: 10_000,
+    });
+    await expect(page.getByText('Тестовая услуга').first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Напомнить', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Перенести', exact: true })).toBeVisible();
+    await expect(page.getByText('Прошлая услуга')).toHaveCount(0);
+    await expect(page.getByText('Отменённая услуга')).toHaveCount(0);
+
+    await page.getByRole('tab', { name: 'Архив' }).click();
+    await expect(page.getByText('Прошлая услуга')).toBeVisible();
+    await expect(page.getByText('Отменённая услуга')).toBeVisible();
+    await expect(page.getByText('Работа выполнена', { exact: true })).toBeVisible();
+    await expect(page.getByText('Отменена', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Напомнить', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Перенести', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Отменить запись', exact: true })).toHaveCount(0);
   });
 
   test('нет свободных мест → заявка → offer → подтверждение записи', async ({ page }) => {

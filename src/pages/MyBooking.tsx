@@ -32,7 +32,27 @@ function readToken(slug: string): string | null {
   return token;
 }
 
-type Tab = 'bookings' | 'waitlist';
+type Tab = 'bookings' | 'archive' | 'waitlist';
+
+/** Активными считаем только будущие подтверждённые записи. Остальное — архив. */
+function isActiveBooking(row: BookingRow): boolean {
+  return row.status === 'booked' && new Date(row.starts_at).getTime() > Date.now();
+}
+
+/**
+ * Все услуги одного визита делят один токен. Кнопки отмены/переноса показываем
+ * один раз — на первой услуге визита, а не на первой записи вообще.
+ */
+function visitFlags(rows: BookingRow[]): { index: number; total: number; first: boolean }[] {
+  const totals = new Map<string, number>();
+  for (const row of rows) totals.set(row.token, (totals.get(row.token) ?? 0) + 1);
+  const seen = new Map<string, number>();
+  return rows.map((row) => {
+    const index = seen.get(row.token) ?? 0;
+    seen.set(row.token, index + 1);
+    return { index: index + 1, total: totals.get(row.token) ?? 1, first: index === 0 };
+  });
+}
 
 export function MyBooking() {
   const { b, openBooking } = useOutletContext<Ctx>();
@@ -52,6 +72,10 @@ export function MyBooking() {
     enabled: tokens.length > 0,
   });
   const bookings = useMemo(() => bookingsQ.data ?? [], [bookingsQ.data]);
+  const activeBookings = useMemo(() => bookings.filter(isActiveBooking), [bookings]);
+  const archiveBookings = useMemo(() => bookings.filter((row) => !isActiveBooking(row)), [bookings]);
+  const activeFlags = useMemo(() => visitFlags(activeBookings), [activeBookings]);
+  const archiveFlags = useMemo(() => visitFlags(archiveBookings), [archiveBookings]);
 
   const waitlistTokens = allWaitlistTokens(b.slug);
   const waitlistQ = useQuery({
@@ -72,15 +96,14 @@ export function MyBooking() {
   useEffect(() => {
     if (!action || actionHandled.current || bookingsQ.isPending) return;
     actionHandled.current = true;
-    const target = bookings.find((row) => row.token === activeToken)
-      ?? bookings.find((row) => row.status === 'booked')
-      ?? bookings[0];
+    const target = activeBookings.find((row) => row.token === activeToken)
+      ?? activeBookings[0];
     if (target && action === 'cancel' && target.can_cancel) setConfirmId(target.id);
     if (target && action === 'reschedule' && target.can_reschedule) setRescheduleId(target.id);
     const url = new URL(window.location.href);
     url.searchParams.delete('a');
     window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
-  }, [action, bookingsQ.isPending, bookings, activeToken]);
+  }, [action, bookingsQ.isPending, activeBookings, activeToken]);
 
   const dayFmt = (day: string) => formatInTimeZone(new Date(`${day}T12:00:00Z`), 'UTC', 'd MMMM yyyy', { locale: clientDateLocale(locale) });
   const showBookings = tokens.length > 0 || bookings.length > 0;
@@ -90,6 +113,7 @@ export function MyBooking() {
       <h2>{m.my.title}</h2>
       <div className="tabs2" role="tablist" aria-label={m.my.title}>
         <button role="tab" aria-selected={tab === 'bookings'} onClick={() => setTab('bookings')}>{m.my.tabs.bookings}</button>
+        <button role="tab" aria-selected={tab === 'archive'} onClick={() => setTab('archive')}>{m.my.tabs.archive}</button>
         <button role="tab" aria-selected={tab === 'waitlist'} onClick={() => setTab('waitlist')}>{m.my.tabs.waitlist}</button>
       </div>
 
@@ -100,12 +124,28 @@ export function MyBooking() {
         </section>;
         if (bookingsQ.isPending) return <LoadingScreen label={m.my.loading} compact />;
         if (bookingsQ.isError) return <p className="err">{m.my.loadError} <button className="link" onClick={() => void bookingsQ.refetch()}>{m.common.retry}</button></p>;
-        if (!bookings.length) return <><p className="muted">{m.my.empty}</p><button className="btn" onClick={() => openBooking()}>{m.my.chooseService}</button></>;
-        return bookings.map((row, index) => (
-          <BookingCard key={row.id} b={b} d={row} m={m} index={index} total={bookings.length}
+        if (!activeBookings.length) return <><p className="muted">{m.my.empty}</p><button className="btn" onClick={() => openBooking()}>{m.my.chooseService}</button></>;
+        return activeBookings.map((row, index) => (
+          <BookingCard key={row.id} b={b} d={row} m={m} index={activeFlags[index]!.index} total={activeFlags[index]!.total}
+            visitActions={activeFlags[index]!.first} archived={false}
             openBooking={openBooking}
             confirming={confirmId === row.id} rescheduling={rescheduleId === row.id}
             onConfirm={(id) => setConfirmId(id)} onReschedule={(id) => setRescheduleId(id)}
+            onChanged={() => void qc.invalidateQueries({ queryKey: ['my-bookings', b.slug] })} />
+        ));
+      })()}
+
+      {tab === 'archive' && (() => {
+        if (!showBookings) return <p className="muted">{m.my.archiveEmpty}</p>;
+        if (bookingsQ.isPending) return <LoadingScreen label={m.my.loading} compact />;
+        if (bookingsQ.isError) return <p className="err">{m.my.loadError} <button className="link" onClick={() => void bookingsQ.refetch()}>{m.common.retry}</button></p>;
+        if (!archiveBookings.length) return <p className="muted">{m.my.archiveEmpty}</p>;
+        return archiveBookings.map((row, index) => (
+          <BookingCard key={row.id} b={b} d={row} m={m} index={archiveFlags[index]!.index} total={archiveFlags[index]!.total}
+            visitActions={archiveFlags[index]!.first} archived
+            openBooking={openBooking}
+            confirming={false} rescheduling={false}
+            onConfirm={() => {}} onReschedule={() => {}}
             onChanged={() => void qc.invalidateQueries({ queryKey: ['my-bookings', b.slug] })} />
         ));
       })()}
@@ -129,8 +169,8 @@ export function MyBooking() {
   );
 }
 
-function BookingCard({ b, d, m, index, total, openBooking, confirming, rescheduling, onConfirm, onReschedule, onChanged }: {
-  b: Business; d: BookingRow; m: ClientMessages; index: number; total: number;
+function BookingCard({ b, d, m, index, total, visitActions, archived = false, openBooking, confirming, rescheduling, onConfirm, onReschedule, onChanged }: {
+  b: Business; d: BookingRow; m: ClientMessages; index: number; total: number; visitActions: boolean; archived?: boolean;
   openBooking: (service?: string) => void; confirming: boolean; rescheduling: boolean;
   onConfirm: (id: string | null) => void; onReschedule: (id: string | null) => void; onChanged: () => void;
 }) {
@@ -142,9 +182,6 @@ function BookingCard({ b, d, m, index, total, openBooking, confirming, reschedul
   const [reviewSaved, setReviewSaved] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const isAuto = isAutoBusiness(b.business_type);
-  // All bookings of a visit share one token: cancel/reschedule act on the visit.
-  // Show the controls once, on the first service, to avoid duplicate actions.
-  const visitActions = total === 1 || index === 0;
   const f = (s: string, p: string) => formatInTimeZone(new Date(s), b.timezone, p, { locale: clientDateLocale(locale) });
   const z = (s: string) => new Date(s).toISOString().replace(/[-:]|\.\d{3}/g, '');
 
@@ -175,7 +212,7 @@ function BookingCard({ b, d, m, index, total, openBooking, confirming, reschedul
 
   return (
     <div className="card status">
-      {total > 1 && <span className="muted small">{m.my.visit} {index + 1} / {total}</span>}
+      {total > 1 && <span className="muted small">{m.my.visit} {index} / {total}</span>}
       <span className="okc"><Check size={18} /></span>
       <span className="muted small">{b.short_name}</span>
       <h3 style={{ margin: 0 }}>{(m.my.status as Record<string, string>)[d.status] ?? d.status}</h3>
@@ -186,7 +223,7 @@ function BookingCard({ b, d, m, index, total, openBooking, confirming, reschedul
       {isAuto || (d.car && d.car !== 'Без пожеланий') ? <p><b>{d.car}</b></p> : null}
       <p className="muted">{b.address}</p>
 
-      {b.client_telegram_enabled && d.status === 'booked' && new Date(d.starts_at).getTime() > Date.now()
+      {!archived && b.client_telegram_enabled && d.status === 'booked' && new Date(d.starts_at).getTime() > Date.now()
         && <CustomerTelegramOptIn slug={b.slug} token={d.token} />}
       <a className="card contact" href={telHref(b.phone)}>
         <span className="ico accent" style={{ width: 52, height: 52 }}><Phone /></span>
@@ -195,9 +232,11 @@ function BookingCard({ b, d, m, index, total, openBooking, confirming, reschedul
       <div className="acts">
         <button className="act" onClick={() => void copy()}><span className="ico"><Copy size={16} /></span>{m.my.link}</button>
         <button className="act" disabled={d.status === 'cancelled'} onClick={download}><span className="ico"><Calendar size={16} /></span>{m.my.calendar}</button>
-        {d.status === 'booked' && new Date(d.starts_at).getTime() > Date.now()
-          && <PushOptIn token={d.token} kind="booking" compact />}
+        {!archived && d.status === 'booked' && new Date(d.starts_at).getTime() > Date.now()
+          && <PushOptIn token={d.token} kind="booking" compact onNotice={setNote} />}
       </div>
+      {!archived && d.status === 'booked' && new Date(d.starts_at).getTime() > Date.now()
+        && <p className="muted small">{m.push.beta}</p>}
       {note && <p className="note" role="status">{note}</p>}
 
       {(d.status === 'done' || d.status === 'cancelled') && <button className="btn ghost" onClick={() => openBooking(d.service_id)}>{m.my.bookAgain}</button>}
@@ -213,20 +252,24 @@ function BookingCard({ b, d, m, index, total, openBooking, confirming, reschedul
       </div>}
       {(d.reviewed || reviewSaved) && <p className="note" role="status">{m.my.thanks}</p>}
 
-      {visitActions && d.can_reschedule && !rescheduling && <button className="btn ghost" onClick={() => onReschedule(d.id)}>{total > 1 ? m.my.rescheduleVisit : m.my.reschedule}</button>}
-      {rescheduling && <ReschedulePicker b={b} token={d.token} serviceId={d.service_id} serviceName={d.service_name}
+      {!archived && visitActions && d.status === 'booked' && d.reschedule_hours > 0 && (
+        <button className="btn ghost" disabled={!d.can_reschedule || rescheduling}
+          title={d.can_reschedule ? undefined : m.my.rescheduleHint(d.reschedule_hours)}
+          onClick={() => onReschedule(d.id)}>{total > 1 ? m.my.rescheduleVisit : m.my.reschedule}</button>
+      )}
+      {!archived && rescheduling && <ReschedulePicker b={b} token={d.token} serviceId={d.service_id} serviceName={d.service_name}
         currentStart={d.starts_at} rescheduleHours={d.reschedule_hours ?? 0}
         onClose={() => onReschedule(null)}
         onDone={() => {
           onReschedule(null); setNote(m.reschedule.success); onChanged();
           void qc.invalidateQueries({ queryKey: ['my-bookings', b.slug] });
         }} />}
-      {visitActions && d.can_cancel && (confirming
+      {!archived && visitActions && d.can_cancel && (confirming
         ? <button className="btn danger" disabled={cancel.isPending} onClick={() => cancel.mutate()}>{cancel.isPending ? m.my.cancelling : m.my.cancelConfirm}</button>
         : <button className="btn ghost" onClick={() => onConfirm(d.id)}>{total > 1 ? m.my.cancelVisit : m.my.cancel}</button>)}
-      {visitActions && !d.can_cancel && d.status === 'booked' && <p className="muted small">{m.my.cancelHint(d.cancel_hours ?? 24, b.phone)}</p>}
-      {visitActions && !d.can_reschedule && d.status === 'booked' && d.reschedule_hours > 0 && <p className="muted small">{m.my.rescheduleHint(d.reschedule_hours)}</p>}
-      {cancel.isError && <p className="err">{m.my.cancelError}</p>}
+      {!archived && visitActions && !d.can_cancel && d.status === 'booked' && <p className="muted small">{m.my.cancelHint(d.cancel_hours ?? 24, b.phone)}</p>}
+      {!archived && visitActions && !d.can_reschedule && d.status === 'booked' && d.reschedule_hours > 0 && <p className="muted small">{m.my.rescheduleHint(d.reschedule_hours)}</p>}
+      {!archived && cancel.isError && <p className="err">{m.my.cancelError}</p>}
     </div>
   );
 }

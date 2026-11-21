@@ -119,3 +119,39 @@ test('казахские глифы Unbounded загружаются, а не п
   expect(glyphs.displayWidth).toBeGreaterThan(glyphs.fallbackWidth + 2);
   await expect(page.locator('.final-cta__text')).not.toContainText('күн күн');
 });
+
+test('ключевые страницы не переполняются по ширине на мобильных экранах', async ({ page }) => {
+  const routes = [
+    '/',
+    '/features',
+    '/pricing',
+    '/contact',
+    '/privacy',
+    '/s/graphite',
+    '/s/graphite/services',
+    '/s/graphite/booking',
+    '/s/graphite/owner',
+  ];
+
+  for (const width of [390, 360]) {
+    await page.setViewportSize({ width, height: 800 });
+    for (const route of routes) {
+      const res = await page.goto(route);
+      expect(res?.ok(), `${route} при ${width}px`).toBeTruthy();
+      // Предрендеренный HTML скрыт до гидратации: ждём реальный контент и шрифты.
+      await expect(page.locator('body')).not.toHaveText('', { timeout: 15_000 });
+      await page.evaluate(async () => {
+        await document.fonts.ready;
+      });
+      await page.waitForTimeout(150);
+      const overflow = await page.evaluate(() => ({
+        scroll: document.documentElement.scrollWidth,
+        inner: window.innerWidth,
+      }));
+      expect(
+        overflow.scroll,
+        `${route} переполняет экран ${width}px: scrollWidth=${overflow.scroll}, innerWidth=${overflow.inner}`,
+      ).toBeLessThanOrEqual(width + 1);
+    }
+  }
+});

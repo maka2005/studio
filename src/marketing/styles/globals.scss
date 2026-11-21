@@ -11,6 +11,10 @@ html {
   scroll-behavior: smooth;
 }
 
+.marketing-site {
+  overflow-x: clip;
+}
+
 body:has(.marketing-site) {
   margin: 0;
   font-family: $font;
@@ -31,6 +35,8 @@ body:has(.marketing-site) {
   margin: 0;
   line-height: 1.2;
   letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+  hyphens: auto;
 }
 
 :where(.marketing-site) h1,

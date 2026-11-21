@@ -242,3 +242,14 @@ body:has(.admin-main){padding-bottom:24px}
 @media(max-width:760px){.impersonation-banner{grid-template-columns:38px minmax(0,1fr) auto;gap:10px;padding:12px;border-radius:16px}.impersonation-banner-icon{width:36px;height:36px}.impersonation-banner-expiry{grid-column:2;justify-self:start}.impersonation-banner-exit{grid-column:3;grid-row:1 / span 2;padding:0 10px;font-size:11px}.impersonation-banner-reason{display:block;overflow-wrap:anywhere}.impersonation-banner-reason b{margin-right:6px}}
 @media(max-width:420px){.impersonation-banner{grid-template-columns:34px minmax(0,1fr);align-items:start}.impersonation-banner-icon{width:32px;height:32px;border-radius:11px}.impersonation-banner-title{font-size:12px}.impersonation-banner-expiry{grid-column:2}.impersonation-banner-exit{grid-column:2;grid-row:auto;justify-self:start;min-height:34px}}
 .powered{display:flex;justify-content:center;padding-top:4px;padding-bottom:10px}.powered a{display:inline-flex;align-items:center;gap:9px;color:var(--muted);font-size:13px;text-decoration:none;opacity:.85;transition:opacity .16s}.powered a svg{color:var(--fg)}.powered a:hover,.powered a:focus-visible{opacity:1}
+
+/* Mobile safety net: forms, long words and action rows must never widen the page. */
+@media(max-width:760px){
+  .page,.card,.admin-shell,.admin-main,.pf-console-content,.pf-panel,.pf-app-header{min-width:0;max-width:100%}
+  input,select,textarea,.field{box-sizing:border-box;max-width:100%;min-width:0}
+  h1,h2,h3,h4,p,li,label,b,strong,small,span{overflow-wrap:anywhere}
+  .row,.acts,.actions,.admin-actions,.pf-actions,.admin-toolbar,.admin-filters,.admin-list-heading{flex-wrap:wrap;min-width:0;max-width:100%}
+  .kv,.kv>*,.grid,.grid-2,.grid-3,.grid-4{min-width:0}
+  .admin-group-tabs,.pf-tabs,.service-category-filter{-webkit-overflow-scrolling:touch}
+}
+

@@ -11,6 +11,9 @@ export const WAITLIST_ID = '44444444-4444-4444-8444-444444444444';
 export const BOOKING_TOKEN = 'c'.repeat(32);
 export const WAITLIST_TOKEN = 'a'.repeat(32);
 export const OFFER_TOKEN = 'b'.repeat(32);
+export const ARCHIVED_TOKEN = 'd'.repeat(32);
+const DONE_BOOKING_ID = '66666666-6666-4666-8666-666666666666';
+const CANCELLED_BOOKING_ID = '77777777-7777-4777-8777-777777777777';
 
 type MockService = {
   id: string;
@@ -56,6 +59,8 @@ type JsonObject = Record<string, unknown>;
 type MockOptions = {
   /** false — показать лист ожидания вместо свободных слотов. */
   freeSlots?: boolean;
+  /** true — добавить прошедшую и отменённую записи для проверки архива. */
+  history?: boolean;
 };
 
 type MockHandle = {
@@ -140,9 +145,14 @@ export const isoInZone = (day: string, hhmm: string, timeZone = TIME_ZONE) => {
  */
 export async function mockBookingFunnelApi(
   page: Page,
-  { freeSlots = true }: MockOptions = {},
+  { freeSlots = true, history = false }: MockOptions = {},
 ): Promise<MockHandle> {
-  const day = dayInZone();
+  // Мок должен оставаться в будущем: прошедшие записи теперь уходят в архив.
+  const today = dayInZone();
+  const day =
+    Date.parse(isoInZone(today, '10:00')) > Date.now() + 60_000
+      ? today
+      : dayInZone(new Date(Date.now() + 24 * 60 * 60_000));
   const firstSlot = isoInZone(day, '10:00');
   const secondSlot = isoInZone(day, '11:00');
   const state = {
@@ -182,6 +192,67 @@ export async function mockBookingFunnelApi(
       };
     });
   };
+
+  /** Older visits of the same device: a completed one and a cancelled one. */
+  const archivedRows = () => {
+    const doneStart = new Date(Date.now() - 24 * 60 * 60_000).toISOString();
+    const cancelledStart = addMinutes(new Date().toISOString(), 24 * 60);
+    const base = {
+      tenant_slug: SLUG,
+      customer_name: 'Тест',
+      customer_phone: '+77771234567',
+      car: 'Toyota Camry',
+      can_cancel: false,
+      can_reschedule: false,
+      cancel_hours: 24,
+      reschedule_hours: 2,
+      reviewed: false,
+      token: ARCHIVED_TOKEN,
+    };
+    return [
+      {
+        ...base,
+        id: DONE_BOOKING_ID,
+        booking_id: DONE_BOOKING_ID,
+        service_name: 'Прошлая услуга',
+        service_id: SECOND_SERVICE_ID,
+        starts_at: doneStart,
+        ends_at: addMinutes(doneStart, 30),
+        price_cents: SECOND_SERVICE.price_cents,
+        status: 'done',
+      },
+      {
+        ...base,
+        id: CANCELLED_BOOKING_ID,
+        booking_id: CANCELLED_BOOKING_ID,
+        service_name: 'Отменённая услуга',
+        service_id: SERVICE_ID,
+        starts_at: cancelledStart,
+        ends_at: addMinutes(cancelledStart, 60),
+        price_cents: SERVICE.price_cents,
+        status: 'cancelled',
+      },
+    ];
+  };
+
+  if (history) {
+    await page.addInitScript(
+      ([slug, token]) => {
+        try {
+          const key = `bookings:${slug}`;
+          const parsed: unknown = JSON.parse(localStorage.getItem(key) ?? '[]');
+          const list = Array.isArray(parsed)
+            ? parsed.filter((x): x is string => typeof x === 'string')
+            : [];
+          if (!list.includes(token)) list.push(token);
+          localStorage.setItem(key, JSON.stringify(list));
+        } catch {
+          /* localStorage может быть недоступен */
+        }
+      },
+      [SLUG, ARCHIVED_TOKEN],
+    );
+  }
 
   const booking = () => visitRows()[0]!;
 
@@ -261,7 +332,9 @@ export async function mockBookingFunnelApi(
       case 'booking_read':
         return respondJson(route, { booking: booking() });
       case 'bookings_read':
-        return respondJson(route, { bookings: visitRows() });
+        return respondJson(route, {
+          bookings: history ? [...visitRows(), ...archivedRows()] : visitRows(),
+        });
       case 'booking_reschedule': {
         const start = typeof body.start === 'string' ? body.start : secondSlot;
         state.start = start;
