@@ -21,6 +21,15 @@ export interface Messages {
   heroTitle: string;
   heroTitleAccent: string;
   heroSubtitle: string;
+  ticketTitle: string;
+  ticketClientLabel: string;
+  ticketClient: string;
+  ticketTimeLabel: string;
+  ticketTime: string;
+  ticketServiceLabel: string;
+  ticketService: string;
+  ticketStatus: string;
+  ticketNumberLabel: string;
   tryDemo: string;
   connect: string;
   demoBook: string;
@@ -65,6 +74,15 @@ const ru: Messages = {
   heroTitleAccent: 'в одной системе',
   heroSubtitle:
     'Renvio принимает записи клиентов 24/7, собирает расписание сотрудников, напоминает клиентам в Telegram и показывает аналитику — вместо звонков, тетрадей и разрозненных таблиц.',
+  ticketTitle: 'Наряд-заказ',
+  ticketClientLabel: 'Клиент',
+  ticketClient: 'Алексей',
+  ticketTimeLabel: 'Время',
+  ticketTime: 'Сегодня, 14:30',
+  ticketServiceLabel: 'Услуга',
+  ticketService: 'Детейлинг',
+  ticketStatus: 'Запись открыта',
+  ticketNumberLabel: 'Номер',
   tryDemo: 'Попробовать демо',
   connect: 'Подключить Renvio',
   demoBook: 'Записаться на демо',
@@ -112,6 +130,15 @@ const kk: Messages = {
   heroTitleAccent: 'бір жүйеде',
   heroSubtitle:
     'Renvio клиенттерді тәулік бойы қабылдайды, қызметкерлердің кестесін жинайды, Telegram арқылы еске салады және аналитиканы көрсетеді — қоңыраулар, дәптерлер мен шашыраңқы кестелердің орнына.',
+  ticketTitle: 'Жұмыс тапсырмасы',
+  ticketClientLabel: 'Тапсырыс беруші',
+  ticketClient: 'Айбек',
+  ticketTimeLabel: 'Уақыт',
+  ticketTime: 'Бүгін, 14:30',
+  ticketServiceLabel: 'Қызмет',
+  ticketService: 'Детейлинг қызметі',
+  ticketStatus: 'Жазылу ашық',
+  ticketNumberLabel: 'Нөмірі',
   tryDemo: 'Демоны сынап көру',
   connect: 'Renvio-ны қосу',
   demoBook: 'Демоға жазылу',

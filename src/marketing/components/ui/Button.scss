@@ -8,7 +8,7 @@
   min-height: 48px;
   padding: 0 22px;
   border: 1px solid transparent;
-  border-radius: 10px;
+  border-radius: 2px;
   font-size: 15px;
   font-weight: 600;
   text-decoration: none;
@@ -26,13 +26,13 @@
   }
 
   &.btn--secondary {
-    background: #fff;
+    background: transparent;
     color: $color-text;
-    border-color: $color-border;
+    border-color: $color-text;
 
     &:hover {
-      border-color: $color-primary;
-      color: $color-primary;
+      background: $color-text;
+      color: $color-bg;
     }
   }
 

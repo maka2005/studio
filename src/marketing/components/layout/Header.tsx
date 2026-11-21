@@ -21,7 +21,7 @@ export function Header() {
     <header className="header">
       <div className="container header__inner">
         <Link to="/" className="header__logo" aria-label={`Renvio — ${t.home}`} onClick={closeMenu}>
-          <Logo height={18} />
+          <Logo height={18} markColor="#c2410c" />
         </Link>
 
         <nav

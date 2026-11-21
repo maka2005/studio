@@ -2,7 +2,7 @@ import { useLocale } from '../../../lib/locale';
 import { Button } from '../ui/Button';
 import { heroChips } from '../../data/content';
 import { useTrialDays } from '../../hooks/usePlans';
-import { ProductPreview } from './ProductPreview';
+import { WorkOrder } from './WorkOrder';
 import './Hero.scss';
 
 export function Hero() {
@@ -10,12 +10,11 @@ export function Hero() {
   const { t } = useLocale();
   return (
     <section className="hero">
-      <div className="hero__glow" aria-hidden="true" />
       <div className="container hero__inner">
         <div className="hero__content">
           <p className="hero__eyebrow">{t.heroEyebrow}</p>
           <h1 className="hero__title">
-            {t.heroTitle} <span>{t.heroTitleAccent}</span>
+            {t.heroTitle} {t.heroTitleAccent}
           </h1>
           <p className="hero__lead">{t.heroSubtitle}</p>
 
@@ -34,7 +33,7 @@ export function Hero() {
         </div>
 
         <div className="hero__visual">
-          <ProductPreview />
+          <WorkOrder />
         </div>
       </div>
     </section>

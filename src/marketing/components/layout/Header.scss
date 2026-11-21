@@ -4,7 +4,7 @@
   position: sticky;
   top: 0;
   z-index: 50;
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(231, 229, 224, 0.94);
   backdrop-filter: blur(8px);
   border-bottom: 1px solid $color-border;
 
@@ -91,7 +91,7 @@
     }
   }
 
-  @include mobile {
+  @media (max-width: 1200px) {
     &__inner {
       height: 64px;
     }

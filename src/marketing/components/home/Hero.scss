@@ -1,79 +1,41 @@
 @use '../../styles/variables' as *;
 
 .hero {
-  position: relative;
-  padding: 72px 0 96px;
-  overflow: hidden;
-  background: linear-gradient(180deg, $color-bg-alt 0%, $color-bg 100%);
-
-  &__glow {
-    position: absolute;
-    top: -220px;
-    right: -160px;
-    width: 640px;
-    height: 640px;
-    background: radial-gradient(circle, rgba(31, 79, 216, 0.16), transparent 65%);
-    pointer-events: none;
-  }
-
-  &__inner {
-    position: relative;
-  }
-
-  &__title span {
-    color: $color-primary;
-  }
-
-  &__chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    margin-top: 28px;
-
-    li {
-      padding: 7px 14px;
-      color: $color-text;
-      font-size: 14px;
-      font-weight: 500;
-      background: #fff;
-      border: 1px solid $color-border;
-      border-radius: 999px;
-    }
-
-    li::before {
-      content: '✓';
-      margin-right: 8px;
-      color: $color-accent;
-      font-weight: 700;
-    }
-  }
+  padding: 76px 0 92px;
+  background: $color-bg;
 
   &__inner {
     display: grid;
-    grid-template-columns: 1fr 1.1fr;
+    grid-template-columns: 1fr 1fr;
     align-items: center;
     gap: 64px;
   }
 
   &__eyebrow {
-    margin-bottom: 20px;
-    color: $color-primary;
-    font-size: 14px;
-    font-weight: 600;
+    max-width: 460px;
+    margin-bottom: 22px;
+    padding-top: 14px;
+    color: $color-text-muted;
+    font-size: 13px;
+    line-height: 1.5;
+    border-top: 2px solid $color-signal;
   }
 
   &__title {
-    font-size: 48px;
-    font-weight: 800;
-    line-height: 1.12;
+    max-width: 620px;
+    font-family: $font-display;
+    font-size: 46px;
+    font-weight: 700;
+    line-height: 1.14;
+    letter-spacing: -0.03em;
     text-wrap: balance;
   }
 
   &__lead {
-    max-width: 560px;
+    max-width: 530px;
     margin-top: 24px;
     color: $color-text-muted;
-    font-size: 18px;
+    font-size: 17px;
     line-height: 1.65;
   }
 
@@ -81,37 +43,40 @@
     display: flex;
     flex-wrap: wrap;
     gap: 12px;
-    margin-top: 36px;
+    margin-top: 32px;
   }
 
-  &__points {
+  &__chips {
     display: flex;
     flex-wrap: wrap;
-    gap: 10px 24px;
-    margin-top: 32px;
-    color: $color-text-muted;
-    font-size: 15px;
+    gap: 14px 22px;
+    margin-top: 30px;
+
+    li {
+      padding-left: 12px;
+      color: $color-text-muted;
+      font-size: 13px;
+      line-height: 1.4;
+      border-left: 2px solid $color-border;
+    }
 
     li::before {
-      content: '✓';
-      margin-right: 8px;
-      color: $color-accent;
-      font-weight: 700;
+      display: none;
     }
   }
 
   @media (max-width: 1023px) {
     &__inner {
       grid-template-columns: 1fr;
-      gap: 48px;
+      gap: 44px;
     }
   }
 
   @include mobile {
-    padding: 40px 0 64px;
+    padding: 44px 0 64px;
 
     &__title {
-      font-size: 32px;
+      font-size: 30px;
     }
 
     &__lead {

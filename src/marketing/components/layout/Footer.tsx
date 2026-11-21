@@ -49,7 +49,7 @@ export function Footer() {
       <div className="container footer__grid">
         <div>
           <p className="footer__brand">
-            <Logo height={16} />
+            <Logo height={16} markColor="#c2410c" />
           </p>
           <p className="footer__text">{t.footerDescription}</p>
         </div>

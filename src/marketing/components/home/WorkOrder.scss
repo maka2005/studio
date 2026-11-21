@@ -1,0 +1,119 @@
+@use '../../styles/variables' as *;
+
+.work-order {
+  position: relative;
+  width: min(100%, 470px);
+  margin-left: auto;
+  padding: 26px 30px 30px;
+  color: #eef0ec;
+  background: $color-accent;
+  border: 1px solid $color-text;
+  box-shadow: 10px 10px 0 rgba(28, 37, 48, 0.14);
+
+  &__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid rgba(238, 240, 236, 0.25);
+  }
+
+  &__title {
+    font-family: $font-display;
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+
+  &__number {
+    color: #b3c4c0;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  &__rows {
+    margin: 18px 0 0;
+
+    > div {
+      display: grid;
+      grid-template-columns: 118px 1fr;
+      gap: 12px;
+      align-items: baseline;
+      padding: 10px 0;
+      border-bottom: 1px solid rgba(238, 240, 236, 0.12);
+    }
+
+    dt {
+      color: #b3c4c0;
+      font-size: 12px;
+      letter-spacing: 0.02em;
+    }
+
+    dd {
+      margin: 0;
+      font-size: 17px;
+      font-weight: 500;
+    }
+  }
+
+  &__tear {
+    height: 1px;
+    margin: 22px 0 0;
+    border-top: 2px dashed rgba(238, 240, 236, 0.35);
+  }
+
+  &__barcode {
+    height: 30px;
+    margin-top: 16px;
+    background: repeating-linear-gradient(
+      90deg,
+      #eef0ec 0 2px,
+      transparent 2px 5px,
+      #eef0ec 5px 6px,
+      transparent 6px 11px
+    );
+    opacity: 0.75;
+  }
+
+  &__stamp {
+    position: absolute;
+    right: -18px;
+    bottom: 62px;
+    padding: 7px 12px;
+    color: #ff8a65;
+    background: $color-accent;
+    border: 2px solid $color-signal;
+    font-family: $font-display;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+    transform: rotate(-7deg);
+    animation: work-order-stamp 0.5s ease-out 0.25s both;
+  }
+
+  @include mobile {
+    width: 100%;
+    padding: 22px 20px 24px;
+
+    &__rows > div {
+      grid-template-columns: 96px 1fr;
+    }
+
+    &__stamp {
+      right: -6px;
+      bottom: 56px;
+    }
+  }
+}
+
+@keyframes work-order-stamp {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) rotate(-7deg);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) rotate(-7deg);
+  }
+}
