@@ -15,7 +15,7 @@ test('маркетинговая главная отвечает и не рон�
   await expect(page.locator('body')).not.toHaveText('', { timeout: 10_000 });
   await expect(page.locator('.hero .btn')).toHaveCount(1);
   await expect(
-    page.locator('.hero').getByRole('link', { name: 'Подключить студию' }),
+    page.locator('.hero').getByRole('link', { name: 'Подключить сервис' }),
   ).toBeVisible();
   expect(errors.filter((e) => !/favicon/i.test(e))).toEqual([]);
 });

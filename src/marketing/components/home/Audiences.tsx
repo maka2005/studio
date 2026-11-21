@@ -1,19 +1,16 @@
 import { Link } from 'react-router-dom';
-import { audiences } from '../../data/content';
+import { useMarketingCopy } from '../../data/copy';
 import { Section, SectionHeader } from '../ui/Section';
 import './HomeSections.scss';
 
 export function Audiences() {
+  const copy = useMarketingCopy();
   return (
     <Section id="audience">
       <div className="home-split">
-        <SectionHeader
-          eyebrow="Для кого"
-          title="Renvio подходит любому сервису с записью по времени"
-          description="Выберите свой тип бизнеса — покажем, как система закрывает его ежедневные задачи."
-        />
+        <SectionHeader {...copy.sections.audience} />
         <div className="audience">
-          {audiences.map((a) => (
+          {copy.audiences.map((a) => (
             <article key={a.id} id={a.id} className="audience__card">
               <span className="audience__icon" aria-hidden="true">{a.icon}</span>
               <h3>{a.title}</h3>
@@ -23,7 +20,7 @@ export function Audiences() {
                   <li key={pt}>{pt}</li>
                 ))}
               </ul>
-              <Link to="/contact?type=demo" className="audience__link">Посмотреть демо</Link>
+              <Link to="/contact?type=demo" className="audience__link">{copy.ui.demoLink}</Link>
             </article>
           ))}
         </div>

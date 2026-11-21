@@ -1,45 +1,45 @@
+import { useMarketingCopy } from '../../data/copy';
 import { SITE } from '../../config/site';
 import './ContactInfo.scss';
 
 export function ContactInfo() {
+  const copy = useMarketingCopy().ui.contactInfo;
   const { phone, whatsapp, email } = SITE.contacts;
   const telHref = `tel:${phone.replace(/[^+\d]/g, '')}`;
   const waHref = `https://wa.me/${whatsapp.replace(/\D/g, '')}`;
   const hasContacts = Boolean(phone || whatsapp || email);
 
   return (
-    <aside className="contact-info" aria-label="Контактная информация">
-      <h2 className="contact-info__title">Что будет дальше</h2>
+    <aside className="contact-info" aria-label={copy.aria}>
+      <h2 className="contact-info__title">{copy.title}</h2>
       <ol className="contact-info__steps">
-        <li>Мы получим вашу заявку и свяжемся по указанному номеру.</li>
-        <li>Ответим на вопросы и покажем систему на примере вашего типа сервиса.</li>
-        <li>Договоримся о подключении и поможем настроить услуги, цены и сотрудников.</li>
+        {copy.steps.map((step) => <li key={step}>{step}</li>)}
       </ol>
 
       {hasContacts && (
         <dl className="contact-info__list">
           {phone && (
             <div>
-              <dt>Телефон</dt>
+              <dt>{copy.phone}</dt>
               <dd><a href={telHref}>{phone}</a></dd>
             </div>
           )}
           {whatsapp && (
             <div>
-              <dt>WhatsApp</dt>
-              <dd><a href={waHref} target="_blank" rel="noopener noreferrer">Написать в WhatsApp</a></dd>
+              <dt>{copy.whatsapp}</dt>
+              <dd><a href={waHref} target="_blank" rel="noopener noreferrer">{copy.whatsappLink}</a></dd>
             </div>
           )}
           {email && (
             <div>
-              <dt>Почта</dt>
+              <dt>{copy.email}</dt>
               <dd><a href={`mailto:${email}`}>{email}</a></dd>
             </div>
           )}
         </dl>
       )}
 
-      <p className="contact-info__note">Заявка попадает команде Renvio. Данные используются только для связи с вами.</p>
+      <p className="contact-info__note">{copy.note}</p>
     </aside>
   );
 }

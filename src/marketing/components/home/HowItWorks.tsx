@@ -1,21 +1,21 @@
-import { steps } from '../../data/content';
+import { useMarketingCopy } from '../../data/copy';
 import { Section } from '../ui/Section';
 import './HowItWorks.scss';
 
 export function HowItWorks() {
+  const copy = useMarketingCopy();
+  const section = copy.sections.how;
   return (
     <Section id="how" tone="muted">
       <div className="how">
         <div className="how__intro">
-          <p className="how__eyebrow">Как это работает</p>
-          <h2 className="how__title">От заявки до первой онлайн-записи</h2>
-          <p className="how__text">
-            Подключение не требует сложной подготовки: мы проходим путь вместе с вами.
-          </p>
+          <p className="how__eyebrow">{section.eyebrow}</p>
+          <h2 className="how__title">{section.title}</h2>
+          <p className="how__text">{section.description}</p>
         </div>
 
         <ol className="how__steps">
-          {steps.map((step, index) => (
+          {copy.steps.map((step, index) => (
             <li key={step.title} className="how__step">
               <span className="how__number">{String(index + 1).padStart(2, '0')}</span>
               <div>

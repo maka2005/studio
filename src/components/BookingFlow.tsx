@@ -16,12 +16,15 @@ import { supabase } from '../lib/supabase';
 import { saveToken } from '../lib/tokens';
 import { CustomerTelegramOptIn } from './CustomerTelegramOptIn';
 import { ALL_SERVICES_CATEGORY, filterServices, serviceCategories } from '../lib/serviceCatalog';
+import { extraField, isAutoBusiness } from '../lib/businessTypes';
 
 const Contact = z.object({
   name: z.string().trim().min(1, 'Введите имя').max(80),
   phone: z.string().trim().refine(isFullPhone, 'Введите номер полностью: +7 (777) 123-45-67'),
   car: z.string().trim().min(2, 'Укажите автомобиль').max(60),
 });
+/** Для не-авто категорий дополнительное поле необязательно. */
+const ContactOptional = Contact.extend({ car: z.string().trim().max(60) });
 const TITLES = ['Выберите услугу', 'Выберите время', 'Ваши контакты', 'Проверьте запись'];
 const ERR: Record<string, string> = { slot_taken: 'Это время только что заняли. Выберите другое.', invalid_slot: 'Это время недоступно для записи.',
   past_start: 'Это время уже прошло.', consent_required: 'Нужно согласие на обработку данных.', bad_name: 'Проверьте имя.',
@@ -38,6 +41,8 @@ function attributionSource(): string {
 }
 
 export function BookingFlow({ b, initialService, onClose }: { b: Business; initialService?: string; onClose: () => void }) {
+  const isAuto = isAutoBusiness(b.business_type);
+  const field = extraField(b.business_type);
   const svcQ = useQuery({ queryKey: ['services', b.slug], queryFn: () => fetchServices(b.slug) });
   const openQ = useQuery({ queryKey: ['booking-open', b.slug], queryFn: () => fetchBookingOpen(b.slug), staleTime: 60_000 });
   const [step, setStep] = useState(1);
@@ -68,7 +73,7 @@ export function BookingFlow({ b, initialService, onClose }: { b: Business; initi
   const slotsQ = useQuery({ queryKey: ['slots', b.slug, serviceId, day], queryFn: () => fetchSlots(b.slug, serviceId!, day), enabled: !!serviceId && step === 2 });
   const fmt = (iso: string, f: string) => formatInTimeZone(new Date(iso), b.timezone, f, { locale: ru });
   const mut = useMutation({
-    mutationFn: () => createBooking({ slug: b.slug, service: serviceId!, start: slot!, ...form, key: key.current, token: token.current, consent: LEGAL_VERSION, promo: promo.trim() || undefined, source: attributionSource() }),
+    mutationFn: () => createBooking({ slug: b.slug, service: serviceId!, start: slot!, ...form, car: isAuto ? form.car : form.car.trim() || field.empty, key: key.current, token: token.current, consent: LEGAL_VERSION, promo: promo.trim() || undefined, source: attributionSource() }),
     onSuccess: () => {
       saveToken(b.slug, token.current);   // если клиент уже вошёл, запись сразу привязывается к профилю
       void supabase.auth.getSession().then(({ data }) => { if (data.session) void supabase.rpc('claim_booking', { p_token: token.current }); });
@@ -76,14 +81,14 @@ export function BookingFlow({ b, initialService, onClose }: { b: Business; initi
     },
     onError: (e: Error) => {
       const code = Object.keys(ERR).find((c) => e.message.includes(c));
-      setMsg(code ? ERR[code]! : 'Не удалось записаться. Проверьте соединение и повторите.');
+      setMsg(code === 'bad_car' ? field.error : code ? ERR[code]! : 'Не удалось записаться. Проверьте соединение и повторите.');
       if (code) { setSlot(null); setStep(2); void slotsQ.refetch(); }
     },
   });
   const next = () => {
     setMsg(null);
     if (step === 3) {
-      const r = Contact.safeParse(form);
+      const r = (isAuto ? Contact : ContactOptional).safeParse(form);
       if (!r.success) { setErrs(Object.fromEntries(r.error.issues.map((i) => [String(i.path[0]), i.message]))); return; }
       setErrs({}); setForm(r.data);
     }
@@ -129,17 +134,17 @@ export function BookingFlow({ b, initialService, onClose }: { b: Business; initi
         <input id="other-date" className="field" type="date" min={today} value={day} onChange={(e) => { if (e.target.value >= today) { setDay(e.target.value); setSlot(null); } }} />
         {slotsQ.isPending ? <p className="muted">Ищем свободное время…</p> : slotsQ.isError ? <p className="err">Не удалось загрузить расписание. <button className="link" onClick={() => slotsQ.refetch()}>Попробовать ещё раз</button></p>
           : slotsQ.data.length === 0 ? <p className="muted">На эту дату записи нет. Выберите другой день — покажем доступное время.</p>
-          : !slotsQ.data.some((s) => s.free) ? <><p className="muted">На эту дату свободных мест уже нет. Оставьте заявку — студия свяжется с вами, если время освободится.</p><WaitlistForm slug={b.slug} service={serviceId!} day={day} /></>
+          : !slotsQ.data.some((s) => s.free) ? <><p className="muted">На эту дату свободных мест уже нет. Оставьте заявку — студия свяжется с вами, если время освободится.</p><WaitlistForm slug={b.slug} service={serviceId!} day={day} isAuto={isAuto} /></>
           : <div className="chips">{slotsQ.data.map((s) => <button key={s.slot} disabled={!s.free} aria-pressed={slot === s.slot}
               className={`chip ${slot === s.slot ? 'sel' : ''}`} onClick={() => setSlot(s.slot)}>{fmt(s.slot, 'HH:mm')}</button>)}</div>}
         <p className="muted small">Выберите время, отмеченное как свободное.</p>
-        {slot && svc && <p className="muted small">Ориентировочно автомобиль будет готов: {formatInTimeZone(addMinutes(new Date(slot), svc.duration_minutes), b.timezone, "d MMMM 'в' HH:mm", { locale: ru })}</p>}
+        {slot && svc && <p className="muted small">{isAuto ? 'Ориентировочно автомобиль будет готов' : 'Ориентировочно услуга завершится'}: {formatInTimeZone(addMinutes(new Date(slot), svc.duration_minutes), b.timezone, "d MMMM 'в' HH:mm", { locale: ru })}</p>}
       </>}
 
       {step === 3 && (['name', 'phone', 'car'] as const).map((f) => (
-        <div key={f}><label className="muted small" htmlFor={f}>{{ name: 'Имя', phone: 'Телефон', car: 'Автомобиль' }[f]}</label>
+        <div key={f}><label className="muted small" htmlFor={f}>{{ name: 'Имя', phone: 'Телефон', car: field.label }[f]}</label>
           <input id={f} className="field" value={form[f]} type={f === 'phone' ? 'tel' : 'text'} inputMode={f === 'phone' ? 'tel' : 'text'} autoComplete={{ name: 'name', phone: 'tel', car: 'off' }[f]}
-            placeholder={f === 'phone' ? PHONE_PLACEHOLDER : undefined} maxLength={f === 'phone' ? 18 : undefined}
+            placeholder={f === 'phone' ? PHONE_PLACEHOLDER : f === 'car' && !isAuto ? field.placeholder : undefined} maxLength={f === 'phone' ? 18 : f === 'car' ? 60 : undefined}
             onChange={(e) => setForm({ ...form, [f]: f === 'phone' ? maskPhone(e.target.value, form.phone) : e.target.value })} aria-invalid={!!errs[f]} />
           {errs[f] && <p className="err small">{errs[f]}</p>}</div>))}
 
@@ -148,7 +153,7 @@ export function BookingFlow({ b, initialService, onClose }: { b: Business; initi
 
       {step === 4 && svc && slot && <div className="card col">
         <b>{svc.name}</b><span>{fmt(slot, "d MMMM 'в' HH:mm")} · {duration(svc.duration_minutes)}</span>
-        <span className="muted">{form.name}, {form.phone}</span><span className="muted">{form.car}</span><b>{money(svc.price_cents / 100, b.currency)}</b>
+        <span className="muted">{form.name}, {form.phone}</span>{isAuto || form.car.trim() ? <span className="muted">{isAuto ? form.car : `Пожелания: ${form.car.trim()}`}</span> : null}<b>{money(svc.price_cents / 100, b.currency)}</b>
         <label className="muted small" htmlFor="promo-code">Промокод</label><input id="promo-code" className="field" maxLength={24} autoCapitalize="characters" placeholder="Если есть" value={promo} onChange={(e) => setPromo(e.target.value.toUpperCase())} />
         <span className="muted small">Если промокод действителен, скидка будет учтена при подтверждении.</span></div>}
 
@@ -158,12 +163,13 @@ export function BookingFlow({ b, initialService, onClose }: { b: Business; initi
     </Sheet>);
 }
 
-function WaitlistForm({ slug, service, day }: { slug: string; service: string; day: string }) {
+function WaitlistForm({ slug, service, day, isAuto }: { slug: string; service: string; day: string; isAuto: boolean }) {
+  const field = extraField(isAuto ? 'autoservice' : 'barbershop');
   const [form, setForm] = useState({ name: '', phone: '', car: '' });
   const [agree, setAgree] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [done, setDone] = useState(false);
-  const m = useMutation({ mutationFn: () => joinWaitlist({ slug, service, day, ...form, consent: LEGAL_VERSION }), onSuccess: () => { setDone(true); setMessage(null); }, onError: (e: Error) => {
+  const m = useMutation({ mutationFn: () => joinWaitlist({ slug, service, day, ...form, car: isAuto ? form.car : form.car.trim() || field.empty, consent: LEGAL_VERSION }), onSuccess: () => { setDone(true); setMessage(null); }, onError: (e: Error) => {
     const code = ['already_waiting', 'rate_limited', 'bad_date'].find((x) => e.message.includes(x));
     setMessage(code === 'already_waiting' ? 'Вы уже оставили заявку на эту услугу в этот день.' : code === 'rate_limited' ? 'Слишком много заявок. Попробуйте позже.' : 'Не удалось отправить заявку. Проверьте данные и повторите.');
   } });
@@ -171,9 +177,9 @@ function WaitlistForm({ slug, service, day }: { slug: string; service: string; d
   return <div className="card col"><b>Оставить заявку на свободное время</b>
     <input className="field" aria-label="Имя для листа ожидания" placeholder="Ваше имя" maxLength={80} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
     <input className="field" aria-label="Телефон для листа ожидания" placeholder={PHONE_PLACEHOLDER} type="tel" maxLength={18} autoComplete="tel" inputMode="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: maskPhone(e.target.value, form.phone) })} />
-    <input className="field" aria-label="Автомобиль для листа ожидания" placeholder="Автомобиль" maxLength={60} value={form.car} onChange={(e) => setForm({ ...form, car: e.target.value })} />
+    <input className="field" aria-label={isAuto ? 'Автомобиль для листа ожидания' : 'Пожелания для листа ожидания'} placeholder={field.placeholder} maxLength={60} value={form.car} onChange={(e) => setForm({ ...form, car: e.target.value })} />
     <label className="check"><input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} /><span className="small">Разрешаю студии связаться со мной и согласен(на) на обработку данных. <a href={`/s/${slug}/legal/privacy`} target="_blank" rel="noreferrer">Политика конфиденциальности</a></span></label>
     {message && <p className="err small" role="alert">{message}</p>}
-    <button className="btn" disabled={m.isPending || !agree || !form.name.trim() || !isFullPhone(form.phone) || !form.car.trim()} onClick={() => m.mutate()}>{m.isPending ? 'Отправляем…' : 'Оставить заявку'}</button>
+    <button className="btn" disabled={m.isPending || !agree || !form.name.trim() || !isFullPhone(form.phone) || (isAuto && !form.car.trim())} onClick={() => m.mutate()}>{m.isPending ? 'Отправляем…' : 'Оставить заявку'}</button>
   </div>;
 }

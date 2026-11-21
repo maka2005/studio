@@ -1,10 +1,10 @@
 import { useId, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useMarketingCopy } from '../../data/copy';
 import { usePlans } from '../../hooks/usePlans';
 import { Section, SectionHeader } from '../ui/Section';
 import './HomeSections.scss';
 
-const fmt = (n: number) => Math.round(n).toLocaleString('ru-RU');
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, Number.isFinite(v) ? v : min));
 
 interface SliderProps {
@@ -44,12 +44,15 @@ function Slider({ label, suffix, value, min, max, step, onChange }: SliderProps)
 
 /** Прикидка потерь от пропущенных звонков и неявок. Это оценка по данным пользователя, а не обещание результата. */
 export function RoiCalculator() {
+  const copy = useMarketingCopy();
+  const section = copy.sections.roi;
   const plans = usePlans();
   const [bookings, setBookings] = useState(200);
   const [check, setCheck] = useState(15000);
   const [missed, setMissed] = useState(8);
   const [noShow, setNoShow] = useState(10);
 
+  const fmt = (n: number) => Math.round(n).toLocaleString(copy.ui.numberLocale);
   const lossMissed = bookings * (missed / 100) * check;
   const lossNoShow = bookings * (noShow / 100) * check;
   const total = lossMissed + lossNoShow;
@@ -61,35 +64,33 @@ export function RoiCalculator() {
   return (
     <Section id="calculator">
       <SectionHeader
-        eyebrow="Калькулятор"
-        title="Сколько вы теряете на пропущенных звонках и неявках"
-        description="Укажите данные вашего сервиса — прикинем, что может вернуть онлайн-запись с напоминаниями."
+        eyebrow={section.eyebrow}
+        title={section.title}
+        description={section.description}
         align="center"
       />
       <div className="roi">
         <div className="roi__form">
-          <Slider label="Записей в месяц" suffix="шт." value={bookings} min={20} max={3000} step={10} onChange={setBookings} />
-          <Slider label="Средний чек" suffix="₸" value={check} min={2000} max={200000} step={500} onChange={setCheck} />
-          <Slider label="Клиенты, до которых не дозвонились или не ответили" suffix="%" value={missed} min={0} max={40} step={1} onChange={setMissed} />
-          <Slider label="Неявки на записи" suffix="%" value={noShow} min={0} max={40} step={1} onChange={setNoShow} />
+          <Slider label={section.sliders.bookings} suffix={section.sliders.unit} value={bookings} min={20} max={3000} step={10} onChange={setBookings} />
+          <Slider label={section.sliders.check} suffix={section.sliders.currency} value={check} min={2000} max={200000} step={500} onChange={setCheck} />
+          <Slider label={section.sliders.missed} suffix={section.sliders.percent} value={missed} min={0} max={40} step={1} onChange={setMissed} />
+          <Slider label={section.sliders.noShow} suffix={section.sliders.percent} value={noShow} min={0} max={40} step={1} onChange={setNoShow} />
         </div>
 
         <div className="roi__result" aria-live="polite">
-          <p className="roi__label">Потери в месяц по вашим данным</p>
+          <p className="roi__label">{section.labels.loss}</p>
           <p className="roi__big">{fmt(total)} ₸</p>
           <ul className="roi__rows">
-            <li><span>Не дозвонились / потеряли заявку</span><b>{fmt(lossMissed)} ₸</b></li>
-            <li><span>Неявки</span><b>{fmt(lossNoShow)} ₸</b></li>
-            <li><span>Вернуть удастся (оценка 30%)</span><b>{fmt(recovered)} ₸</b></li>
-            {cheapest && <li><span>Тариф {cheapest.name} в месяц</span><b>{fmt(price)} ₸</b></li>}
+            <li><span>{section.labels.missed}</span><b>{fmt(lossMissed)} ₸</b></li>
+            <li><span>{section.labels.noShow}</span><b>{fmt(lossNoShow)} ₸</b></li>
+            <li><span>{section.labels.recover}</span><b>{fmt(recovered)} ₸</b></li>
+            {cheapest && <li><span>{section.labels.plan} {cheapest.name}</span><b>{fmt(price)} ₸</b></li>}
           </ul>
           <p className={`roi__verdict ${profit > 0 ? 'is-plus' : ''}`}>
-            {profit > 0
-              ? `Потенциальный плюс: около ${fmt(profit)} ₸ в месяц после оплаты тарифа.`
-              : 'При таких данных выгода зависит от других факторов — обсудим на демо.'}
+            {profit > 0 ? section.labels.verdictPlus(fmt(profit)) : section.labels.verdictMinus}
           </p>
-          <Link to="/contact?type=demo" className="roi__cta btn btn--primary">Обсудить на демо</Link>
-          <p className="roi__note">Это ориентировочная оценка по введённым вами данным, а не гарантия результата.</p>
+          <Link to="/contact?type=demo" className="roi__cta btn btn--primary">{copy.ui.demoLink}</Link>
+          <p className="roi__note">{section.note}</p>
         </div>
       </div>
     </Section>

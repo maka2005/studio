@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isAutoBusiness } from './businessTypes';
 import { supabase } from './supabase';
 const Card = z.object({ title: z.string(), text: z.string() });
 const defaultImage = '/servio-default.svg';
@@ -8,7 +9,7 @@ const defaultCards = {
   install: { title: 'Сохраните сайт студии', text: 'Добавьте его на экран телефона для быстрого доступа.' },
 };
 export const Business = z.object({
-  slug: z.string(), name: z.string(), short_name: z.string().default('Автосервис'), accent: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  slug: z.string(), name: z.string(), short_name: z.string().default('Автосервис'), business_type: z.string().default('autoservice'), accent: z.string().regex(/^#[0-9a-fA-F]{6}$/),
   timezone: z.string(), currency: z.string(), route_url: z.string().optional(), client_profile: z.boolean().optional(), client_telegram_enabled: z.boolean().optional(),
   legal: z.object({ name: z.string(), bin: z.string(), address: z.string(), email: z.string(), storage: z.string(), processors: z.string(), retention: z.string(), retention_days:z.number().int().min(1).max(36500).nullable().optional() }).partial().optional(), phone: z.string(), address: z.string(), description: z.string(),
   demo: z.boolean().optional(),
@@ -31,15 +32,26 @@ export const Business = z.object({
   services: z.array(z.object({ name: z.string(), category: z.string().optional(), price: z.number(), duration_minutes: z.number(), price_from: z.boolean().optional() })).default([]),
 });
 export type Business = z.infer<typeof Business>;
+
+/** Для не-авто категорий заменяем авто-умолчания в старых конфигурациях. */
+export function normalizeBusiness(b: Business): Business {
+  if (isAutoBusiness(b.business_type)) return b;
+  return {
+    ...b,
+    short_name: b.short_name === 'Автосервис' ? 'Сервис' : b.short_name,
+    resources: b.resources.length === 1 && b.resources[0] === 'Пост 1' ? ['Специалист 1'] : b.resources,
+  };
+}
+
 // Runtime-источник — БД (владелец правит настройки в кабинете). Статический JSON — запасной вариант, если БД недоступна.
 export async function loadBusiness(slug: string): Promise<Business> {
   try {
     const { data, error } = await supabase.from('tenants').select('config').eq('slug', slug).maybeSingle();
-    if (!error && data) return Business.parse(data.config);
+    if (!error && data) return normalizeBusiness(Business.parse(data.config));
   } catch { /* падаем на статический конфиг */ }
   const r = await fetch(`/tenants/${slug}.json`);
   if (!r.ok) throw new Error('Студия не найдена');
-  return Business.parse(await r.json());
+  return normalizeBusiness(Business.parse(await r.json()));
 }
 export type Ctx = { b: Business; openBooking: (service?: string) => void };
 export const assetUrl = (slug: string, p: string) => (/^(https?:|\/)/.test(p) ? p : `/tenants/${slug}/${p}`);

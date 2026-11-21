@@ -79,7 +79,7 @@ async function findUserByEmail(admin: ReturnType<typeof createClient>, email: st
 
 const ACCEPTED = { ok: true, mode: 'accepted' };
 // Название типа бизнеса из формы → стабильный код для config.business_type. Словарь продублирован в src/lib/businessTypes.ts.
-const BUSINESS_TYPE_CODES: Record<string, string> = { 'сто / автосервис': 'autoservice', 'детейлинг-студия': 'detailing', 'автомойка': 'carwash', 'шиномонтаж': 'tires', 'другое': 'other' };
+const BUSINESS_TYPE_CODES: Record<string, string> = { 'сто / автосервис': 'autoservice', 'детейлинг-студия': 'detailing', 'автомойка': 'carwash', 'шиномонтаж': 'tires', 'барбершоп': 'barbershop', 'салон красоты': 'beauty', 'другое': 'other' };
 const businessTypeCode = (label: string): string => {
   const v = label.trim().toLowerCase();
   return BUSINESS_TYPE_CODES[v] ?? (Object.values(BUSINESS_TYPE_CODES).includes(v) ? v : 'other');
@@ -203,6 +203,7 @@ Deno.serve(withEdgeObservability('platform-admin', async (req, { requestId }) =>
     const created = await admin.auth.admin.createUser({ email: ownerEmail, email_confirm: true, user_metadata: { full_name: ownerName } });
     if (created.error || !created.data.user) { console.error('demo owner create failed:', created.error?.message); return json({ error: 'temporarily_unavailable' }, 502); }
     const owner = created.data.user;
+    const typeCode = businessTypeCode(businessType);
     const base = slugBase(businessName);
     let result: { tenant_id?: string; slug?: string } | null = null;
     let failure = '';
@@ -211,7 +212,7 @@ Deno.serve(withEdgeObservability('platform-admin', async (req, { requestId }) =>
       const slug = `${base.slice(0, 40 - suffix.length)}${suffix}`;
       const { data, error } = await admin.rpc('platform_create_tenant_system', {
         p_key: `${connect ? 'connect' : 'demo'}:${(await sha256Hex(ownerEmail)).slice(0, 32)}:${attempt}`,
-        p: { name: businessName, slug, owner_user_id: owner.id, owner_email: ownerEmail, owner_name: ownerName, phone, business_type: businessTypeCode(businessType), plan_code: planCode, trial: true, services: [] },
+        p: { name: businessName, slug, owner_user_id: owner.id, owner_email: ownerEmail, owner_name: ownerName, phone, business_type: typeCode, plan_code: planCode, trial: true, services: [] },
       });
       if (!error) { result = data as { tenant_id?: string; slug?: string }; break; }
       if (error.message?.includes('slug_taken')) continue;
@@ -227,6 +228,27 @@ Deno.serve(withEdgeObservability('platform-admin', async (req, { requestId }) =>
         return json(ACCEPTED);
       }
       return json({ error: failure ? 'operation_failed' : 'slug_taken' }, 500);
+    }
+    // Новые не-авто организации сразу получают нейтральные умолчания — без миграции БД.
+    if (!['autoservice', 'detailing', 'carwash', 'tires'].includes(typeCode)) {
+      const { data: createdTenant } = await admin.from('tenants').select('config').eq('id', result.tenant_id).maybeSingle();
+      const config = obj(createdTenant?.config);
+      const resources = config.resources;
+      const nextConfig = {
+        ...config,
+        short_name: typeof config.short_name === 'string' && config.short_name !== 'Автосервис' ? config.short_name : 'Сервис',
+        resources: Array.isArray(resources) && resources.length === 1 && resources[0] === 'Пост 1'
+          ? ['Специалист 1']
+          : resources,
+      };
+      const { error: configError } = await admin.from('tenants').update({ config: nextConfig }).eq('id', result.tenant_id);
+      if (configError) console.warn('non-auto config adapt failed:', redact(configError.message));
+      const { error: resourceError } = await admin
+        .from('resources')
+        .update({ name: 'Специалист 1' })
+        .eq('tenant_id', result.tenant_id)
+        .eq('name', 'Пост 1');
+      if (resourceError) console.warn('non-auto resource adapt failed:', redact(resourceError.message));
     }
     if (!(await ensureOwnerMembership(admin, result.tenant_id, owner.id))) return json({ error: 'operation_failed' }, 500);
     const anonClient = createClient(url, anon, { auth: { persistSession: false, autoRefreshToken: false } });

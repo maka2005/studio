@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { fetchServices, owner } from '../../lib/api'
 import { duration } from '../../lib/format'
-import { SERVICE_CATEGORIES, serviceCategories } from '../../lib/serviceCatalog'
+import { serviceCategories, serviceCategoriesFor } from '../../lib/serviceCatalog'
+import { isAutoBusiness } from '../../lib/businessTypes'
 import type { Business } from '../../lib/tenant'
 import { Err, useAct } from './shared'
 
@@ -25,6 +26,7 @@ function ServiceRow({
   categoryOptions: string[]
 }) {
   const a = useAct(onSaved)
+  const isAuto = isAutoBusiness(b.business_type)
   const [name, setName] = useState(s.name)
   const [category, setCategory] = useState(s.category || 'Другое')
   const [creatingCategory, setCreatingCategory] = useState(false)
@@ -42,9 +44,9 @@ function ServiceRow({
       <div className="admin-service-main">
         <div><label className="muted small" htmlFor={`${categoryListId}-name`}>Название услуги</label><input id={`${categoryListId}-name`} aria-label="Название" className="field" value={name} onChange={(e) => setName(e.target.value)} /></div>
         <div><label className="muted small" htmlFor={`${categoryListId}-input`}>Категория</label>{creatingCategory
-          ? <div className="admin-new-category-control"><input id={`${categoryListId}-input`} aria-label="Название новой категории" className="field" maxLength={60} autoFocus placeholder="Например, Стёкла" value={category} onChange={(e) => setCategory(e.target.value)} /><button type="button" className="link" onClick={() => { setCreatingCategory(false); setCategory(s.category || 'Другое'); }}>Отмена</button></div>
+          ? <div className="admin-new-category-control"><input id={`${categoryListId}-input`} aria-label="Название новой категории" className="field" maxLength={60} autoFocus placeholder={isAuto ? 'Например, Стёкла' : 'Например, Стрижка'} value={category} onChange={(e) => setCategory(e.target.value)} /><button type="button" className="link" onClick={() => { setCreatingCategory(false); setCategory(s.category || 'Другое'); }}>Отмена</button></div>
           : <select id={`${categoryListId}-input`} aria-label="Категория услуги" className="field" value={category} onChange={(e) => { if (e.target.value === '__create_category__') { setCreatingCategory(true); setCategory(''); } else setCategory(e.target.value); }}>
-            {[...new Set([...SERVICE_CATEGORIES, ...categoryOptions])].map((item) => <option key={item} value={item}>{item}</option>)}
+            {[...new Set([...serviceCategoriesFor(b.business_type), ...categoryOptions])].map((item) => <option key={item} value={item}>{item}</option>)}
             <option value="__create_category__">＋ Создать новую категорию…</option>
           </select>}</div>
         <div><label className="muted small" htmlFor={`${categoryListId}-price`}>Цена, {b.currency}</label><input id={`${categoryListId}-price`} className="field" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} /></div>
@@ -86,7 +88,7 @@ export function Services({ b }: { b: Business }) {
           <input id={`admin-service-search-${b.slug}`} className="field" type="search" placeholder="Поиск по названию или категории" value={search} onChange={(e) => { setSearch(e.target.value); setServicePage(1); }} />
           {(() => {
             const needle = search.trim().toLocaleLowerCase('ru').replaceAll('ё', 'е')
-            const options = [...new Set([...SERVICE_CATEGORIES, ...serviceCategories(q.data)])]
+            const options = [...new Set([...serviceCategoriesFor(b.business_type), ...serviceCategories(q.data)])]
             const rows = q.data.filter((service) => {
               const matchesSearch = `${service.name} ${service.category}`.toLocaleLowerCase('ru').replaceAll('ё', 'е').includes(needle)
               const matchesCategory = categoryFilter === 'Все услуги' || service.category === categoryFilter
@@ -124,7 +126,7 @@ export function Services({ b }: { b: Business }) {
           key={n}
           b={b}
           s={{ id: null, name: '', category: 'Другое', price_cents: 0, duration_minutes: 60 }}
-          categoryOptions={[...new Set([...SERVICE_CATEGORIES, ...serviceCategories(q.data ?? [])])]}
+          categoryOptions={[...new Set([...serviceCategoriesFor(b.business_type), ...serviceCategories(q.data ?? [])])]}
           onSaved={() => {
             saved()
             setN(n + 1)

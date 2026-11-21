@@ -1,23 +1,25 @@
-import { features } from '../../data/content';
+import { useMarketingCopy } from '../../data/copy';
 import { usePlans } from '../../hooks/usePlans';
 import './PricingComparison.scss';
 
 export function PricingComparison() {
+  const copy = useMarketingCopy();
+  const labels = copy.ui.pricing;
   const plans = usePlans();
-  const fmt = (v: number | null) => (v === null ? 'Без ограничений' : v.toLocaleString('ru-RU'));
+  const fmt = (v: number | null) => (v === null ? labels.unlimited : v.toLocaleString(copy.ui.numberLocale));
   const limitRows = [
-    { label: 'Сотрудники', pick: (l: (typeof plans)[number]['limits']) => l.employees },
-    { label: 'Услуги', pick: (l: (typeof plans)[number]['limits']) => l.services },
-    { label: 'Филиалы', pick: (l: (typeof plans)[number]['limits']) => l.branches },
-    { label: 'Записей в месяц', pick: (l: (typeof plans)[number]['limits']) => l.bookingsPerMonth },
+    { label: labels.employees, pick: (l: (typeof plans)[number]['limits']) => l.employees },
+    { label: labels.services, pick: (l: (typeof plans)[number]['limits']) => l.services },
+    { label: labels.branches, pick: (l: (typeof plans)[number]['limits']) => l.branches },
+    { label: labels.bookings, pick: (l: (typeof plans)[number]['limits']) => l.bookingsPerMonth },
   ];
   return (
     <div className="comparison">
       <table className="comparison__table">
-        <caption className="visually-hidden">Сравнение тарифов Renvio</caption>
+        <caption className="visually-hidden">{labels.caption}</caption>
         <thead>
           <tr>
-            <th scope="col">Параметр</th>
+            <th scope="col">{labels.whatCompare}</th>
             {plans.map((plan) => (
               <th scope="col" key={plan.id}>{plan.name}</th>
             ))}
@@ -25,9 +27,9 @@ export function PricingComparison() {
         </thead>
         <tbody>
           <tr>
-            <th scope="row">Стоимость в месяц</th>
+            <th scope="row">{labels.priceMonth}</th>
             {plans.map((plan) => (
-              <td key={plan.id}>{plan.price.toLocaleString('ru-RU')} ₸</td>
+              <td key={plan.id}>{plan.price.toLocaleString(copy.ui.numberLocale)} ₸</td>
             ))}
           </tr>
           {limitRows.map((row) => (
@@ -38,15 +40,15 @@ export function PricingComparison() {
               ))}
             </tr>
           ))}
-          {features.map((feature) => (
+          {copy.features.map((feature) => (
             <tr key={feature.id}>
               <th scope="row">{feature.title}</th>
               {plans.map((plan) => (
                 <td key={plan.id}>
                   {plan.included.includes(feature.id) ? (
-                    <span className="comparison__yes" aria-label="Включено">✓</span>
+                    <span className="comparison__yes" aria-label={labels.included}>✓</span>
                   ) : (
-                    <span className="comparison__no" aria-label="Не включено">—</span>
+                    <span className="comparison__no" aria-label={labels.notIncluded}>—</span>
                   )}
                 </td>
               ))}

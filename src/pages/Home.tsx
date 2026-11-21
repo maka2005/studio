@@ -1,9 +1,10 @@
 import { Link, useOutletContext } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { assetUrl, type Ctx } from '../lib/tenant';
+import { isAutoBusiness } from '../lib/businessTypes';
 import { owner } from '../lib/api';
 import { money, plural, telHref } from '../lib/format';
-import { Arrow, ArrowRight, Car, Clock, Download, Grid, Phone, Photo, Pin, Tag, Wrench } from '../lib/icons';
+import { Arrow, ArrowRight, Calendar, Car, Clock, Download, Grid, Phone, Photo, Pin, Tag, Wrench } from '../lib/icons';
 import { Reveal } from '../components/Reveal';
 import { TenantImage } from '../components/TenantImage';
 import { ServiceList } from './ServiceList';
@@ -11,6 +12,7 @@ import { useServices } from '../lib/useServices';
 import '../lib/install';   // ловит событие установки с самого запуска
 export function Home() {
   const { b, openBooking } = useOutletContext<Ctx>(); const services = useServices(b);
+  const isAuto = isAutoBusiness(b.business_type);
   const reviews = useQuery({ queryKey: ['public-reviews', b.slug], queryFn: () => owner.publicReviews(b.slug), staleTime: 5 * 60_000 });
   const img = (p: string) => `url(${assetUrl(b.slug, p)})`;
   const ranges = [...new Set(Object.values(b.hours).filter(Boolean).map((h) => `${h![0]}–${h![1]}`))];
@@ -24,11 +26,11 @@ export function Home() {
       <button className="round" aria-label="Записаться" onClick={() => openBooking()}><Arrow /></button></div>
     <div className="tiles3">
       <div className="card tile"><div className="row"><Wrench /><b className="big">{services.length}</b></div><span className="muted small">{plural(services.length, ['услуга', 'услуги', 'услуг']).split(' ')[1]} на выбор</span></div>
-      <div className="card tile"><div className="row"><Photo /><b className="big">{b.resources.length}</b></div><span className="muted small">{plural(b.resources.length, ['пост', 'поста', 'постов']).split(' ')[1]} для работы</span></div>
+      <div className="card tile"><div className="row"><Photo /><b className="big">{b.resources.length}</b></div><span className="muted small">{plural(b.resources.length, isAuto ? ['пост', 'поста', 'постов'] : ['специалист', 'специалиста', 'специалистов']).split(' ')[1]}{isAuto ? ' для работы' : ''}</span></div>
       <div className="card tile"><div className="row"><Tag /><b className="big">{minPrice === null ? '—' : `от ${money(minPrice, b.currency)}`}</b></div><span className="muted small">{minPrice === null ? 'услуги скоро появятся' : 'начальная цена'}</span></div></div>
     <div className="cols">
       <Reveal className="col-side"><h2>Запишитесь онлайн</h2>
-        <div className="card promo"><Car className="car" /><h3>{b.cards.booking.title}</h3><p className="muted">{b.cards.booking.text}</p>
+        <div className="card promo">{isAuto ? <Car className="car" /> : <Calendar className="car" />}<h3>{b.cards.booking.title}</h3><p className="muted">{b.cards.booking.text}</p>
           <button className="btn" onClick={() => openBooking()}>Выбрать дату и время <Arrow /></button></div>
         <div className="card col"><div className="row"><span className="ico accent"><Grid /></span><div><b>{b.cards.catalog.title}</b><p className="muted small">{b.cards.catalog.text}</p></div></div>
           <Link className="btn ghost" to={`/s/${b.slug}/services`}>Каталог услуг <Arrow size={16} /></Link></div>

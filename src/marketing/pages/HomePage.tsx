@@ -1,8 +1,9 @@
 import { useMemo } from 'react';
 import { useLocale } from '../../lib/locale';
+import { useMarketingCopy } from '../data/copy';
 import { useDocumentMeta } from '../hooks/useDocumentMeta';
 import { usePlans, useTrialDays } from '../hooks/usePlans';
-import { homeBreadcrumbs, seo } from '../data/content';
+import { homeBreadcrumbs } from '../data/content';
 import { breadcrumbLd, faqLd, organizationLd, softwareLd, websiteLd } from '../seo/schema';
 import { Hero } from '../components/home/Hero';
 import { TrustStrip } from '../components/home/TrustStrip';
@@ -19,6 +20,7 @@ export function HomePage() {
   const plans = usePlans();
   const trialDays = useTrialDays();
   const { locale } = useLocale();
+  const copy = useMarketingCopy();
   const jsonLd = useMemo(
     () => [
       organizationLd(),
@@ -26,14 +28,15 @@ export function HomePage() {
       softwareLd(
         plans.map((p) => ({ name: p.name, price: p.price })),
         locale,
+        copy.seo.home.description,
       ),
-      faqLd(trialDays),
+      faqLd(trialDays, copy.faqItems(trialDays)),
       breadcrumbLd(homeBreadcrumbs),
     ],
-    [plans, trialDays, locale],
+    [plans, trialDays, locale, copy],
   );
 
-  useDocumentMeta({ ...seo.home, jsonLd });
+  useDocumentMeta({ ...copy.seo.home, jsonLd });
 
   return (
     <>

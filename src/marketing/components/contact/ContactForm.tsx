@@ -2,15 +2,12 @@ import { maskPhone } from '../../../lib/phone';
 import { useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { businessTypes } from '../../data/content';
+import { useMarketingCopy } from '../../data/copy';
 import { submitLead, type LeadPayload, type LeadResult } from '../../services/leads';
 import { usePlans, useTrialDays } from '../../hooks/usePlans';
-import { daysText, trialSummary } from '../../lib/trial';
 import { Button } from '../ui/Button';
 import { Turnstile, turnstileEnabled } from './Turnstile';
 import './ContactForm.scss';
-
-const money = (n: number) => `${n.toLocaleString('ru-RU')} ₸`;
-const dateRu = (d: Date) => new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long' }).format(d);
 
 type Status = 'idle' | 'sending' | 'sent' | 'validation-error' | 'consent-error' | 'error' | 'trial-used' | 'limited' | 'captcha-error';
 
@@ -19,12 +16,16 @@ export function ContactForm() {
   const [status, setStatus] = useState<Status>('idle');
   const plans = usePlans();
   const trialDays = useTrialDays();
+  const copy = useMarketingCopy();
+  const formCopy = copy.ui.contactForm;
+  const orderCopy = formCopy.order;
+  const money = (n: number) => `${n.toLocaleString(copy.ui.numberLocale)} ₸`;
   const [form, setForm] = useState<LeadPayload>({
     businessName: '',
     ownerName: '',
     ownerEmail: '',
     phone: maskPhone(params.get('phone') ?? ''),
-    businessType: businessTypes[0] ?? 'Автосервис',
+    businessType: businessTypes[0] ?? 'СТО / автосервис',
     requestType: params.get('type') === 'demo' ? 'demo' : 'connect',
     plan: params.get('plan') ?? '',
     comment: '',
@@ -83,12 +84,9 @@ export function ContactForm() {
     if (result?.mode === 'accepted') {
       return (
         <div className="contact-form contact-form--success" role="status">
-          <h2>{connecting ? 'Заявка на подключение принята' : 'Заявка на демо принята'}</h2>
-          <p>
-            Проверьте почту {form.ownerEmail}: если для неё можно создать организацию, мы отправили письмо со ссылкой для установки пароля и входа в кабинет.
-            Не пришло в течение нескольких минут — загляните в «Спам». Если автоматически подключить не получилось, наша команда свяжется с вами.
-          </p>
-          {connecting && selectedPlan && <p>Тариф: <b>{selectedPlan.name}</b>. Пробный период{trialDays ? ` — ${daysText(trialDays)}` : ''}, оплата после него по согласованию с менеджером.</p>}
+          <h2>{connecting ? formCopy.success.acceptedConnectTitle : formCopy.success.acceptedDemoTitle}</h2>
+          <p>{formCopy.success.acceptedBody(form.ownerEmail)}</p>
+          {connecting && selectedPlan && <p>{formCopy.success.planLine(selectedPlan.name, trialDays)}</p>}
         </div>
       );
     }
@@ -96,20 +94,20 @@ export function ContactForm() {
       const bookingUrl = `${window.location.origin}/s/${result.slug}`;
       return (
         <div className="contact-form contact-form--success" role="status">
-          <h2>Демо-версия готова</h2>
+          <h2>{formCopy.success.demoReadyTitle}</h2>
           <p>
-            Мы создали вашу организацию в Renvio.{' '}
+            {formCopy.success.demoCreated}{' '}
             {result.inviteSent
-              ? `Письмо для установки пароля отправлено на ${form.ownerEmail}. Откройте его, задайте пароль и войдите в кабинет.`
-              : 'Письмо с доступом отправить не удалось — наша команда свяжется с вами и поможет войти.'}
+              ? formCopy.success.inviteSent(form.ownerEmail)
+              : formCopy.success.inviteFailed}
           </p>
-          <p>Адрес записи для клиентов:</p>
+          <p>{formCopy.success.bookingUrlLabel}</p>
           <p>
             <a href={bookingUrl} target="_blank" rel="noopener noreferrer"><b>{bookingUrl}</b></a>
           </p>
           <div className="contact-form__actions">
-            <Button href={`/s/${result.slug}/owner`}>Перейти в кабинет</Button>
-            <Button variant="secondary" href={bookingUrl}>Открыть страницу записи</Button>
+            <Button href={`/s/${result.slug}/owner`}>{formCopy.success.openCabinet}</Button>
+            <Button variant="secondary" href={bookingUrl}>{formCopy.success.openBooking}</Button>
             <Button
               variant="ghost"
               onClick={() => {
@@ -119,7 +117,7 @@ export function ContactForm() {
                 });
               }}
             >
-              {copied ? 'Ссылка скопирована ✓' : 'Скопировать ссылку'}
+              {copied ? formCopy.buttons.copied : formCopy.buttons.copy}
             </Button>
           </div>
         </div>
@@ -130,29 +128,32 @@ export function ContactForm() {
       const trialEndsAt = result.trialEndsAt ? new Date(result.trialEndsAt) : trialEnd;
       return (
         <div className="contact-form contact-form--success" role="status">
-          <h2>Renvio подключён</h2>
+          <h2>{formCopy.success.connectedTitle}</h2>
           <p>
             {result.inviteSent
-              ? `Письмо для установки пароля отправлено на ${form.ownerEmail}. Откройте его, задайте пароль и войдите в кабинет.`
-              : 'Письмо с доступом отправить не удалось — наша команда свяжется с вами и поможет войти.'}
+              ? formCopy.success.inviteSent(form.ownerEmail)
+              : formCopy.success.inviteFailed}
           </p>
-          <div className="order-summary" aria-label="Ваш заказ">
-            <div className="order-summary__row"><span>Тариф</span><b>{result.planName}</b></div>
-            <div className="order-summary__row"><span>Пробный период</span><b>{trialSummary(result.trialDays ?? trialDays, trialEndsAt)}</b></div>
-            <div className="order-summary__row"><span>К оплате сейчас</span><b>0 ₸</b></div>
+          <div className="order-summary" aria-label={orderCopy.aria}>
+            <div className="order-summary__row"><span>{orderCopy.plan}</span><b>{result.planName}</b></div>
+            <div className="order-summary__row">
+              <span>{orderCopy.trial}</span>
+              <b>{formCopy.success.trialSummary(result.trialDays ?? trialDays, trialEndsAt)}</b>
+            </div>
+            <div className="order-summary__row"><span>{orderCopy.payToday}</span><b>0 ₸</b></div>
             {result.priceKzt !== undefined && (
               <div className="order-summary__row order-summary__row--total">
-                <span>К оплате после пробного периода</span>
-                <b>{money(result.priceKzt)} / {result.periodMonths && result.periodMonths > 1 ? `${result.periodMonths} мес.` : 'мес.'}</b>
+                <span>{orderCopy.afterTrial}</span>
+                <b>{money(result.priceKzt)} / {result.periodMonths && result.periodMonths > 1 ? `${result.periodMonths} ${copy.ui.pricing.monthShort}` : copy.ui.pricing.monthShort}</b>
               </div>
             )}
           </div>
-          <p>С вами свяжутся, чтобы согласовать оплату. Пока идёт пробный период, система работает без ограничений тарифа.</p>
-          <p>Адрес записи для клиентов:</p>
+          <p>{formCopy.success.connectedNote}</p>
+          <p>{formCopy.success.bookingUrlLabel}</p>
           <p><a href={bookingUrl} target="_blank" rel="noopener noreferrer"><b>{bookingUrl}</b></a></p>
           <div className="contact-form__actions">
-            <Button href={`/s/${result.slug}/owner`}>Перейти в кабинет</Button>
-            <Button variant="secondary" href={bookingUrl}>Открыть страницу записи</Button>
+            <Button href={`/s/${result.slug}/owner`}>{formCopy.success.openCabinet}</Button>
+            <Button variant="secondary" href={bookingUrl}>{formCopy.success.openBooking}</Button>
             <Button
               variant="ghost"
               onClick={() => {
@@ -162,7 +163,7 @@ export function ContactForm() {
                 });
               }}
             >
-              {copied ? 'Ссылка скопирована ✓' : 'Скопировать ссылку'}
+              {copied ? formCopy.buttons.copied : formCopy.buttons.copy}
             </Button>
           </div>
         </div>
@@ -170,13 +171,13 @@ export function ContactForm() {
     }
     return (
       <div className="contact-form contact-form--success" role="status">
-        <h2>Заявка отправлена</h2>
+        <h2>{formCopy.success.sentTitle}</h2>
         <p>
           {result?.mode === 'lead' && form.requestType === 'connect'
-            ? 'Для этой почты или телефона пробный период уже использовался либо аккаунт уже существует, поэтому автоматически подключить не получилось. Мы свяжемся с вами и подключим Renvio вручную.'
+            ? formCopy.success.leadConnect
             : form.requestType === 'demo'
-            ? 'Для этой почты уже есть аккаунт, поэтому демо автоматически не создавалось. Мы свяжемся с вами и подключим демонстрацию вручную.'
-            : 'Мы свяжемся с вами в ближайшее время, чтобы уточнить детали.'}
+            ? formCopy.success.leadDemo
+            : formCopy.success.leadGeneric}
         </p>
       </div>
     );
@@ -185,22 +186,22 @@ export function ContactForm() {
   return (
     <form className="contact-form" onSubmit={handleSubmit} noValidate>
       <div className="contact-form__field">
-        <label htmlFor="businessName">Название бизнеса *</label>
+        <label htmlFor="businessName">{formCopy.labels.businessName}</label>
         <input id="businessName" name="businessName" autoComplete="organization" value={form.businessName} onChange={update('businessName')} />
       </div>
 
       <div className="contact-form__field">
-        <label htmlFor="ownerName">Имя владельца *</label>
+        <label htmlFor="ownerName">{formCopy.labels.ownerName}</label>
         <input id="ownerName" name="ownerName" autoComplete="name" value={form.ownerName} onChange={update('ownerName')} />
       </div>
 
       <div className="contact-form__field">
-        <label htmlFor="ownerEmail">Почта владельца *</label>
+        <label htmlFor="ownerEmail">{formCopy.labels.ownerEmail}</label>
         <input id="ownerEmail" name="ownerEmail" type="email" autoComplete="email" value={form.ownerEmail} onChange={update('ownerEmail')} />
       </div>
 
       <div className="contact-form__field">
-        <label htmlFor="phone">Телефон *</label>
+        <label htmlFor="phone">{formCopy.labels.phone}</label>
         <input
           id="phone"
           name="phone"
@@ -216,18 +217,18 @@ export function ContactForm() {
 
       <div className="contact-form__row">
         <div className="contact-form__field">
-          <label htmlFor="requestType">Цель обращения</label>
+          <label htmlFor="requestType">{formCopy.labels.purpose}</label>
           <select id="requestType" name="requestType" value={form.requestType} onChange={update('requestType')}>
-            <option value="connect">{`Подключить Renvio${trialDays ? ` (${daysText(trialDays)} бесплатно)` : ''}`}</option>
-            <option value="demo">Демонстрация системы</option>
+            <option value="connect">{formCopy.options.connect(trialDays)}</option>
+            <option value="demo">{formCopy.options.demo}</option>
           </select>
         </div>
 
         <div className="contact-form__field">
-          <label htmlFor="businessType">Тип бизнеса</label>
+          <label htmlFor="businessType">{formCopy.labels.businessType}</label>
           <select id="businessType" name="businessType" value={form.businessType} onChange={update('businessType')}>
             {businessTypes.map((type) => (
-              <option key={type} value={type}>{type}</option>
+              <option key={type} value={type}>{formCopy.businessTypeLabels[type] ?? type}</option>
             ))}
           </select>
         </div>
@@ -236,33 +237,33 @@ export function ContactForm() {
       {connecting && selectedPlan && (
         <>
           <div className="contact-form__field">
-            <label htmlFor="plan">Тариф</label>
+            <label htmlFor="plan">{formCopy.labels.plan}</label>
             <select id="plan" name="plan" value={selectedPlan.id} onChange={update('plan')}>
               {plans.map((p) => (
-                <option key={p.id} value={p.id}>{p.name} — {money(p.price)} в месяц</option>
+                <option key={p.id} value={p.id}>{formCopy.planOption(p.name, p.price)}</option>
               ))}
             </select>
           </div>
-          <div className="order-summary" aria-label="Ваш заказ">
-            <div className="order-summary__row"><span>Тариф</span><b>{selectedPlan.name}</b></div>
-            <div className="order-summary__row"><span>Пробный период</span><b>{trialSummary(trialDays, trialEnd)}</b></div>
-            <div className="order-summary__row"><span>К оплате сегодня</span><b>0 ₸</b></div>
+          <div className="order-summary" aria-label={orderCopy.aria}>
+            <div className="order-summary__row"><span>{orderCopy.plan}</span><b>{selectedPlan.name}</b></div>
+            <div className="order-summary__row"><span>{orderCopy.trial}</span><b>{formCopy.success.trialSummary(trialDays, trialEnd)}</b></div>
+            <div className="order-summary__row"><span>{orderCopy.payToday}</span><b>0 ₸</b></div>
             <div className="order-summary__row order-summary__row--total">
-              <span>После пробного периода</span>
-              <b>{money(selectedPlan.price)} / мес.</b>
+              <span>{orderCopy.afterTrial}</span>
+              <b>{money(selectedPlan.price)} / {copy.ui.pricing.monthShort}</b>
             </div>
-            <p className="contact-form__hint">Доступ откроется сразу после отправки. Для оплаты с вами свяжутся — карту вводить не нужно.</p>
+            <p className="contact-form__hint">{orderCopy.hint}</p>
           </div>
         </>
       )}
 
       <div className="contact-form__field">
-        <label htmlFor="comment">Комментарий</label>
+        <label htmlFor="comment">{formCopy.labels.comment}</label>
         <textarea id="comment" name="comment" rows={4} value={form.comment} onChange={update('comment')} />
       </div>
 
       <div aria-hidden="true" style={{ position: 'absolute', left: '-10000px', width: 1, height: 1, overflow: 'hidden' }}>
-        <label htmlFor="hp_field">Не заполняйте это поле</label>
+        <label htmlFor="hp_field">{formCopy.labels.hp}</label>
         <input id="hp_field" name="hp_field" type="text" tabIndex={-1} autoComplete="off" value={form.hp ?? ''} onChange={update('hp')} />
       </div>
 
@@ -275,8 +276,8 @@ export function ContactForm() {
           onChange={(e) => setForm((prev) => ({ ...prev, consent: e.target.checked }))}
         />
         <label htmlFor="consent">
-          Я согласен(на) на обработку персональных данных в соответствии с{' '}
-          <Link to="/privacy" target="_blank">политикой конфиденциальности</Link>
+          {formCopy.consent}{' '}
+          <Link to="/privacy" target="_blank">{formCopy.privacyLink}</Link>
         </label>
       </div>
 
@@ -284,22 +285,22 @@ export function ContactForm() {
 
       {status !== 'idle' && status !== 'sending' && (
         <p className="contact-form__error" role="alert">
-          {status === 'validation-error' && 'Укажите название бизнеса, имя и почту владельца, а также корректный номер телефона.'}
-          {status === 'captcha-error' && 'Не удалось пройти проверку «Я не робот». Подождите секунду и попробуйте ещё раз.'}
-          {status === 'consent-error' && 'Чтобы отправить заявку, подтвердите согласие на обработку персональных данных.'}
-          {status === 'trial-used' && 'Для этой почты или телефона демо уже использовалось. Выберите «Подключение к Renvio» — мы свяжемся с вами.'}
-          {status === 'limited' && 'Слишком много попыток. Попробуйте позже.'}
-          {status === 'error' && 'Не удалось отправить заявку. Проверьте подключение и попробуйте ещё раз.'}
+          {status === 'validation-error' && formCopy.errors.validation}
+          {status === 'captcha-error' && formCopy.errors.captcha}
+          {status === 'consent-error' && formCopy.errors.consent}
+          {status === 'trial-used' && formCopy.errors.trialUsed}
+          {status === 'limited' && formCopy.errors.limited}
+          {status === 'error' && formCopy.errors.error}
         </p>
       )}
 
       <Button type="submit" fullWidth>
         {status === 'sending'
-          ? form.requestType === 'demo' ? 'Создаём демо…' : 'Подключаем…'
-          : form.requestType === 'demo' ? 'Запустить демо' : `Подключить${selectedPlan ? ` ${selectedPlan.name}` : ''} и получить доступ`}
+          ? form.requestType === 'demo' ? formCopy.buttons.creatingDemo : formCopy.buttons.connecting
+          : form.requestType === 'demo' ? formCopy.buttons.demo : formCopy.buttons.connect(selectedPlan?.name)}
       </Button>
       {form.requestType === 'demo' && (
-        <p className="contact-form__hint">Демо запускается сразу: мы создадим вашу организацию и отправим письмо для входа.</p>
+        <p className="contact-form__hint">{formCopy.demoHint}</p>
       )}
     </form>
   );

@@ -10,7 +10,8 @@ import { saveToken } from '../lib/tokens';
 import { Bell, Calendar, Check, Copy, Phone } from '../lib/icons';
 import { CustomerTelegramOptIn } from '../components/CustomerTelegramOptIn';
 import { LoadingScreen } from '../components/LoadingScreen';
-const STATUS: Record<string, string> = { booked: 'Подтверждена', arrived: 'Машина принята', done: 'Работа выполнена', cancelled: 'Отменена' };
+import { isAutoBusiness } from '../lib/businessTypes';
+const STATUS: Record<string, string> = { booked: 'Подтверждена', arrived: 'Клиент прибыл', done: 'Работа выполнена', cancelled: 'Отменена' };
 
 // Токен берётся из приватной ссылки (#t=...) либо из хранилища этого устройства. Фрагмент не уходит на сервер.
 function readToken(slug: string): string | null {
@@ -25,6 +26,7 @@ function readToken(slug: string): string | null {
 
 export function MyBooking() {
   const { b, openBooking } = useOutletContext<Ctx>();
+  const isAuto = isAutoBusiness(b.business_type);
   const qc = useQueryClient(); const [sure, setSure] = useState(false); const [note, setNote] = useState<string | null>(null);
   const [token] = useState(() => readToken(b.slug));
   const [rating, setRating] = useState(0); const [reviewText, setReviewText] = useState(''); const [reviewSaved, setReviewSaved] = useState(false); const [reviewError, setReviewError] = useState<string | null>(null);
@@ -59,8 +61,8 @@ export function MyBooking() {
       <h3 style={{ margin: 0 }}>{STATUS[d.status] ?? d.status}</h3><b>{f(d.starts_at, "d MMMM 'в' HH:mm")}</b></div>
     <h2 style={{ fontSize: 22, marginTop: 20 }}>{d.service_name}</h2>
     <div className="kv"><span className="muted">Стоимость</span><b>{money(d.price_cents / 100, b.currency)}</b></div>
-    <div className="kv"><span className="muted">Автомобиль будет готов примерно</span><b>{f(d.ends_at, "d MMMM 'в' HH:mm")}</b></div>
-    <p><b>{d.car}</b></p><p className="muted">{b.address}</p>
+    <div className="kv"><span className="muted">{isAuto ? 'Автомобиль будет готов примерно' : 'Услуга завершится примерно'}</span><b>{f(d.ends_at, "d MMMM 'в' HH:mm")}</b></div>
+    {isAuto || (d.car && d.car !== 'Без пожеланий') ? <p><b>{d.car}</b></p> : null}<p className="muted">{b.address}</p>
     {b.client_telegram_enabled && d.status === 'booked' && new Date(d.starts_at).getTime() > Date.now() && <CustomerTelegramOptIn slug={b.slug} token={token!} />}
     <a className="card contact" href={telHref(b.phone)}><span className="ico accent" style={{ width: 52, height: 52 }}><Phone /></span><span><b>Связаться со студией</b><br /><span className="muted small">{b.phone}</span></span></a>
     <div className="acts">

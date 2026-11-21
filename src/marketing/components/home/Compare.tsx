@@ -1,27 +1,25 @@
-import { compareRows } from '../../data/content';
+import { useMarketingCopy } from '../../data/copy';
 import { Section, SectionHeader } from '../ui/Section';
 import './HomeSections.scss';
 
 export function Compare() {
+  const copy = useMarketingCopy();
+  const section = copy.sections.compare;
   return (
     <Section id="compare">
       <div className="home-split">
-        <SectionHeader
-          eyebrow="Было и стало"
-          title="Чем Renvio лучше тетради, таблиц и мессенджеров"
-          description="Если записи ведутся «как получится», вы теряете клиентов и время каждый день."
-        />
-        <div className="compare" role="table" aria-label="Сравнение работы без Renvio и с Renvio">
+        <SectionHeader {...section} />
+        <div className="compare" role="table" aria-label={section.tableLabel}>
           <div className="compare__head" role="row">
-            <span role="columnheader">Задача</span>
-            <span role="columnheader">Без системы</span>
-            <span role="columnheader" className="is-after">С Renvio</span>
+            <span role="columnheader">{section.topic}</span>
+            <span role="columnheader">{section.before}</span>
+            <span role="columnheader" className="is-after">{section.after}</span>
           </div>
-          {compareRows.map((r) => (
+          {copy.compareRows.map((r) => (
             <div key={r.topic} className="compare__row" role="row">
               <b role="rowheader">{r.topic}</b>
-              <span role="cell" className="compare__before" data-label="Без системы">{r.before}</span>
-              <span role="cell" className="compare__after" data-label="С Renvio">{r.after}</span>
+              <span role="cell" className="compare__before" data-label={section.before}>{r.before}</span>
+              <span role="cell" className="compare__after" data-label={section.after}>{r.after}</span>
             </div>
           ))}
         </div>

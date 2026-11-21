@@ -38,14 +38,19 @@ export const websiteLd = (locale: Locale = 'ru') => ({
   publisher: { '@id': abs('/#organization') },
 });
 
-export const softwareLd = (plans: { name: string; price: number }[], locale: Locale = 'ru') => ({
+export const softwareLd = (
+  plans: { name: string; price: number }[],
+  locale: Locale = 'ru',
+  description?: string,
+) => ({
   '@context': 'https://schema.org',
   '@type': 'SoftwareApplication',
   name: SITE.name,
   applicationCategory: 'BusinessApplication',
   operatingSystem: 'Web, iOS, Android',
   description:
-    'Облачная система для СТО, автосервисов, детейлинг-студий, автомоек и шиномонтажа: онлайн-запись, расписание, сотрудники, аналитика.',
+    description ??
+    'Облачная система онлайн-записи и календаря для сервисов с записью по времени — от СТО до барбершопов: расписание, сотрудники и аналитика.',
   url: abs('/'),
   inLanguage: locale,
   offers: plans.map((p) => ({
@@ -58,10 +63,13 @@ export const softwareLd = (plans: { name: string; price: number }[], locale: Loc
   })),
 });
 
-export const faqLd = (trialDays: number | null) => ({
+export const faqLd = (
+  trialDays: number | null,
+  items: { question: string; answer: string }[] = faqItems(trialDays),
+) => ({
   '@context': 'https://schema.org',
   '@type': 'FAQPage',
-  mainEntity: faqItems(trialDays).map((item) => ({
+  mainEntity: items.map((item) => ({
     '@type': 'Question',
     name: item.question,
     acceptedAnswer: { '@type': 'Answer', text: item.answer },

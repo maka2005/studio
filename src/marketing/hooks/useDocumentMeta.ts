@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useLocale, type Locale } from '../../lib/locale';
 import { SITE } from '../config/site';
+import { useMarketingCopy } from '../data/copy';
 
 type JsonLd = Record<string, unknown>;
 
@@ -49,6 +50,7 @@ export function useDocumentMeta({
   noindex = false,
 }: DocumentMeta) {
   const { locale } = useLocale();
+  const copy = useMarketingCopy();
   const ld = jsonLd ? JSON.stringify(jsonLd) : '';
 
   useEffect(() => {
@@ -70,7 +72,7 @@ export function useDocumentMeta({
     setMeta('property', 'og:image', img);
     setMeta('property', 'og:image:width', '1200');
     setMeta('property', 'og:image:height', '630');
-    setMeta('property', 'og:image:alt', `${SITE.name} — онлайн-запись и управление автосервисом`);
+    setMeta('property', 'og:image:alt', copy.ogAlt);
     setMeta('name', 'twitter:card', 'summary_large_image');
     setMeta('name', 'twitter:title', title);
     setMeta('name', 'twitter:description', description);
@@ -100,5 +102,5 @@ export function useDocumentMeta({
     return () => {
       script?.remove();
     };
-  }, [title, description, path, image, noindex, ld, locale]);
+  }, [title, description, path, image, noindex, ld, locale, copy.ogAlt]);
 }

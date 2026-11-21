@@ -1,7 +1,14 @@
 import type { Svc } from './api';
+import { isAutoBusiness } from './businessTypes';
 
 export const SERVICE_CATEGORIES = ['Салон', 'Мойка', 'Полировка', 'Защита кузова', 'Кузовной ремонт', 'Колёса', 'Другое'] as const;
+export const SERVICE_CATEGORIES_OTHER = ['Стрижка', 'Окрашивание', 'Укладка', 'Массаж', 'Маникюр', 'Педикюр', 'Уход', 'Другое'] as const;
 export const ALL_SERVICES_CATEGORY = 'Все услуги';
+
+/** Категории услуг зависят от типа бизнеса организации. */
+export function serviceCategoriesFor(type?: string | null): readonly string[] {
+  return isAutoBusiness(type) ? SERVICE_CATEGORIES : SERVICE_CATEGORIES_OTHER;
+}
 const normalize = (value: string) => value.trim().toLocaleLowerCase('ru').replaceAll('ё', 'е');
 
 export function serviceCategories(services: Pick<Svc, 'category'>[]) {

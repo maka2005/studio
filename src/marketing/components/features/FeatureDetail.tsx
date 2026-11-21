@@ -1,3 +1,4 @@
+import { useMarketingCopy } from '../../data/copy';
 import type { Feature } from '../../data/content';
 import { ScreenshotFrame } from '../ui/ScreenshotFrame';
 import './FeatureDetail.scss';
@@ -9,6 +10,7 @@ interface FeatureDetailProps {
 
 export function FeatureDetail({ feature, index }: FeatureDetailProps) {
   const reversed = index % 2 === 1;
+  const copy = useMarketingCopy();
 
   return (
     <article className={`feature-detail ${reversed ? 'feature-detail--reversed' : ''}`}>
@@ -18,7 +20,7 @@ export function FeatureDetail({ feature, index }: FeatureDetailProps) {
         <p className="feature-detail__desc">{feature.description}</p>
       </div>
       <div className="feature-detail__visual">
-        <ScreenshotFrame label={`Скриншот: ${feature.title.toLowerCase()}`} />
+        <ScreenshotFrame label={copy.ui.screenshot(feature.title)} />
       </div>
     </article>
   );
