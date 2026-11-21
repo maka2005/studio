@@ -2,8 +2,7 @@ import { useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import { useLocale } from '../../../lib/locale';
 import { Button } from '../ui/Button';
-import { BRAND_MARK_COLOR } from '../../config/site';
-import { Logo } from '../../../components/BrandMark';
+import { BRAND_MARK_COLOR, Logo } from '../../../components/BrandMark';
 import './Header.scss';
 
 const navItems = [

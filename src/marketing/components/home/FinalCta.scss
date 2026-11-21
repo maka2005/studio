@@ -45,11 +45,18 @@
 
     @include mobile {
       flex-direction: column;
+      gap: 14px;
+
+      // В column-раскладке `flex: 1` схлопывает поле до высоты контента.
+      input {
+        flex: none;
+        width: 100%;
+      }
     }
   }
 
   &__error {
-    margin-top: 10px;
+    margin-top: 12px;
     color: $color-signal-light;
     font-size: 14px;
   }
@@ -60,6 +67,10 @@
     justify-content: center;
     gap: 12px;
     margin-top: 20px;
+
+    @include mobile {
+      margin-top: 24px;
+    }
   }
 
   @include mobile {

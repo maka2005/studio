@@ -1,6 +1,7 @@
-const DEFAULT_MARK_COLOR = '#176BFF';
+/** Единый цвет знака R во всех вариантах логотипа: шапка, подвал, статус, админки. */
+export const BRAND_MARK_COLOR = '#C2410C';
 
-export function BrandMark({ size = 24, color = DEFAULT_MARK_COLOR, className }: { size?: number; color?: string; className?: string }) {
+export function BrandMark({ size = 24, color = BRAND_MARK_COLOR, className }: { size?: number; color?: string; className?: string }) {
   return (
     <svg
       className={className}
@@ -31,8 +32,8 @@ export function Wordmark({ height = 14, className }: { height?: number; classNam
   );
 }
 
-/** Логотип: синяя «R» + ENVIO. `height` — высота заглавных букв в px. */
-export function Logo({ height = 18, className, markColor = DEFAULT_MARK_COLOR }: { height?: number; className?: string; markColor?: string }) {
+/** Логотип: оранжевая «R» + ENVIO. `height` — высота заглавных букв в px. */
+export function Logo({ height = 18, className, markColor = BRAND_MARK_COLOR }: { height?: number; className?: string; markColor?: string }) {
   return (
     <svg
       className={className}

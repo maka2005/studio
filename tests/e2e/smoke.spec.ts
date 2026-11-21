@@ -20,6 +20,39 @@ test('маркетинговая главная отвечает и не рон�
   expect(errors.filter((e) => !/favicon/i.test(e))).toEqual([]);
 });
 
+test('знак R в логотипе одного цвета в шапке и подвале', async ({ page }) => {
+  await page.goto('/');
+  // Предрендеренный HTML скрыт до гидратации.
+  await expect(page.locator('body')).not.toHaveText('', { timeout: 15_000 });
+  const fills = await page.evaluate(() => {
+    const mark = (selector: string) =>
+      document.querySelector(selector)?.querySelector('path')?.getAttribute('fill') ?? null;
+    return { header: mark('.header__logo svg'), footer: mark('.footer__brand svg') };
+  });
+  expect(fills.header).toBe('#C2410C');
+  expect(fills.footer).toBe(fills.header);
+});
+
+test('поле телефона в финальном CTA не сжимается на мобильном', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.goto('/');
+  // Предрендеренный HTML скрыт до гидратации.
+  await expect(page.locator('body')).not.toHaveText('', { timeout: 15_000 });
+  const sizes = await page.evaluate(() => {
+    const input = document.querySelector('.final-cta__form input');
+    const button = document.querySelector('.final-cta__form .btn');
+    if (!input || !button) return null;
+    const a = input.getBoundingClientRect();
+    const b = button.getBoundingClientRect();
+    return { inputHeight: a.height, buttonHeight: b.height, gap: b.top - a.bottom };
+  });
+  expect(sizes).not.toBeNull();
+  if (!sizes) return;
+  expect(sizes.inputHeight).toBeGreaterThanOrEqual(44);
+  expect(sizes.inputHeight).toBeCloseTo(sizes.buttonHeight, 0);
+  expect(sizes.gap).toBeGreaterThanOrEqual(12);
+});
+
 test('health endpoint возвращает JSON-контракт, когда доступен', async ({ request }) => {
   const res = await request.get(`${BASE}/api/health`);
   if (res.status() === 404) test.skip(true, 'API route not served by preview server');
