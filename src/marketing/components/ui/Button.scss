@@ -18,7 +18,7 @@
 
   &.btn--primary {
     background: $color-primary;
-    color: #fff;
+    color: $color-inverse;
 
     &:hover {
       background: $color-primary-hover;

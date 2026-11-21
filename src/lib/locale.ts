@@ -6,6 +6,20 @@ export type Locale = 'ru' | 'kk';
 export const LOCALE_STORAGE_KEY = 'studio-locale';
 export const DEFAULT_LOCALE: Locale = 'ru';
 
+export interface TicketRow {
+  label: string;
+  value: string;
+}
+
+/** Данные наряда-заказа: один объект вместо набора разрозненных ticket*-ключей. */
+export interface TicketMessages {
+  title: string;
+  numberLabel: string;
+  number: string;
+  status: string;
+  rows: TicketRow[];
+}
+
 /** Ключевые строки маркетинговой части, переведённые на оба языка. */
 export interface Messages {
   home: string;
@@ -21,15 +35,7 @@ export interface Messages {
   heroTitle: string;
   heroTitleAccent: string;
   heroSubtitle: string;
-  ticketTitle: string;
-  ticketClientLabel: string;
-  ticketClient: string;
-  ticketTimeLabel: string;
-  ticketTime: string;
-  ticketServiceLabel: string;
-  ticketService: string;
-  ticketStatus: string;
-  ticketNumberLabel: string;
+  ticket: TicketMessages;
   tryDemo: string;
   connect: string;
   demoBook: string;
@@ -64,7 +70,7 @@ const ru: Messages = {
   features: 'Возможности',
   pricing: 'Цены',
   contacts: 'Контакты',
-  book: 'Записаться',
+  book: 'Записать машину',
   chooseDateTime: 'Выбрать дату и время',
   services: 'Услуги',
   details: 'Подробнее',
@@ -73,18 +79,20 @@ const ru: Messages = {
   heroTitle: 'Онлайн-запись и управление автосервисом',
   heroTitleAccent: 'в одной системе',
   heroSubtitle:
-    'Renvio принимает записи клиентов 24/7, собирает расписание сотрудников, напоминает клиентам в Telegram и показывает аналитику — вместо звонков, тетрадей и разрозненных таблиц.',
-  ticketTitle: 'Наряд-заказ',
-  ticketClientLabel: 'Клиент',
-  ticketClient: 'Алексей',
-  ticketTimeLabel: 'Время',
-  ticketTime: 'Сегодня, 14:30',
-  ticketServiceLabel: 'Услуга',
-  ticketService: 'Детейлинг',
-  ticketStatus: 'Запись открыта',
-  ticketNumberLabel: 'Номер',
+    'Renvio принимает записи 24/7, собирает расписание и напоминает клиентам — в одной системе вместо звонков и таблиц.',
+  ticket: {
+    title: 'Наряд-заказ',
+    numberLabel: 'Номер',
+    number: 'RNV-0427',
+    status: 'Запись открыта',
+    rows: [
+      { label: 'Клиент', value: 'Алексей' },
+      { label: 'Время', value: 'Сегодня, 14:30' },
+      { label: 'Услуга', value: 'Детейлинг' },
+    ],
+  },
   tryDemo: 'Попробовать демо',
-  connect: 'Подключить Renvio',
+  connect: 'Подключить студию',
   demoBook: 'Записаться на демо',
   demoMore: 'Подробнее о возможностях',
   finalCtaTitle: 'Готовы навести порядок в записях и расписании?',
@@ -119,7 +127,7 @@ const kk: Messages = {
   features: 'Мүмкіндіктер',
   pricing: 'Бағалар',
   contacts: 'Байланыс',
-  book: 'Жазылу',
+  book: 'Көлігін жазылу',
   chooseDateTime: 'Күн мен уақытты таңдаңыз',
   services: 'Қызметтер',
   details: 'Толығырақ',
@@ -129,18 +137,20 @@ const kk: Messages = {
   heroTitle: 'Автосервиске онлайн жазылу және басқару',
   heroTitleAccent: 'бір жүйеде',
   heroSubtitle:
-    'Renvio клиенттерді тәулік бойы қабылдайды, қызметкерлердің кестесін жинайды, Telegram арқылы еске салады және аналитиканы көрсетеді — қоңыраулар, дәптерлер мен шашыраңқы кестелердің орнына.',
-  ticketTitle: 'Жұмыс тапсырмасы',
-  ticketClientLabel: 'Тапсырыс беруші',
-  ticketClient: 'Айбек',
-  ticketTimeLabel: 'Уақыт',
-  ticketTime: 'Бүгін, 14:30',
-  ticketServiceLabel: 'Қызмет',
-  ticketService: 'Детейлинг қызметі',
-  ticketStatus: 'Жазылу ашық',
-  ticketNumberLabel: 'Нөмірі',
+    'Renvio клиенттерді тәулік бойы қабылдайды, кесте жинайды және еске салады — бір жүйеде, қоңыраулар мен кестелерсіз.',
+  ticket: {
+    title: 'Жұмыс тапсырмасы',
+    numberLabel: 'Нөмірі',
+    number: 'RNV-0427',
+    status: 'Жазылу ашық',
+    rows: [
+      { label: 'Тапсырыс беруші', value: 'Айбек' },
+      { label: 'Уақыт', value: 'Бүгін, 14:30' },
+      { label: 'Қызмет', value: 'Детейлинг қызметі' },
+    ],
+  },
   tryDemo: 'Демоны сынап көру',
-  connect: 'Renvio-ны қосу',
+  connect: 'Студияны қосу',
   demoBook: 'Демоға жазылу',
   demoMore: 'Мүмкіндіктер туралы толығырақ',
   finalCtaTitle: 'Жазылу мен кестеде тәртіп орнатуға дайынсыз ба?',

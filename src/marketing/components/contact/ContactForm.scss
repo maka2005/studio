@@ -33,14 +33,14 @@
       padding: 12px 14px;
       color: $color-text;
       background: $color-bg;
-      border: 1px solid #cbd5e1;
+      border: 1px solid $color-border;
       border-radius: 10px;
       font-size: 16px;
 
       &:focus {
         outline: none;
         border-color: $color-primary;
-        box-shadow: 0 0 0 3px rgba(31, 79, 216, 0.15);
+        box-shadow: 0 0 0 3px rgba($color-primary, 0.15);
       }
     }
 

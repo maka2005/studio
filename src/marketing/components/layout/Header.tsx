@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import { useLocale } from '../../../lib/locale';
 import { Button } from '../ui/Button';
+import { BRAND_MARK_COLOR } from '../../config/site';
 import { Logo } from '../../../components/BrandMark';
 import './Header.scss';
 
@@ -21,7 +22,7 @@ export function Header() {
     <header className="header">
       <div className="container header__inner">
         <Link to="/" className="header__logo" aria-label={`Renvio — ${t.home}`} onClick={closeMenu}>
-          <Logo height={18} markColor="#c2410c" />
+          <Logo height={18} markColor={BRAND_MARK_COLOR} />
         </Link>
 
         <nav

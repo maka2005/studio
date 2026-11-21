@@ -1,9 +1,26 @@
 @use '../../styles/variables' as *;
 
+/* Общая асимметрия секций: 5/7 вместо набора одинаковых карточек. */
+.home-split {
+  display: grid;
+  grid-template-columns: 5fr 7fr;
+  align-items: start;
+  gap: 64px;
+
+  .section-header {
+    margin-bottom: 0;
+  }
+
+  @media (max-width: 1023px) {
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
+}
+
 /* ---------- Полоса фактов ---------- */
 .trust {
-  background: $color-dark;
-  color: #fff;
+  background: $color-accent;
+  color: $color-paper;
 
   .trust__list {
     display: grid;
@@ -18,15 +35,16 @@
     flex-direction: column;
     gap: 2px;
     padding-left: 16px;
-    border-left: 2px solid rgba(255, 255, 255, 0.18);
+    border-left: 1px solid rgba($color-paper, 0.3);
 
     b {
       font-size: 24px;
+      font-weight: 600;
       line-height: 1.2;
     }
 
     span {
-      color: #94a3b8;
+      color: $color-paper-muted;
       font-size: 14px;
     }
   }
@@ -52,28 +70,25 @@
 
 /* ---------- Для кого ---------- */
 .audience {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 20px;
+  border-top: 1px solid $color-border;
 
   &__card {
-    display: flex;
-    flex-direction: column;
-    padding: 28px 24px;
-    background: #fff;
-    border: 1px solid $color-border;
-    border-radius: $radius;
-    box-shadow: $shadow;
-    transition: transform 0.2s, border-color 0.2s;
+    display: grid;
+    grid-template-columns: 48px 1fr;
+    column-gap: 20px;
+    padding: 26px 0;
+    border-bottom: 1px solid $color-border;
 
-    &:hover {
-      border-color: rgba(31, 79, 216, 0.4);
-      transform: translateY(-3px);
+    > h3,
+    > p,
+    > ul,
+    > .audience__link {
+      grid-column: 2;
     }
 
     h3 {
-      margin: 20px 0 10px;
-      font-size: 20px;
+      margin-bottom: 6px;
+      font-size: 18px;
     }
 
     p {
@@ -83,41 +98,42 @@
     }
 
     ul {
-      flex: 1;
-      margin: 18px 0 24px;
-      padding-top: 18px;
-      border-top: 1px solid $color-border;
-      display: grid;
-      align-content: start;
-      gap: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 20px;
+      margin-top: 14px;
     }
 
     li {
       position: relative;
-      padding-left: 22px;
+      padding-left: 14px;
+      color: $color-text-muted;
       font-size: 14px;
 
       &::before {
-        content: '✓';
+        content: '—';
         position: absolute;
         left: 0;
-        color: $color-accent;
-        font-weight: 700;
+        color: $color-border;
       }
     }
   }
 
   &__icon {
+    grid-row: 1 / span 4;
+    align-self: start;
     display: grid;
     place-items: center;
-    width: 52px;
-    height: 52px;
-    font-size: 26px;
-    background: linear-gradient(135deg, #e8eefc, #d5f3f2);
-    border-radius: 14px;
+    width: 40px;
+    height: 40px;
+    font-size: 20px;
+    border: 1px solid $color-border;
+    border-radius: 2px;
   }
 
   &__link {
+    justify-self: start;
+    margin-top: 14px;
     font-size: 14px;
     font-weight: 600;
     text-decoration: none;
@@ -127,39 +143,30 @@
     }
   }
 
-  @media (max-width: 1023px) {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
   @include mobile {
-    grid-template-columns: 1fr;
+    &__card {
+      grid-template-columns: 40px 1fr;
+      column-gap: 14px;
+    }
   }
 }
 
 /* ---------- Возможности ---------- */
 .highlights {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0 32px;
 
   &__item {
-    padding: 26px;
-    background: #fff;
-    border: 1px solid $color-border;
-    border-radius: $radius;
-    transition: box-shadow 0.2s, transform 0.2s;
-
-    &:hover {
-      box-shadow: $shadow;
-      transform: translateY(-2px);
-    }
+    padding: 22px 0;
+    border-top: 1px solid $color-border;
 
     h3 {
-      margin: 14px 0 8px;
-      font-size: 18px;
+      font-size: 17px;
     }
 
     p {
+      margin-top: 6px;
       color: $color-text-muted;
       font-size: 15px;
     }
@@ -168,20 +175,17 @@
   &__icon {
     display: grid;
     place-items: center;
-    width: 44px;
-    height: 44px;
-    font-size: 22px;
-    background: #eef3ff;
-    border-radius: 12px;
+    width: 34px;
+    height: 34px;
+    margin-bottom: 12px;
+    font-size: 18px;
+    border: 1px solid $color-border;
+    border-radius: 2px;
   }
 
   &__more {
-    margin-top: 44px;
-    text-align: center;
-  }
-
-  @media (min-width: 768px) and (max-width: 1023px) {
-    grid-template-columns: repeat(2, 1fr);
+    grid-column: 1 / -1;
+    margin-top: 32px;
   }
 
   @include mobile {
@@ -191,20 +195,15 @@
 
 /* ---------- Было / стало ---------- */
 .compare {
-  max-width: 980px;
-  margin: 0 auto;
-  overflow: hidden;
-  border: 1px solid $color-border;
-  border-radius: $radius;
-  box-shadow: $shadow;
+  border-top: 1px solid $color-border;
 
   &__head,
   &__row {
     display: grid;
     grid-template-columns: 0.8fr 1.1fr 1.1fr;
     gap: 16px;
-    align-items: center;
-    padding: 16px 24px;
+    align-items: start;
+    padding: 16px 0;
   }
 
   &__head {
@@ -213,7 +212,7 @@
     font-weight: 600;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    background: $color-bg-alt;
+    border-bottom: 1px solid $color-border;
 
     .is-after {
       color: $color-primary;
@@ -221,30 +220,30 @@
   }
 
   &__row {
-    border-top: 1px solid $color-border;
     font-size: 15px;
+    border-bottom: 1px solid $color-border;
   }
 
   &__before {
     color: $color-text-muted;
-  }
 
-  &__before::before {
-    content: '✕';
-    margin-right: 10px;
-    color: #ef4444;
-    font-weight: 700;
+    &::before {
+      content: '✕';
+      margin-right: 8px;
+      color: $color-text-muted;
+      font-weight: 600;
+    }
   }
 
   &__after {
-    font-weight: 500;
-  }
+    font-weight: 600;
 
-  &__after::before {
-    content: '✓';
-    margin-right: 10px;
-    color: $color-accent;
-    font-weight: 700;
+    &::before {
+      content: '✓';
+      margin-right: 8px;
+      color: $color-accent;
+      font-weight: 600;
+    }
   }
 
   @include mobile {
@@ -255,7 +254,7 @@
     &__row {
       grid-template-columns: 1fr;
       gap: 6px;
-      padding: 18px 20px;
+      padding: 18px 0;
     }
   }
 }
@@ -263,19 +262,9 @@
 /* ---------- Калькулятор ---------- */
 .roi {
   display: grid;
-  grid-template-columns: 1.15fr 1fr;
-  gap: 32px;
-  max-width: 1040px;
-  margin: 0 auto;
-
-  &__form,
-  &__result {
-    padding: 32px;
-    background: #fff;
-    border: 1px solid $color-border;
-    border-radius: $radius;
-    box-shadow: $shadow;
-  }
+  grid-template-columns: 5fr 7fr;
+  gap: 48px;
+  align-items: start;
 
   &__form {
     display: grid;
@@ -313,7 +302,7 @@
       padding: 0 10px;
       text-align: right;
       border: 1px solid $color-border;
-      border-radius: 8px;
+      border-radius: 2px;
     }
 
     em {
@@ -325,20 +314,21 @@
   }
 
   &__result {
-    background: linear-gradient(160deg, #0f172a, #1b2c63);
-    border: 0;
-    color: #fff;
+    padding: 32px;
+    color: $color-paper;
+    background: $color-accent;
   }
 
   &__label {
-    color: #94a3b8;
+    color: $color-paper-muted;
     font-size: 14px;
   }
 
   &__big {
     margin: 4px 0 20px;
+    font-family: $font-display;
     font-size: 40px;
-    font-weight: 800;
+    font-weight: 700;
     letter-spacing: -0.02em;
   }
 
@@ -346,7 +336,7 @@
     display: grid;
     gap: 10px;
     padding-bottom: 18px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+    border-bottom: 1px solid rgba($color-paper, 0.25);
 
     li {
       display: flex;
@@ -355,34 +345,36 @@
       font-size: 14px;
 
       span {
-        color: #cbd5e1;
+        color: $color-paper-muted;
       }
     }
   }
 
   &__verdict {
     margin: 18px 0;
-    color: #cbd5e1;
+    color: $color-paper-muted;
     font-size: 15px;
 
     &.is-plus {
-      color: #5eead4;
+      color: $color-paper;
       font-weight: 600;
     }
   }
 
   &__cta.btn {
     width: 100%;
-    color: #fff;
+    color: $color-text;
+    background: $color-paper;
 
     &:hover {
-      color: #fff;
+      color: $color-text;
+      background: $color-inverse;
     }
   }
 
   &__note {
     margin-top: 14px;
-    color: #94a3b8;
+    color: $color-paper-muted;
     font-size: 12px;
   }
 
@@ -391,7 +383,8 @@
   }
 
   @include mobile {
-    &__form,
+    gap: 32px;
+
     &__result {
       padding: 22px;
     }
@@ -403,17 +396,5 @@
     &__control {
       flex-wrap: wrap;
     }
-  }
-}
-
-/* ---------- Появление при прокрутке ---------- */
-.reveal {
-  opacity: 0;
-  transform: translateY(18px);
-  transition: opacity 0.6s ease, transform 0.6s ease;
-
-  &.is-visible {
-    opacity: 1;
-    transform: none;
   }
 }

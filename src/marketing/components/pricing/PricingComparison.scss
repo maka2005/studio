@@ -23,7 +23,7 @@
 
     thead th {
       background: $color-bg-alt;
-      font-weight: 700;
+      font-weight: 600;
     }
 
     th[scope='row'] {
@@ -39,11 +39,11 @@
 
   &__yes {
     color: $color-accent;
-    font-weight: 700;
+    font-weight: 600;
   }
 
   &__no {
-    color: #94a3b8;
+    color: $color-text-muted;
   }
 
   @include mobile {

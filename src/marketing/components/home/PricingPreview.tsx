@@ -14,7 +14,7 @@ export function PricingPreview() {
       />
       <PricingCards showFeatures={false} />
       <p className="pricing-preview__more">
-        <Link to="/pricing">Сравнить тарифы подробно →</Link>
+        <Link to="/pricing">Сравнить тарифы подробно</Link>
       </p>
     </Section>
   );

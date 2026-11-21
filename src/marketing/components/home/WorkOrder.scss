@@ -5,7 +5,7 @@
   width: min(100%, 470px);
   margin-left: auto;
   padding: 26px 30px 30px;
-  color: #eef0ec;
+  color: $color-paper;
   background: $color-accent;
   border: 1px solid $color-text;
   box-shadow: 10px 10px 0 rgba(28, 37, 48, 0.14);
@@ -16,7 +16,7 @@
     justify-content: space-between;
     gap: 16px;
     padding-bottom: 18px;
-    border-bottom: 1px solid rgba(238, 240, 236, 0.25);
+    border-bottom: 1px solid rgba($color-paper, 0.25);
   }
 
   &__title {
@@ -27,7 +27,7 @@
   }
 
   &__number {
-    color: #b3c4c0;
+    color: $color-paper-muted;
     font-size: 12px;
     white-space: nowrap;
   }
@@ -41,11 +41,11 @@
       gap: 12px;
       align-items: baseline;
       padding: 10px 0;
-      border-bottom: 1px solid rgba(238, 240, 236, 0.12);
+      border-bottom: 1px solid rgba($color-paper, 0.12);
     }
 
     dt {
-      color: #b3c4c0;
+      color: $color-paper-muted;
       font-size: 12px;
       letter-spacing: 0.02em;
     }
@@ -60,7 +60,7 @@
   &__tear {
     height: 1px;
     margin: 22px 0 0;
-    border-top: 2px dashed rgba(238, 240, 236, 0.35);
+    border-top: 2px dashed rgba($color-paper, 0.35);
   }
 
   &__barcode {
@@ -68,9 +68,9 @@
     margin-top: 16px;
     background: repeating-linear-gradient(
       90deg,
-      #eef0ec 0 2px,
+      $color-paper 0 2px,
       transparent 2px 5px,
-      #eef0ec 5px 6px,
+      $color-paper 5px 6px,
       transparent 6px 11px
     );
     opacity: 0.75;
@@ -81,7 +81,7 @@
     right: -18px;
     bottom: 62px;
     padding: 7px 12px;
-    color: #ff8a65;
+    color: $color-signal-light;
     background: $color-accent;
     border: 2px solid $color-signal;
     font-family: $font-display;

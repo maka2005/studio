@@ -1,14 +1,14 @@
 @use '../../styles/variables' as *;
 
 .hero {
-  padding: 76px 0 92px;
+  padding: 84px 0 96px;
   background: $color-bg;
 
   &__inner {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    align-items: center;
-    gap: 64px;
+    grid-template-columns: 7fr 5fr;
+    align-items: start;
+    gap: 56px;
   }
 
   &__eyebrow {
@@ -18,7 +18,7 @@
     color: $color-text-muted;
     font-size: 13px;
     line-height: 1.5;
-    border-top: 2px solid $color-signal;
+    border-top: 1px solid $color-border;
   }
 
   &__title {
@@ -32,7 +32,7 @@
   }
 
   &__lead {
-    max-width: 530px;
+    max-width: 520px;
     margin-top: 24px;
     color: $color-text-muted;
     font-size: 17px;
@@ -40,35 +40,21 @@
   }
 
   &__actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
     margin-top: 32px;
   }
 
-  &__chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 14px 22px;
-    margin-top: 30px;
-
-    li {
-      padding-left: 12px;
-      color: $color-text-muted;
-      font-size: 13px;
-      line-height: 1.4;
-      border-left: 2px solid $color-border;
-    }
-
-    li::before {
-      display: none;
-    }
+  &__visual {
+    padding-top: 8px;
   }
 
   @media (max-width: 1023px) {
     &__inner {
       grid-template-columns: 1fr;
       gap: 44px;
+    }
+
+    &__visual {
+      padding-top: 0;
     }
   }
 
@@ -84,7 +70,7 @@
     }
 
     &__actions .btn {
-      flex: 1 1 100%;
+      width: 100%;
     }
   }
 }

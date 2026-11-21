@@ -3,7 +3,7 @@
 .final-cta {
   padding: 96px 0;
   background: $color-dark;
-  color: #fff;
+  color: $color-inverse;
   text-align: center;
 
   &__title {
@@ -13,7 +13,7 @@
   &__text {
     max-width: 560px;
     margin: 16px auto 0;
-    color: #cbd5e1;
+    color: $color-paper-muted;
     font-size: 17px;
   }
 
@@ -30,12 +30,12 @@
       padding: 0 18px;
       color: $color-text;
       font-size: 16px;
-      background: #fff;
+      background: $color-paper;
       border: 2px solid transparent;
-      border-radius: 10px;
+      border-radius: 2px;
 
       &[aria-invalid='true'] {
-        border-color: #f87171;
+        border-color: $color-signal;
       }
     }
 
@@ -50,7 +50,7 @@
 
   &__error {
     margin-top: 10px;
-    color: #fca5a5;
+    color: $color-signal-light;
     font-size: 14px;
   }
 

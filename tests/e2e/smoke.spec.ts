@@ -13,6 +13,10 @@ test('маркетинговая главная отвечает и не рон�
   expect(response?.ok()).toBeTruthy();
   await expect(page.locator('body')).toBeVisible();
   await expect(page.locator('body')).not.toHaveText('', { timeout: 10_000 });
+  await expect(page.locator('.hero .btn')).toHaveCount(1);
+  await expect(
+    page.locator('.hero').getByRole('link', { name: 'Подключить студию' }),
+  ).toBeVisible();
   expect(errors.filter((e) => !/favicon/i.test(e))).toEqual([]);
 });
 
@@ -84,4 +88,33 @@ test('Android-иконки и webmanifest отдаются с кэшем', async
       expect.objectContaining({ sizes: '512x512', type: 'image/png' }),
     ]),
   );
+});
+
+test('казахские глифы Unbounded загружаются, а не подменяются системным шрифтом', async ({
+  page,
+}) => {
+  await page.goto('/?lang=kk');
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+    await document.fonts.load('700 46px Unbounded', 'ҚӨҰҮІӘ');
+  });
+
+  const glyphs = await page.evaluate(() => {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Canvas 2D недоступен');
+    const text = 'ҚӨҰҮІӘ';
+    ctx.font = '700 46px Unbounded';
+    const displayWidth = ctx.measureText(text).width;
+    ctx.font = '700 46px sans-serif';
+    const fallbackWidth = ctx.measureText(text).width;
+    return {
+      checked: document.fonts.check('700 46px Unbounded', text),
+      displayWidth,
+      fallbackWidth,
+    };
+  });
+
+  expect(glyphs.checked).toBeTruthy();
+  expect(glyphs.displayWidth).toBeGreaterThan(glyphs.fallbackWidth + 2);
 });

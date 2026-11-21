@@ -64,7 +64,11 @@ describe('определение локали', () => {
 describe('словарь', () => {
   it('содержит ключевые строки на обоих языках', () => {
     expect(dictionaries.ru.home).toBe('Главная');
-    expect(dictionaries.ru.book).toBe('Записаться');
+    expect(dictionaries.ru.book).toBe('Записать машину');
+    expect(dictionaries.ru.connect).toBe('Подключить студию');
+    expect(dictionaries.ru.ticket.title).toBe('Наряд-заказ');
+    expect(dictionaries.ru.ticket.number).toBe('RNV-0427');
+    expect(dictionaries.ru.ticket.rows).toHaveLength(3);
     expect(dictionaries.ru.chooseDateTime).toBe('Выбрать дату и время');
     expect(dictionaries.ru.services).toBe('Услуги');
 
@@ -72,7 +76,11 @@ describe('словарь', () => {
     expect(dictionaries.kk.features).toBe('Мүмкіндіктер');
     expect(dictionaries.kk.pricing).toBe('Бағалар');
     expect(dictionaries.kk.contacts).toBe('Байланыс');
-    expect(dictionaries.kk.book).toBe('Жазылу');
+    expect(dictionaries.kk.book).toBe('Көлігін жазылу');
+    expect(dictionaries.kk.connect).toBe('Студияны қосу');
+    expect(dictionaries.kk.ticket.title).toBe('Жұмыс тапсырмасы');
+    expect(dictionaries.kk.ticket.number).toBe('RNV-0427');
+    expect(dictionaries.kk.ticket.rows).toHaveLength(3);
     expect(dictionaries.kk.chooseDateTime).toBe('Күн мен уақытты таңдаңыз');
     expect(dictionaries.kk.services).toBe('Қызметтер');
     expect(dictionaries.kk.details).toBe('Толығырақ');

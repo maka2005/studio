@@ -10,7 +10,7 @@
   transition: border-color 0.2s, transform 0.2s;
 
   &:hover {
-    border-color: rgba(31, 79, 216, 0.35);
+    border-color: $color-primary;
     transform: translateY(-2px);
   }
 

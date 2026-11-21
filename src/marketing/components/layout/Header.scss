@@ -4,7 +4,7 @@
   position: sticky;
   top: 0;
   z-index: 50;
-  background: rgba(231, 229, 224, 0.94);
+  background: rgba($color-bg, 0.94);
   backdrop-filter: blur(8px);
   border-bottom: 1px solid $color-border;
 
@@ -68,7 +68,7 @@
     cursor: pointer;
 
     &.is-active {
-      color: #fff;
+      color: $color-inverse;
       background: $color-primary;
     }
   }
@@ -109,7 +109,7 @@
       align-items: stretch;
       gap: 0;
       padding: 8px 24px 24px;
-      background: #fff;
+      background: $color-bg;
       border-bottom: 1px solid $color-border;
       transform: translateY(-120%);
       visibility: hidden;

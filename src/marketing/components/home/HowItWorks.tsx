@@ -1,24 +1,31 @@
 import { steps } from '../../data/content';
-import { Section, SectionHeader } from '../ui/Section';
+import { Section } from '../ui/Section';
 import './HowItWorks.scss';
 
 export function HowItWorks() {
   return (
     <Section id="how" tone="muted">
-      <SectionHeader
-        eyebrow="Как это работает"
-        title="От заявки до первой онлайн-записи"
-        description="Подключение не требует сложной подготовки: мы проходим путь вместе с вами."
-      />
-      <ol className="steps grid-4">
-        {steps.map((step, index) => (
-          <li key={step.title} className="step">
-            <span className="step__number">{index + 1}</span>
-            <h3 className="step__title">{step.title}</h3>
-            <p className="step__text">{step.text}</p>
-          </li>
-        ))}
-      </ol>
+      <div className="how">
+        <div className="how__intro">
+          <p className="how__eyebrow">Как это работает</p>
+          <h2 className="how__title">От заявки до первой онлайн-записи</h2>
+          <p className="how__text">
+            Подключение не требует сложной подготовки: мы проходим путь вместе с вами.
+          </p>
+        </div>
+
+        <ol className="how__steps">
+          {steps.map((step, index) => (
+            <li key={step.title} className="how__step">
+              <span className="how__number">{String(index + 1).padStart(2, '0')}</span>
+              <div>
+                <h3 className="how__step-title">{step.title}</h3>
+                <p className="how__step-text">{step.text}</p>
+              </div>
+            </li>
+          ))}
+        </ol>
+      </div>
     </Section>
   );
 }

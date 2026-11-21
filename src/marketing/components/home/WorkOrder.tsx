@@ -8,28 +8,24 @@ export function WorkOrder() {
   return (
     <div className="work-order">
       <div className="work-order__head">
-        <span className="work-order__title">{t.ticketTitle}</span>
-        <span className="work-order__number">{t.ticketNumberLabel} RNV-0427</span>
+        <span className="work-order__title">{t.ticket.title}</span>
+        <span className="work-order__number">
+          {t.ticket.numberLabel} {t.ticket.number}
+        </span>
       </div>
 
       <dl className="work-order__rows">
-        <div>
-          <dt>{t.ticketClientLabel}</dt>
-          <dd>{t.ticketClient}</dd>
-        </div>
-        <div>
-          <dt>{t.ticketTimeLabel}</dt>
-          <dd>{t.ticketTime}</dd>
-        </div>
-        <div>
-          <dt>{t.ticketServiceLabel}</dt>
-          <dd>{t.ticketService}</dd>
-        </div>
+        {t.ticket.rows.map((row) => (
+          <div key={row.label}>
+            <dt>{row.label}</dt>
+            <dd>{row.value}</dd>
+          </div>
+        ))}
       </dl>
 
       <div className="work-order__tear" aria-hidden="true" />
       <div className="work-order__barcode" aria-hidden="true" />
-      <span className="work-order__stamp">{t.ticketStatus}</span>
+      <span className="work-order__stamp">{t.ticket.status}</span>
     </div>
   );
 }

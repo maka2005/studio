@@ -1,3 +1,6 @@
+/** Цвет знака в логотипе шапки: один источник для всех маркетинговых страниц. */
+export const BRAND_MARK_COLOR = '#C2410C';
+
 export const SITE = {
   name: 'Renvio',
   url: 'https://servio.kz',

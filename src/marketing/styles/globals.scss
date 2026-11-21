@@ -84,7 +84,7 @@ body:has(.marketing-site) {
   padding: 8px 12px;
   border-radius: 8px;
   background: $color-primary;
-  color: #fff;
+  color: $color-inverse;
 
   &:focus {
     top: 16px;
