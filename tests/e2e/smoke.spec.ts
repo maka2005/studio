@@ -117,4 +117,5 @@ test('казахские глифы Unbounded загружаются, а не п
 
   expect(glyphs.checked).toBeTruthy();
   expect(glyphs.displayWidth).toBeGreaterThan(glyphs.fallbackWidth + 2);
+  await expect(page.locator('.final-cta__text')).not.toContainText('күн күн');
 });

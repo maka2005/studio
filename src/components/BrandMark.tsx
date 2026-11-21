@@ -1,4 +1,6 @@
-export function BrandMark({ size = 24, color = '#176BFF', className }: { size?: number; color?: string; className?: string }) {
+const DEFAULT_MARK_COLOR = '#176BFF';
+
+export function BrandMark({ size = 24, color = DEFAULT_MARK_COLOR, className }: { size?: number; color?: string; className?: string }) {
   return (
     <svg
       className={className}
@@ -30,7 +32,7 @@ export function Wordmark({ height = 14, className }: { height?: number; classNam
 }
 
 /** Логотип: синяя «R» + ENVIO. `height` — высота заглавных букв в px. */
-export function Logo({ height = 18, className, markColor = '#176BFF' }: { height?: number; className?: string; markColor?: string }) {
+export function Logo({ height = 18, className, markColor = DEFAULT_MARK_COLOR }: { height?: number; className?: string; markColor?: string }) {
   return (
     <svg
       className={className}

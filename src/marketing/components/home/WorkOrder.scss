@@ -8,7 +8,7 @@
   color: $color-paper;
   background: $color-accent;
   border: 1px solid $color-text;
-  box-shadow: 10px 10px 0 rgba(28, 37, 48, 0.14);
+  box-shadow: 10px 10px 0 rgba($color-text, 0.14);
 
   &__head {
     display: flex;

@@ -83,11 +83,11 @@
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: #94a3b8;
+    background: $color-status-idle;
 
-    &.is-operational { background: #22c55e; }
-    &.is-degraded { background: #f59e0b; }
-    &.is-outage { background: #ef4444; }
+    &.is-operational { background: $color-status-ok; }
+    &.is-degraded { background: $color-status-warn; }
+    &.is-outage { background: $color-status-error; }
   }
 
   @include mobile {

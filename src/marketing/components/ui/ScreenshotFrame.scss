@@ -16,14 +16,14 @@
     gap: 6px;
     height: 32px;
     padding: 0 12px;
-    background: #f1f5f9;
+    background: $color-bg-alt;
     border-bottom: 1px solid $color-border;
 
     span {
       width: 9px;
       height: 9px;
       border-radius: 50%;
-      background: #cbd5e1;
+      background: $color-border;
     }
   }
 
@@ -47,13 +47,13 @@
     gap: 10px;
     width: 22%;
     padding: 14px 12px;
-    background: #f8fafc;
+    background: $color-bg;
     border-right: 1px solid $color-border;
 
     i {
       height: 10px;
-      border-radius: 5px;
-      background: #dbe3ef;
+      border-radius: $radius;
+      background: $color-border;
 
       &:first-child {
         background: $color-primary;
@@ -78,9 +78,9 @@
 
     b {
       height: 44px;
-      border-radius: 10px;
-      background: #eef3ff;
-      border: 1px solid #dbe6ff;
+      border-radius: $radius;
+      background: $color-bg-alt;
+      border: 1px solid $color-border;
     }
   }
 
@@ -94,8 +94,8 @@
       flex: 1;
       min-height: 14px;
       max-height: 34px;
-      border-radius: 8px;
-      background: #f1f5f9;
+      border-radius: $radius;
+      background: $color-bg-alt;
       border-left: 4px solid $color-accent;
       text-decoration: none;
 

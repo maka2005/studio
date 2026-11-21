@@ -26,7 +26,7 @@ export function FinalCta() {
   const trial = trialDays
     ? t.finalCtaTrialDays.replace(
         '{days}',
-        locale === 'kk' ? `${trialDays} күн` : daysText(trialDays),
+        locale === 'kk' ? String(trialDays) : daysText(trialDays),
       )
     : t.finalCtaTrialFree;
 
