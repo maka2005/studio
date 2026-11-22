@@ -1,4 +1,53 @@
 import { installCsrfFetchGuard } from './csrf';
+import { attributionPayload } from './attribution';
+
+export type FunnelEventName =
+  | 'demo_start'
+  | 'lead_submit'
+  | 'connect'
+  | 'payment_request'
+  | 'payment_confirm'
+  | 'first_booking';
+
+const SESSION_KEY = 'studio-funnel-session';
+const lastSent = new Map<string, number>();
+
+export function getFunnelSessionId(): string {
+  try {
+    let id = sessionStorage.getItem(SESSION_KEY);
+    if (!id) {
+      id = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+      sessionStorage.setItem(SESSION_KEY, id);
+    }
+    return id;
+  } catch {
+    return 'unknown';
+  }
+}
+
+/**
+ * Событие воронки пишется в наш бэкенд — без зависимости от GA/блокировщиков и cookie.
+ * GA/Яндекс намеренно не вызываются: политика сайта обещает не использовать
+ * рекламные и аналитические cookie, а ключи аналитики сейчас не заданы.
+ */
+export function trackEvent(name: FunnelEventName, props: Record<string, string | number | boolean> = {}) {
+  try {
+    const key = `${name}:${Object.values(props).join(':')}`;
+    const now = Date.now();
+    if (now - (lastSent.get(key) ?? 0) < 3000) return;
+    lastSent.set(key, now);
+    void fetch('/api/platform?action=event', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, props, sessionId: getFunnelSessionId(), attribution: attributionPayload() }),
+    }).catch(() => { /* аналитика не должна ломать форму */ });
+  } catch {
+    // Аналитика не должна ломать пользовательский сценарий.
+  }
+}
 
 declare global {
   interface Window {

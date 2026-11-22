@@ -260,6 +260,16 @@ async function handler(req, res) {
       return send(res, r.status, result);
     }
 
+    if (req.method === 'POST' && action === 'event') {
+      const r = await fetch(`${cfg.url}/functions/v1/platform-admin`, {
+        method: 'POST',
+        headers: publicHeaders(cfg, req),
+        body: JSON.stringify({ action: 'public_event', event: body }),
+      });
+      const result = await r.json().catch(() => ({}));
+      return send(res, r.status, result);
+    }
+
     if (req.method === 'GET' && action === 'plans') {
       const r = await fetch(`${cfg.url}/functions/v1/platform-admin`, {
         method: 'POST',

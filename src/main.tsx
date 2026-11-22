@@ -4,6 +4,7 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { initObservability } from './lib/observability';
 import { initLocale } from './lib/locale';
+import { captureAttribution } from './lib/attribution';
 
 // A tab can outlive a Vercel deployment and keep importing chunks from the
 // previous build. Reload once so Vite picks up the current HTML manifest.
@@ -57,6 +58,7 @@ window.addEventListener('error', (event) => {
 
 initObservability();
 initLocale();
+captureAttribution();
 
 // Push-уведомления: service worker нужен только на защищённом происхождении.
 // Регистрация после load и без блокировки рендера маркетинговой части.

@@ -27,6 +27,18 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const str = (v: unknown, max = 200) => typeof v === 'string' ? v.trim().slice(0, max) : '';
 const obj = (v: unknown) => (v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {});
 
+const FUNNEL_EVENTS = new Set(['demo_start','lead_submit','connect','payment_request','payment_confirm','first_booking']);
+const attributionOf = (v: unknown) => {
+  const a = obj(v);
+  return {
+    source: str(a.source, 40) || 'direct',
+    medium: str(a.medium, 80),
+    campaign: str(a.campaign, 120),
+    content: str(a.content, 120),
+    term: str(a.term, 120),
+  };
+};
+
 const CYR: Record<string, string> = { а:'a',б:'b',в:'v',г:'g',д:'d',е:'e',ё:'e',ж:'zh',з:'z',и:'i',й:'y',к:'k',л:'l',м:'m',н:'n',о:'o',п:'p',р:'r',с:'s',т:'t',у:'u',ф:'f',х:'h',ц:'ts',ч:'ch',ш:'sh',щ:'sch',ъ:'',ы:'y',ь:'',э:'e',ю:'yu',я:'ya',қ:'k',ғ:'g',ң:'n',ө:'o',ү:'u',ұ:'u',һ:'h',ә:'a',і:'i' };
 const slugBase = (name: string) => {
   const s = [...name.toLowerCase()].map((c) => CYR[c] ?? c).join('').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 28).replace(/-+$/g, '');
@@ -149,6 +161,34 @@ Deno.serve(withEdgeObservability('platform-admin', async (req, { requestId }) =>
   const action = str(body.action, 40);
   if (!action) return json({ error: 'bad_request' }, 400);
 
+  // Публичные события воронки (только клиентские шаги: демо и отправка формы).
+  // Платежи и первую запись пишут SQL-триггеры, их с клиента принимать нельзя.
+  if (action === 'public_event') {
+    if (PROXY_SECRET && !viaProxy(req)) return json({ error: 'forbidden' }, 403);
+    const ev = obj(body.event), name = str(ev.name, 40);
+    if (!FUNNEL_EVENTS.has(name) || ['payment_request','payment_confirm','first_booking'].includes(name))
+      return json({ error: 'bad_request' }, 400);
+    const admin = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } });
+    const ipKey = await sha256Hex(clientIp(req));
+    const limit = await admin.rpc('consume_platform_rate', { p_scope: 'platform_lead', p_key: `event:${ipKey}`, p_limit: 60, p_window: 3600 });
+    if (limit.error) return json({ error: 'temporarily_unavailable' }, 503);
+    if (limit.data !== true) return json({ ok: true });
+    const session = str(ev.sessionId, 80) || 'unknown';
+    const props: Record<string, string | number | boolean> = {};
+    for (const [k, v] of Object.entries(obj(ev.props)).slice(0, 10)) {
+      if (!/^[a-z_]{1,30}$/.test(k)) continue;
+      if (typeof v === 'string') props[k] = str(v, 120);
+      else if (typeof v === 'number' || typeof v === 'boolean') props[k] = v;
+    }
+    const idem = `evt:${session}:${name}:${(await sha256Hex(JSON.stringify(props))).slice(0, 16)}:${Math.floor(Date.now() / 60000)}`;
+    const { error } = await admin.rpc('platform_track_event', {
+      p_name: name, p_session: session, p_lead: null, p_tenant: null,
+      p_attribution: attributionOf(ev.attribution), p_props: props, p_idempotency: idem,
+    });
+    if (error) { console.error('public funnel event failed:', redact(error.message)); return json({ error: 'temporarily_unavailable' }, 503); }
+    return json({ ok: true });
+  }
+
   if (action === 'public_lead_submit' || action === 'public_demo_start' || action === 'public_connect_start') {
     const demo = action === 'public_demo_start';
     const connect = action === 'public_connect_start';
@@ -170,11 +210,23 @@ Deno.serve(withEdgeObservability('platform-admin', async (req, { requestId }) =>
     const requestType = demo ? 'demo' : connect ? 'connect' : (lead.requestType === 'demo' ? 'demo' : 'connect');
     if (businessName.length < 2 || ownerName.length < 2 || !EMAIL.test(ownerEmail) || phone.replace(/\D/g, '').length < 10 || businessType.length < 2) return json({ error: 'bad_request' }, 400);
     if (lead.consent !== true) return json({ error: 'consent_required' }, 400);
-    const row = { business_name: businessName, owner_name: ownerName, owner_email: ownerEmail, phone, business_type: businessType, request_type: requestType, plan, comment, consent_at: new Date().toISOString(), consent_version: PRIVACY_VERSION };
+    const attr = attributionOf(lead.attribution);
+    const session = str(lead.sessionId, 80);
+    const row = { business_name: businessName, owner_name: ownerName, owner_email: ownerEmail, phone, business_type: businessType, request_type: requestType, plan, comment, consent_at: new Date().toISOString(), consent_version: PRIVACY_VERSION, attribution: attr, funnel_session_id: session };
+
+    const trackLead = async (id: string, tenant: string | null, eventName: 'lead_submit' | 'connect') => {
+      const { error } = await admin.rpc('platform_track_event', {
+        p_name: eventName, p_session: session, p_lead: id, p_tenant: tenant,
+        p_attribution: attr, p_props: { request_type: requestType, plan, mode: connect ? 'connect' : demo ? 'demo' : 'lead' },
+        p_idempotency: `${eventName}:${id}`,
+      });
+      if (error) console.error('funnel lead event failed:', redact(error.message));
+    };
 
     if (!instant) {
-      const { error } = await admin.from('platform_business_leads').insert(row);
+      const { data: inserted, error } = await admin.from('platform_business_leads').insert(row).select('id').maybeSingle();
       if (error) { console.error('public lead save failed:', redact(error.message)); return json({ error: 'temporarily_unavailable' }, 503); }
+      if (inserted?.id) await trackLead(String(inserted.id), null, 'lead_submit');
       return json({ ok: true, mode: 'lead' });
     }
 
@@ -263,9 +315,14 @@ Deno.serve(withEdgeObservability('platform-admin', async (req, { requestId }) =>
     const leadRow = connect && chosen
       ? { ...row, status: 'new', tenant_id: result.tenant_id, tenant_slug: result.slug,
           comment: `Самостоятельное подключение. Тариф ${chosen.name}, пробный период ${TRIAL_DAYS_CONNECT} дн. до ${trialEndsAt?.slice(0, 10)}. К оплате после пробного периода: ${fmtKzt(chosen.price_kzt)} за ${chosen.period_months} мес. Связаться для оплаты. ${comment}`.trim().slice(0, 2000) }
-      : { ...row, status: 'converted', tenant_id: result.tenant_id, tenant_slug: result.slug };
-    const { error: leadError } = await admin.from('platform_business_leads').insert(leadRow);
+      : { ...row, status: 'demo', tenant_id: result.tenant_id, tenant_slug: result.slug };
+    const { data: insertedLead, error: leadError } = await admin.from('platform_business_leads').insert(leadRow).select('id').maybeSingle();
     if (leadError) console.error('demo lead record failed:', leadError.message);
+    if (insertedLead?.id) {
+      await trackLead(String(insertedLead.id), result.tenant_id ?? null, 'lead_submit');
+      // Демо и так считается клиентским demo_start; connect — только реальное подключение сервиса.
+      if (connect) await trackLead(String(insertedLead.id), result.tenant_id ?? null, 'connect');
+    }
     await admin.rpc('platform_log', { p_actor: null, p_action: connect ? 'connect.self_signup' : 'demo.self_signup', p_tenant: result.tenant_id, p_payload: { slug: result.slug, plan: planCode, owner_email: ownerEmail } });
     return json(ACCEPTED);
   }
@@ -328,9 +385,9 @@ Deno.serve(withEdgeObservability('platform-admin', async (req, { requestId }) =>
   if (action === 'whoami') return json({ ok: true, email: user.email, role, aal: aalOf(token), mfa_required: mfaNeeded });
   if (mfaNeeded) return json({ error: 'mfa_required' }, 403);
 
-  const readActions = new Set(['whoami','admin_login_event','dashboard','tenants','tenant','tenant_events','subscriptions','plans','payments','audit','notifications','notification_delivery','notification_bounces','settings','platform_legal_get','admins','billing_documents']);
-  const financeActions = new Set(['whoami','admin_login_event','payments','payment_create','payment_confirm','payment_refund','payment_fail','subscriptions','dashboard','audit','notifications','notification_delivery','notification_bounces','tenants','tenant','tenant_events','plans','billing_documents','billing_document_save','platform_legal_get']);
-  const supportActions = new Set(['whoami','admin_login_event','tenants','tenant','tenant_events','tenant_support','tenant_note_add','tenant_case_create','tenant_case_update','support_tickets','support_ticket_detail','support_ticket_update','business_leads','business_lead_update','resend_invite','impersonation_start','impersonation_check','impersonation_end','impersonation_log','notifications','notification_delivery','notification_bounces']);
+  const readActions = new Set(['whoami','admin_login_event','dashboard','tenants','tenant','tenant_events','subscriptions','plans','payments','audit','notifications','notification_delivery','notification_bounces','settings','platform_legal_get','funnel_summary','funnel_events','admins','billing_documents']);
+  const financeActions = new Set(['whoami','admin_login_event','payments','payment_create','payment_confirm','payment_refund','payment_fail','subscriptions','dashboard','audit','notifications','notification_delivery','notification_bounces','tenants','tenant','tenant_events','plans','billing_documents','billing_document_save','platform_legal_get','funnel_summary','funnel_events']);
+  const supportActions = new Set(['whoami','admin_login_event','tenants','tenant','tenant_events','tenant_support','tenant_note_add','tenant_case_create','tenant_case_update','support_tickets','support_ticket_detail','support_ticket_update','business_leads','business_lead_update','funnel_summary','funnel_events','resend_invite','impersonation_start','impersonation_check','impersonation_end','impersonation_log','notifications','notification_delivery','notification_bounces']);
   const allowedByRole = role === 'owner' ? null : role === 'read_only' ? readActions : role === 'finance' ? financeActions : supportActions;
   if (!['owner','support','finance','read_only'].includes(role) || (allowedByRole && !allowedByRole.has(action)))
     return json({ error: 'forbidden' }, 403);
@@ -351,7 +408,7 @@ Deno.serve(withEdgeObservability('platform-admin', async (req, { requestId }) =>
       const status=str(body.status,20),limit=Math.max(1,Math.min(50,Number(body.limit)||25)),offset=Math.max(0,Number(body.offset)||0);
       const search=str(body.search,80).replace(/[,()\\]/g,' ').trim();
       let query=admin.from('platform_business_leads').select('*',{count:'exact'}).order('created_at',{ascending:false}).range(offset,offset+limit-1);
-      if(['new','contacted','converted','closed'].includes(status))query=query.eq('status',status);
+      if(['new','demo','talk','invoice','paid','active','churned','contacted','converted','closed'].includes(status))query=query.eq('status',status);
       if(search)query=query.or(`business_name.ilike.%${search}%,name.ilike.%${search}%,owner_name.ilike.%${search}%,owner_email.ilike.%${search}%,phone.ilike.%${search}%`);
       const {data,error,count}=await query;if(error)throw error;
       return json({data:{rows:data??[],count:count??0,limit,offset}});
@@ -359,7 +416,7 @@ Deno.serve(withEdgeObservability('platform-admin', async (req, { requestId }) =>
     if(action==='business_lead_update'){
       if(!['owner','support'].includes(role))return json({error:'forbidden'},403);
       const id=uuidOf(body.lead_id),status=str(body.status,20);
-      if(!id||!['new','contacted','converted','closed'].includes(status))return json({error:'bad_request'},400);
+      if(!id||!['new','demo','talk','invoice','paid','active','churned','contacted','converted','closed'].includes(status))return json({error:'bad_request'},400);
       const tenantId=uuidOf(body.tenant_id),tenantSlug=str(body.tenant_slug,40).toLowerCase();
       const patch:Record<string,unknown>={status,updated_at:new Date().toISOString(),updated_by:actor};
       if(tenantId){patch.tenant_id=tenantId;patch.tenant_slug=/^[a-z0-9-]{2,40}$/.test(tenantSlug)?tenantSlug:''}
@@ -643,6 +700,8 @@ Deno.serve(withEdgeObservability('platform-admin', async (req, { requestId }) =>
       case 'settings': rpc = { name: 'platform_get_settings', args: { p_actor: actor } }; break;
       case 'settings_set': rpc = { name: 'platform_set_setting', args: { p_actor: actor, p_key: str(body.key, 40), p_value: body.value ?? null } }; break;
       case 'platform_legal_get': rpc = { name: 'platform_get_legal', args: { p_actor: actor } }; break;
+      case 'funnel_summary': rpc = { name: 'platform_funnel_summary', args: { p_actor: actor, p_days: Math.min(365, Math.max(1, Number(body.days) || 30)) } }; break;
+      case 'funnel_events': rpc = { name: 'platform_funnel_events_list', args: { p_actor: actor, p_limit: Math.min(100, Math.max(1, Number(body.limit) || 20)), p_offset: Math.max(0, Number(body.offset) || 0) } }; break;
       case 'platform_legal_save': rpc = { name: 'platform_set_legal', args: { p_actor: actor, p_value: obj(body.legal) } }; break;
       case 'sync': rpc = { name: 'platform_sync_subscriptions', args: {} }; break;
       case 'subscription_create': {

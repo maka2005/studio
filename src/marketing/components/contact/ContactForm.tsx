@@ -1,5 +1,7 @@
 import { maskPhone } from '../../../lib/phone';
-import { useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { attributionPayload } from '../../../lib/attribution';
+import { getFunnelSessionId, trackEvent } from '../../../lib/observability';
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { businessTypes } from '../../data/content';
 import { useMarketingCopy } from '../../data/copy';
@@ -37,6 +39,12 @@ export function ContactForm() {
   const [captchaToken, setCaptchaToken] = useState('');
   const [captchaReset, setCaptchaReset] = useState(0);
 
+  // «Демо» — начало воронки: фиксируем открытие формы, а не только отправку.
+  useEffect(() => {
+    if (form.requestType === 'demo') trackEvent('demo_start', { plan: form.plan || 'none' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const update =
     (field: Exclude<keyof LeadPayload, 'consent' | 'elapsedMs'>) =>
     (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
@@ -66,6 +74,8 @@ export function ContactForm() {
       const payload: LeadPayload = {
         ...(connecting && selectedPlan ? { ...form, plan: selectedPlan.id } : form),
         elapsedMs: Date.now() - openedAt.current,
+        sessionId: getFunnelSessionId(),
+        attribution: attributionPayload(),
         ...(captchaToken ? { turnstileToken: captchaToken } : {}),
       };
       setResult(await submitLead(payload));

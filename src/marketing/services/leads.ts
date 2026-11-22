@@ -13,6 +13,16 @@ export interface LeadPayload {
   /** Сколько мс форма была открыта до отправки. */
   elapsedMs?: number;
   turnstileToken?: string;
+  /** Связывает заявку с событиями воронки в одном сеансе. */
+  sessionId?: string;
+  /** Рекламная атрибуция, сохранённая на первом заходе (UTM / referrer). */
+  attribution?: {
+    source: string;
+    medium: string;
+    campaign: string;
+    content: string;
+    term: string;
+  };
 }
 
 export interface LeadResult {

@@ -120,4 +120,37 @@ describe('API / Edge / RPC contracts', () => {
     expect(legalForm).toContain('platform_legal_save');
     expect(hook).toContain('/api/platform?action=legal');
   });
+
+  it('funnel events, UTM attribution and CRM statuses are wired end to end', () => {
+    const api = read('api/platform.js');
+    const edge = read('supabase/functions/platform-admin/index.ts');
+    const migration = read('supabase/migrations/20261123100000_funnel_analytics_crm.sql');
+    const track = read('src/lib/observability.ts');
+    const attribution = read('src/lib/attribution.ts');
+    const leads = read('src/marketing/services/leads.ts');
+    const crm = read('src/pages/platform-admin/operations.tsx');
+
+    expect(api).toContain("action === 'event'");
+    expect(api).toContain("action: 'public_event'");
+    expect(edge).toContain("action === 'public_event'");
+    expect(edge).toContain('p_name: eventName');
+    for (const event of [
+      'demo_start',
+      'lead_submit',
+      'connect',
+      'payment_request',
+      'payment_confirm',
+      'first_booking',
+    ]) {
+      expect(migration).toContain(`'${event}'`);
+    }
+    expect(migration).toContain('create trigger funnel_saas_payment_event');
+    expect(migration).toContain('create trigger funnel_first_booking_event');
+    expect(migration).toContain("'paid','active','churned'");
+    for (const action of ['funnel_summary', 'funnel_events']) expect(edge).toContain(`'${action}'`);
+    expect(track).toContain('export function trackEvent');
+    expect(attribution).toContain('localStorage.setItem(KEY');
+    expect(leads).toContain('attribution?:');
+    expect(crm).toContain('Канал:');
+  });
 });

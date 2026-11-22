@@ -140,7 +140,34 @@ export function SupportQueue(){
   </div>
 }
 
-const LEAD_STATUS:Record<string,string>={new:'Новая',contacted:'Связались',converted:'Подключён',closed:'Закрыта'};
+/** Стадии воронки: new → demo → talk → invoice → paid → active → churned. */
+const LEAD_STATUS:Record<string,string>={new:'Новая',demo:'Демо создано',talk:'Разговор',invoice:'Счёт выставлен',paid:'Оплачено',active:'Активный',churned:'Отток',contacted:'Связались (старое)',converted:'Подключён (старое)',closed:'Закрыта (старое)'};
+
+function leadAttr(lead:Row):Record<string,unknown>{
+  return lead.attribution&&typeof lead.attribution==='object'?lead.attribution as Record<string,unknown>:{};
+}
+function LeadAttribution({lead}:{lead:Row}){
+  const a=leadAttr(lead),source=String(a.source??'');
+  if(!source||source==='direct')return null;
+  const campaign=String(a.campaign??'');
+  return <p className="muted small">Канал: {source}{campaign?` · ${campaign}`:''}</p>;
+}
+
+const FUNNEL_STEPS:[string,string][]=[
+  ['demo_start','Демо открыто'],['lead_submit','Заявок'],['connect','Подключений'],
+  ['payment_request','Заявок на оплату'],['payment_confirm','Оплат'],['first_booking','Первых записей'],
+];
+function FunnelSummary(){
+  const q=useLoad<Record<string,number>>('funnel_summary',{days:30});
+  return <section className="card col">
+    <b>Воронка за 30 дней</b>
+    {q.err&&<p className="err small">{q.err}</p>}
+    <div className="row wrap">
+      {FUNNEL_STEPS.map(([key,label])=><span className="pf-badge" key={key}>{label}: {Number(q.data?.[key]??0)}</span>)}
+    </div>
+    <p className="muted small">События считаются по факту: платежи и первую запись фиксируют триггеры базы, остальные — публичные формы.</p>
+  </section>;
+}
 export function BusinessLeads({canConnect,onConnect}:{canConnect:boolean;onConnect:(lead:LeadPrefill)=>void}){
   const filters = usePlatformFilters('platform-leads-filters', { status: '', search: '' });
   const { status, search } = filters.applied;
@@ -151,19 +178,20 @@ export function BusinessLeads({canConnect,onConnect}:{canConnect:boolean;onConne
     setMsg('');
     try {
       const all = await exportPagedRows<Row>('business_leads', { status, search });
-      downloadCsv('platform-leads.csv', ['Организация','Владелец','Email','Телефон','Тип','Тариф','Состояние','Поступила'],
-        all.map((lead)=>[lead.business_name??lead.name??'',lead.owner_name??'',lead.owner_email??'',lead.phone??'',lead.business_type??'',lead.plan??'',LEAD_STATUS[lead.status]??lead.status??'',fmtDateTime(lead.created_at)]));
+      downloadCsv('platform-leads.csv', ['Организация','Владелец','Email','Телефон','Тип','Тариф','Состояние','Канал','Кампания','Поступила'],
+        all.map((lead)=>[lead.business_name??lead.name??'',lead.owner_name??'',lead.owner_email??'',lead.phone??'',lead.business_type??'',lead.plan??'',LEAD_STATUS[lead.status]??lead.status??'',String(leadAttr(lead).source??''),String(leadAttr(lead).campaign??''),fmtDateTime(lead.created_at)]));
     } catch (e) { setMsg(errText(e)); }
   };
   const rows:Row[]=q.data?.rows??[],count=Number(q.data?.count??0),pages=Math.max(1,Math.ceil(count/25));
   const change=async(id:string,next:string)=>{setMsg('');try{await call('business_lead_update',{lead_id:id,status:next});await q.reload()}catch(e){setMsg(errText(e))}};
   return <div className="col"><div className="admin-subheading"><div><h2>Заявки с сайта</h2><p className="muted small">Запросы на подключение и демонстрацию Renvio. Свяжитесь с человеком и обновите состояние заявки.</p></div><button className="btn ghost mini" onClick={()=>void q.reload()} disabled={q.loading}>Обновить</button></div>
+    <FunnelSummary />
     <FilterBar filters={filters} storageKey="заявок" onExport={()=>void exportCsv()}>
       <input className="field" value={filters.draft.search} onChange={e=>filters.set('search',e.target.value)} placeholder="Название, владелец, email или телефон" aria-label="Поиск заявок"/>
       <select className="field" value={filters.draft.status} onChange={e=>filters.set('status',e.target.value)} aria-label="Состояние заявки"><option value="">Все заявки</option>{Object.entries(LEAD_STATUS).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select>
     </FilterBar>
     <State err={q.err} loading={q.loading}/>{!q.loading&&!q.err&&!rows.length&&<p className="muted">Заявок пока нет.</p>}
-    <div className="support-queue-list">{rows.map(lead=><article className="card support-queue-item" key={lead.id}><div className="row between wrap"><div><b>{lead.business_name??lead.name}</b><p className="muted small">{lead.owner_name?`${lead.owner_name} · `:''}{lead.business_type} · {lead.request_type==='demo'?'Демонстрация':'Подключение'}{lead.plan?` · тариф ${lead.plan}`:''}</p></div><span className={`pf-badge pf-${lead.status}`}>{LEAD_STATUS[lead.status]??lead.status}</span></div><div className="row between wrap"><span className="col"><a href={`tel:${String(lead.phone).replace(/[^+\d]/g,'')}`}>{lead.phone}</a>{lead.owner_email&&<a href={`mailto:${lead.owner_email}`}>{lead.owner_email}</a>}</span><time className="muted small">Поступила {fmtDateTime(lead.created_at)}</time></div>{lead.comment&&<p className="muted small">{lead.comment}</p>}{lead.consent_at?<p className="muted small">Согласие на обработку данных: {fmtDateTime(lead.consent_at)}</p>:null}{lead.tenant_slug?<p className="small">Организация создана: <a href={`/s/${lead.tenant_slug}`} target="_blank" rel="noopener noreferrer">/s/{lead.tenant_slug}</a></p>:null}{canConnect&&!lead.tenant_id&&lead.status!=='closed'&&<button className="btn mini" onClick={()=>onConnect({id:String(lead.id),name:String(lead.business_name??''),slug:slugFromName(String(lead.business_name??'')),business_type:businessTypeCode(String(lead.business_type??'')),owner_name:String(lead.owner_name??''),owner_email:String(lead.owner_email??''),phone:String(lead.phone??''),plan_code:String(lead.plan||'').toUpperCase()==='PRO'?'PRO':'START',trial:lead.request_type==='demo'})}>Подключить организацию</button>}<label className="muted small">Состояние заявки<select className="field" value={lead.status} onChange={e=>void change(String(lead.id),e.target.value)}>{Object.entries(LEAD_STATUS).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label></article>)}</div>
+    <div className="support-queue-list">{rows.map(lead=><article className="card support-queue-item" key={lead.id}><div className="row between wrap"><div><b>{lead.business_name??lead.name}</b><p className="muted small">{lead.owner_name?`${lead.owner_name} · `:''}{lead.business_type} · {lead.request_type==='demo'?'Демонстрация':'Подключение'}{lead.plan?` · тариф ${lead.plan}`:''}</p></div><span className={`pf-badge pf-${lead.status}`}>{LEAD_STATUS[lead.status]??lead.status}</span></div><div className="row between wrap"><span className="col"><a href={`tel:${String(lead.phone).replace(/[^+\d]/g,'')}`}>{lead.phone}</a>{lead.owner_email&&<a href={`mailto:${lead.owner_email}`}>{lead.owner_email}</a>}</span><time className="muted small">Поступила {fmtDateTime(lead.created_at)}</time></div>{lead.comment&&<p className="muted small">{lead.comment}</p>}<LeadAttribution lead={lead}/>{lead.consent_at?<p className="muted small">Согласие на обработку данных: {fmtDateTime(lead.consent_at)}</p>:null}{lead.tenant_slug?<p className="small">Организация создана: <a href={`/s/${lead.tenant_slug}`} target="_blank" rel="noopener noreferrer">/s/{lead.tenant_slug}</a></p>:null}{canConnect&&!lead.tenant_id&&!['closed','churned'].includes(String(lead.status))&&<button className="btn mini" onClick={()=>onConnect({id:String(lead.id),name:String(lead.business_name??''),slug:slugFromName(String(lead.business_name??'')),business_type:businessTypeCode(String(lead.business_type??'')),owner_name:String(lead.owner_name??''),owner_email:String(lead.owner_email??''),phone:String(lead.phone??''),plan_code:String(lead.plan||'').toUpperCase()==='PRO'?'PRO':'START',trial:lead.request_type==='demo'})}>Подключить организацию</button>}<label className="muted small">Состояние заявки<select className="field" value={lead.status} onChange={e=>void change(String(lead.id),e.target.value)}>{Object.entries(LEAD_STATUS).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label></article>)}</div>
     <div className="row between wrap"><span className="muted small">{count} заявок · страница {page+1} из {pages}</span><div className="row"><button className="btn ghost mini" disabled={page===0||q.loading} onClick={()=>setPage(p=>p-1)}>Назад</button><button className="btn ghost mini" disabled={page+1>=pages||q.loading} onClick={()=>setPage(p=>p+1)}>Далее</button></div></div>{msg&&<p className="err" role="alert">{msg}</p>}
   </div>
 }

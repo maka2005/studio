@@ -2,6 +2,32 @@ import { expect, test } from '@playwright/test';
 
 const BASE = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:4173';
 
+// Аналитика не должна писать в прод во время смоука.
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/platform?action=event*', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' }),
+  );
+});
+
+test('UTM с первого захода попадает в событие воронки', async ({ page }) => {
+  const events: { name?: string; attribution?: { source?: string; campaign?: string } }[] = [];
+  await page.route('**/api/platform?action=event*', async (route) => {
+    events.push(JSON.parse(route.request().postData() || '{}'));
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
+  });
+
+  await page.goto('/?utm_source=kaspi&utm_medium=cpc&utm_campaign=spring');
+  await expect
+    .poll(async () => page.evaluate(() => localStorage.getItem('studio-attribution') || ''))
+    .toContain('kaspi');
+
+  // Внутренний переход не должен терять атрибуцию.
+  await page.goto('/contact?type=demo');
+  await expect
+    .poll(() => events.some((e) => e.name === 'demo_start' && e.attribution?.source === 'kaspi'))
+    .toBe(true);
+});
+
 test('маркетинговая главная отвечает и не роняет консоль', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e.message || e)));

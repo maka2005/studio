@@ -17,15 +17,13 @@ import { CustomerTelegramOptIn } from './CustomerTelegramOptIn';
 import { PushOptIn } from './PushOptIn';
 import { ALL_SERVICES_CATEGORY, allServicesCategory, filterServices, serviceCategories } from '../lib/serviceCatalog';
 import { extraField, isAutoBusiness } from '../lib/businessTypes';
+import { getAttribution } from '../lib/attribution';
 import { clientDateLocale, clientErrText, useClientMessages } from '../lib/clientLocale';
 
 function attributionSource(): string {
-  const raw = new URLSearchParams(location.search).get('utm_source')?.toLowerCase();
-  if (raw && /^[a-z0-9_-]{1,40}$/.test(raw)) return raw;
-  try {
-    if (document.referrer && new URL(document.referrer).origin !== location.origin) return new URL(document.referrer).hostname.toLowerCase().replace(/[^a-z0-9_-]/g, '-').slice(0, 40) || 'referral';
-  } catch { /* invalid referrer: keep direct */ }
-  return 'direct';
+  // Единая атрибуция: UTM с первого захода сохраняется в localStorage и не теряется
+  // при переходах внутри сайта (старая версия читала только текущий URL).
+  return getAttribution().source || 'direct';
 }
 
 export function BookingFlow({ b, initialService, bookingOpen, onClose }: {

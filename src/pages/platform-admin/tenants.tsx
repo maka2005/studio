@@ -173,7 +173,7 @@ export function CreateTenant({ onCreated, prefill }: { onCreated: (id: string) =
     try {
       const r = await call<Row>('create_tenant', { idempotency_key: key.current, tenant: { ...f, start: iso(f.start), months: Number(f.months), services } });
       { const okText = r.replayed ? 'Организация уже была создана этим запросом.' : r.invite_sent ? 'Организация создана, приглашение отправлено владельцу.' : 'Организация создана. Приглашение не отправлено — отправьте его из карточки.'; setOk(okText); notify(okText, r.invite_sent || r.replayed ? 'ok' : 'warn'); }
-      if(prefill?.id){try{await call('business_lead_update',{lead_id:prefill.id,status:'converted',tenant_id:r.tenant_id,tenant_slug:r.slug??f.slug})}catch{setOk(x=>x+' Заявку не удалось отметить подключённой — сделайте это вручную.')}}
+      if(prefill?.id){try{await call('business_lead_update',{lead_id:prefill.id,status:'active',tenant_id:r.tenant_id,tenant_slug:r.slug??f.slug})}catch{setOk(x=>x+' Заявку не удалось отметить подключённой — сделайте это вручную.')}}
       key.current = newKey(); onCreated(r.tenant_id);
     } catch (e2) { setErr(errText(e2)); } finally { setBusy(false); }
   };

@@ -276,6 +276,9 @@ export async function mockBookingFunnelApi(
         },
   });
 
+  // События воронки не должны попадать в реальную БД во время E2E.
+  await page.route('**/api/platform?action=event*', (route) => respondJson(route, { ok: true }));
+
   await page.route('**/rest/v1/**', async (route) => {
     if (route.request().method() === 'OPTIONS') return respondPreflight(route);
     const url = new URL(route.request().url());
