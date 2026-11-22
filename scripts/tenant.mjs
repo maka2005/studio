@@ -70,8 +70,8 @@ if (cmd === 'new') {
         start_url: u,
         scope: u,
         display: 'standalone',
-        background_color: '#000000',
-        theme_color: '#000000',
+        background_color: '#23262d',
+        theme_color: '#23262d',
         icons,
       }),
     )
