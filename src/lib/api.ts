@@ -193,7 +193,9 @@ export type NotificationJobPage = { rows: NotificationJob[]; count: number };
 export type NotificationBouncePage = { rows: NotificationBounce[]; count: number };
 export type OwnerSubscription = { state: 'open' | 'grace' | 'closed'; phase: string; plan_code?: string; plan_name?: string; price_kzt?: number; price_period_months?: number; starts_at?: string | null; ends_at?: string | null; grace_ends_at?: string | null; days_left?: number | null };
 export type OwnerBillingDocument = { id: string; document_type: 'invoice' | 'act'; number: string; issue_date: string; service_from: string; service_to: string; amount_kzt: number; currency: string; description: string; esf_number: string | null; esf_status: string; status: string; created_at: string };
-export type OwnerPayment = { id: string; amount_kzt: number; method: string; status: string; received_at: string; period_start: string; period_end: string; note: string | null; refund_reason: string | null; created_at: string };
+export type OwnerPayment = { id: string; amount_kzt: number; method: string; status: string; received_at: string; period_start: string; period_end: string; note: string | null; refund_reason: string | null; created_at: string; plan_code: string | null; period_months: number | null };
+export type AvailablePlan = { code: string; name: string; price_kzt: number; period_months: number; description: string | null };
+export type ManualPaymentRequest = { id: string; status: string; amount_kzt: number; period_start: string; period_end: string; replayed?: boolean };
 export const owner = {
   platformAnnouncements:(slug:string)=>rpc<{id:string;title:string;body:string;starts_at:string;ends_at:string|null}[]>('owner_platform_announcements',{p_slug:slug}),
   platformFeatureFlags:(slug:string)=>rpc<Record<string,boolean>>('owner_platform_feature_flags',{p_slug:slug}),
@@ -208,6 +210,12 @@ export const owner = {
   respondPriceChange: (slug:string,id:string,accept:boolean) => rpc<void>('owner_respond_price_change', { p_slug:slug,p_id:id,p_accept:accept }),
   billingDocuments: (slug: string) => rpc<OwnerBillingDocument[]>('owner_billing_documents', { p_slug: slug }),
   payments: (slug: string) => rpc<OwnerPayment[]>('owner_payments', { p_slug: slug }),
+  availablePlans: () => rpc<AvailablePlan[]>('owner_available_plans', {}),
+  requestManualPayment: (slug: string, planCode: string, months: number, idempotencyKey: string, note?: string) =>
+    rpc<ManualPaymentRequest>('owner_request_manual_payment', {
+      p_slug: slug, p_plan_code: planCode, p_months: months,
+      p_idempotency_key: idempotencyKey, p_note: note ?? null,
+    }),
   access: (slug: string) => rpc<'owner'|'manager'|'staff'|null>('owner_access', { p_slug: slug }),
   bookings: (slug: string, from: string, to: string) => rpc<OwnerBooking[]>('owner_bookings', { p_slug: slug, p_from: from, p_to: to }),
   staffBookings: (slug: string, from: string, to: string) => rpc<OwnerBooking[]>('staff_bookings', { p_slug: slug, p_from: from, p_to: to }),

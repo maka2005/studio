@@ -33,6 +33,14 @@ test('знак R в логотипе одного цвета в шапке и п
   expect(fills.footer).toBe(fills.header);
 });
 
+test('главная показывает пилотные сценарии, страница тарифов не пуста', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('body')).not.toHaveText('', { timeout: 15_000 });
+  await expect(page.locator('.case-card')).toHaveCount(3);
+  await page.goto('/pricing');
+  await expect(page.locator('.pricing-cards .plan').first()).toBeVisible();
+});
+
 test('поле телефона в финальном CTA не сжимается на мобильном', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 800 });
   await page.goto('/');
@@ -160,6 +168,7 @@ test('ключевые страницы не переполняются по ш�
     '/pricing',
     '/contact',
     '/privacy',
+    '/offer',
     '/s/graphite',
     '/s/graphite/services',
     '/s/graphite/booking',

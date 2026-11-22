@@ -57,6 +57,7 @@ export interface Messages {
   footerLead: string;
   footerRequest: string;
   footerPrivacy: string;
+  footerOffer: string;
   footerRights: string;
   footerStatusLoading: string;
   footerStatusOperational: string;
@@ -114,6 +115,7 @@ const ru: Messages = {
   footerLead: 'Оставьте заявку — команда Renvio поможет с подключением.',
   footerRequest: 'Оставить заявку',
   footerPrivacy: 'Политика конфиденциальности',
+  footerOffer: 'Публичная оферта',
   footerRights: 'Все права защищены.',
   footerStatusLoading: 'Проверяем статус…',
   footerStatusOperational: 'Все системы работают',
@@ -172,6 +174,7 @@ const kk: Messages = {
   footerLead: 'Өтініш қалдырыңыз — Renvio тобы қосуға көмектеседі.',
   footerRequest: 'Өтініш қалдыру',
   footerPrivacy: 'Құпиялылық саясаты',
+  footerOffer: 'Жалпы ұсыныс (оферта)',
   footerRights: 'Барлық құқықтар қорғалған.',
   footerStatusLoading: 'Күй тексерілуде…',
   footerStatusOperational: 'Барлық жүйелер жұмыс істеуде',

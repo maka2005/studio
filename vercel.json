@@ -119,6 +119,8 @@
     { "source": "/contact/", "destination": "/contact/index.html" },
     { "source": "/privacy", "destination": "/privacy/index.html" },
     { "source": "/privacy/", "destination": "/privacy/index.html" },
+    { "source": "/offer", "destination": "/offer/index.html" },
+    { "source": "/offer/", "destination": "/offer/index.html" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

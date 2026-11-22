@@ -90,6 +90,7 @@ export function useDocumentMeta({
     setAlternate('kk', withLang(url, 'kk'));
     setAlternate('ru-KZ', withLang(url, 'ru'));
     setAlternate('kk-KZ', withLang(url, 'kk'));
+    setAlternate('x-default', url);
 
     let script: HTMLScriptElement | null = null;
     if (ld) {

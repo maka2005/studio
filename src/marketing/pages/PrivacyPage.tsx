@@ -1,6 +1,6 @@
 import { useMarketingCopy } from '../data/copy';
 import { useDocumentMeta } from '../hooks/useDocumentMeta';
-import { SITE } from '../config/site';
+import { SITE, hasLegalPlaceholders } from '../config/site';
 import { Section } from '../components/ui/Section';
 import './PrivacyPage.scss';
 
@@ -27,13 +27,14 @@ export function PrivacyPage() {
 
       <Section>
         <div className="privacy">
+          {hasLegalPlaceholders() && <p className="legal-notice">{copy.ui.legalNotice}</p>}
           {privacy.sections.map((section) => {
             const body = section.body
               ?.replace('{operator}', operatorFull)
               .replace('{bin}', '')
               .replace('{address}', '')
               .replace('{site}', SITE.url.replace('https://', ''));
-            const contacts = body?.split('{contacts}');
+            const contacts = body?.includes('{contacts}') ? body.split('{contacts}') : null;
             return (
               <div key={section.title}>
                 <h2>{section.title}</h2>

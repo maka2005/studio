@@ -9,6 +9,7 @@ import { Hero } from '../components/home/Hero';
 import { TrustStrip } from '../components/home/TrustStrip';
 import { Audiences } from '../components/home/Audiences';
 import { Highlights } from '../components/home/Highlights';
+import { CasesSection } from '../components/cases/CasesSection';
 import { Compare } from '../components/home/Compare';
 import { HowItWorks } from '../components/home/HowItWorks';
 import { RoiCalculator } from '../components/home/RoiCalculator';
@@ -44,6 +45,7 @@ export function HomePage() {
       <TrustStrip />
       <Audiences />
       <Highlights />
+      <CasesSection />
       <Compare />
       <HowItWorks />
       <RoiCalculator />

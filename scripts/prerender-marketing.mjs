@@ -12,7 +12,7 @@ const routes = [
     description: 'Клиенты записываются на услугу сами, вы видите загрузку специалистов и напоминания о визитах. Renvio — для СТО, барбершопов, автомоек и других сервисов с записью по времени. Пробный период бесплатно.',
     h1: 'Запись на услугу без звонков и таблиц',
     body: `<p>Renvio принимает записи 24/7, показывает загрузку специалистов и напоминает клиентам о визите. Один кабинет для записей, услуг, сотрудников и отчётов — от СТО до барбершопов.</p>
-<ul><li><a href="/features">Возможности</a></li><li><a href="/pricing">Тарифы</a></li><li><a href="/contact">Подключить сервис</a></li><li><a href="/privacy">Политика конфиденциальности</a></li></ul>`,
+<ul><li><a href="/features">Возможности</a></li><li><a href="/pricing">Тарифы</a></li><li><a href="/contact">Подключить сервис</a></li><li><a href="/privacy">Политика конфиденциальности</a></li><li><a href="/offer">Публичная оферта</a></li></ul>`,
   },
   {
     route: '/features',
@@ -27,13 +27,24 @@ const routes = [
   {
     route: '/pricing',
     file: path.join(root, 'dist', 'pricing', 'index.html'),
-    title: 'Тарифы Renvio — START и PRO для сервисов',
-    description: 'START и PRO включают онлайн-запись, календарь и аналитику. Разница — в лимитах сотрудников, услуг, точек и записей. Цены указаны в тенге за месяц.',
+    title: 'Тарифы Renvio — START, PRO и BUSINESS для сервисов',
+    description: 'START, PRO и BUSINESS включают онлайн-запись, календарь и аналитику. Разница — в лимитах сотрудников, услуг, точек и записей. Цены указаны в тенге за месяц.',
     h1: 'Тарифы Renvio',
-    body: `<p>Одинаковые возможности, разные лимиты. START подойдёт небольшому сервису, PRO — команде с несколькими мастерами и точками.</p>
-<ul><li><strong>START</strong> — до 3 сотрудников, 20 услуг и 300 записей в месяц.</li><li><strong>PRO</strong> — до 15 сотрудников, 5 точек и 3 000 записей в месяц.</li></ul>
-<p>Пробный период бесплатно, доступ — сразу после подключения.</p>
+    body: `<p>Одинаковые возможности, разные лимиты. START подойдёт небольшому сервису, PRO — команде с несколькими мастерами, BUSINESS — сети точек.</p>
+<ul><li><strong>START</strong> — 15 000 ₸/мес: 1 точка, до 3 сотрудников, 20 услуг и 300 записей в месяц.</li><li><strong>PRO</strong> — 25 000 ₸/мес: до 5 точек, 15 сотрудников, 100 услуг и 3 000 записей в месяц.</li><li><strong>BUSINESS</strong> — 49 000 ₸/мес: без ограничений по точкам, сотрудникам, услугам и записям, приоритетная поддержка.</li></ul>
+<p>Пробный период 14 дней бесплатно, доступ — сразу после подключения. Оплата безналичным переводом после пробного периода.</p>
 <p><a href="/contact">Подключить Renvio</a> · <a href="/features">Возможности</a></p>`,
+  },
+  {
+    route: '/offer',
+    file: path.join(root, 'dist', 'offer', 'index.html'),
+    title: 'Публичная оферта — Renvio',
+    description: 'Условия подключения и оплаты подписки Renvio: акцепт, тарифы, порядок безналичного перевода, права и обязанности сторон.',
+    h1: 'Публичная оферта на подключение к сервису Renvio',
+    body: `<p>Документ определяет порядок предоставления доступа к сервису Renvio и оплаты подписки. Акцептом оферты считается заявка на подключение, регистрация организации или оплата подписки.</p>
+<p>Оплата производится безналичным переводом на реквизиты, направленные менеджером. Подписка активируется после поступления средств. Новым клиентам предоставляется бесплатный пробный период 14 дней.</p>
+<p>Реквизиты оператора в настоящее время указаны как заполнители и будут заменены после регистрации бизнеса.</p>
+<p><a href="/">На главную</a> · <a href="/privacy">Политика конфиденциальности</a> · <a href="/contact">Контакты</a></p>`,
   },
   {
     route: '/contact',
@@ -75,7 +86,8 @@ function applyMeta(template, r) {
   html = upsert(html, /<meta\s+property="og:url"\s+content="[^"]*"\s*\/?>/i, `<meta property="og:url" content="${url}" />`);
   html = upsert(html, /<meta\s+name="twitter:title"\s+content="[^"]*"\s*\/?>/i, `<meta name="twitter:title" content="${esc(r.title)}" />`);
   html = upsert(html, /<meta\s+name="twitter:description"\s+content="[^"]*"\s*\/?>/i, `<meta name="twitter:description" content="${esc(r.description)}" />`);
-  // keep existing alternates as ru-KZ/x-default for this domain
+  html = upsert(html, /<link\s+rel="alternate"\s+hreflang="x-default"\s+href="[^"]*"\s*\/?>/i, `<link rel="alternate" hreflang="x-default" href="${url}" />`);
+  // language alternates stay as ru/kk with ?lang=, pointing to this page
   return html;
 }
 

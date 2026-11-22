@@ -1,4 +1,5 @@
-import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { errText, owner, type OwnerBillingDocument, type OwnerPayment } from '../../lib/api'
 import { planFeatureLabel } from '../../lib/planFeatures'
 
@@ -19,8 +20,60 @@ function printDocument(d: OwnerBillingDocument) {
   w.document.close()
 }
 
+const newIdempotencyKey = () => `mp-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+
+/** Owner asks the platform to activate a paid period after a manual bank transfer. */
+function ManualPaymentRequest({ slug, onSubmitted }: { slug: string; onSubmitted: () => void }) {
+  const plans = useQuery({ queryKey: ['owner', 'available-plans'], queryFn: () => owner.availablePlans(), retry: false })
+  const [plan, setPlan] = useState('')
+  const [months, setMonths] = useState(1)
+  const [note, setNote] = useState('')
+  const [key, setKey] = useState(newIdempotencyKey)
+  const [msg, setMsg] = useState('')
+  const selected = plans.data?.find((p) => p.code === plan) ?? plans.data?.[0]
+  const amount = selected ? selected.price_kzt * months : 0
+
+  const send = useMutation({
+    mutationFn: () => owner.requestManualPayment(slug, selected!.code, months, key, note),
+    onSuccess: (result) => {
+      setMsg(`Заявка №${result.id.slice(0, 8)} на ${kzt(result.amount_kzt)} принята. Активируем подписку после поступления перевода и подтверждения администратором.`)
+      setKey(newIdempotencyKey())
+      setNote('')
+      onSubmitted()
+    },
+    onError: (error) => setMsg(errText(error)),
+  })
+
+  return <section className="card col">
+    <b>Оплата подписки переводом</b>
+    <p className="muted small">Выберите тариф и период. Мы создадим заявку, пришлём реквизиты для перевода и активируем подписку после подтверждения оплаты. Автоматического списания нет.</p>
+    {plans.isPending && <p className="muted small">Загружаем тарифы…</p>}
+    {plans.isError && <p className="err small">Не удалось загрузить тарифы: {errText(plans.error)}.</p>}
+    {plans.data?.length === 0 && <p className="muted small">Тарифы пока не настроены. Напишите в поддержку.</p>}
+    {selected && <form className="col" onSubmit={(e) => { e.preventDefault(); setMsg(''); send.mutate() }}>
+      <label className="pf-label">Тариф
+        <select className="field" value={selected.code} onChange={(e) => setPlan(e.target.value)}>
+          {plans.data?.map((p) => <option key={p.code} value={p.code}>{p.name} — {kzt(p.price_kzt)} / {(p.period_months || 1)} мес.</option>)}
+        </select>
+      </label>
+      <label className="pf-label">Период
+        <select className="field" value={months} onChange={(e) => setMonths(Number(e.target.value))}>
+          {[1, 3, 6, 12].map((m) => <option key={m} value={m}>{m} мес.</option>)}
+        </select>
+      </label>
+      <label className="pf-label">Комментарий (необязательно)
+        <input className="field" maxLength={300} placeholder="Например, оплата за июль" value={note} onChange={(e) => setNote(e.target.value)} />
+      </label>
+      <p className="muted small">Сумма заявки: <b>{kzt(amount)}</b>. Точные реквизиты менеджер пришлёт после заявки.</p>
+      <div><button className="btn" disabled={send.isPending}>{send.isPending ? 'Отправляем…' : 'Запросить оплату'}</button></div>
+      {msg && <p className="muted small">{msg}</p>}
+    </form>}
+  </section>
+}
+
 /** Owner-facing billing overview: current plan, limit usage, documents and payments. */
 export function Billing({ slug, onOpenSupport }: { slug: string; onOpenSupport?: () => void }) {
+  const queryClient = useQueryClient()
   const sub = useQuery({ queryKey: ['owner', 'subscription', slug], queryFn: () => owner.subscription(slug), retry: false })
   const usage = useQuery({ queryKey: ['owner', 'plan-usage', slug], queryFn: () => owner.planUsage(slug), retry: false })
   const docs = useQuery({ queryKey: ['owner', 'billing-documents', slug], queryFn: () => owner.billingDocuments(slug), retry: false })
@@ -43,6 +96,8 @@ export function Billing({ slug, onOpenSupport }: { slug: string; onOpenSupport?:
         <div><span className="muted small">Стоимость периода</span><b>{kzt(sub.data.price_kzt)} / {sub.data.price_period_months ?? 1} мес.</b></div>
       </div>
     </section>}
+
+    <ManualPaymentRequest slug={slug} onSubmitted={() => void queryClient.invalidateQueries({ queryKey: ['owner', 'payments', slug] })} />
 
     <section className="card col">
       <b>Использование тарифа</b>
@@ -81,7 +136,7 @@ export function Billing({ slug, onOpenSupport }: { slug: string; onOpenSupport?:
       {payments.isError && <p className="err small">Не удалось загрузить платежи: {errText(payments.error)}.</p>}
       {payments.data?.length === 0 && <p className="muted">Платежей пока не зарегистрировано.</p>}
       {payments.data?.map((p: OwnerPayment) => <div className="card row between wrap" key={p.id}>
-        <div><b>{kzt(p.amount_kzt)} · {PAY_STATUS[p.status] ?? p.status}</b><p className="muted small">{PAY_METHOD[p.method] ?? p.method} · {date(p.received_at)} · период {date(p.period_start)} — {date(p.period_end)}</p>{p.note && <p className="muted small">{esc(p.note)}</p>}{p.refund_reason && <p className="err small">Причина возврата: {esc(p.refund_reason)}</p>}</div>
+        <div><b>{kzt(p.amount_kzt)} · {PAY_STATUS[p.status] ?? p.status}</b><p className="muted small">{PAY_METHOD[p.method] ?? p.method} · {date(p.received_at)} · период {date(p.period_start)} — {date(p.period_end)}</p>{p.plan_code && <p className="muted small">{esc(p.plan_code)} · {p.period_months} мес.</p>}{p.note && <p className="muted small">{esc(p.note)}</p>}{p.refund_reason && <p className="err small">Причина возврата: {esc(p.refund_reason)}</p>}</div>
       </div>)}
     </section>
 

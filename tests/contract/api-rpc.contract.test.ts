@@ -18,6 +18,8 @@ describe('API / Edge / RPC contracts', () => {
       'owner_billing_notifications_page',
       'owner_billing_documents',
       'owner_payments',
+      'owner_available_plans',
+      'owner_request_manual_payment',
       'owner_reviews_page',
       'owner_waitlist_page',
       'owner_update_config',

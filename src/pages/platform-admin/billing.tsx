@@ -108,11 +108,11 @@ export function Payments() {
       <select className="field" aria-label="Статус платежа" value={filters.draft.status} onChange={e=>filters.set('status',e.target.value)}><option value="">Все платежи</option><option value="pending">Ожидает</option><option value="paid">Оплачен</option><option value="failed">Не прошёл</option><option value="refunded">Возврат</option></select>
     </FilterBar>
     {msg && <p className="err">{msg}</p>}<State err={err} loading={loading && !data} />
-    {data && <Table head={['Дата', 'Организация', 'Сумма', 'Период', 'Способ', 'Статус', 'Действия']}>{rows.map((p) => (
-      <tr key={p.id}><td>{fmtDate(p.received_at)}</td><td>{p.name ?? p.slug}</td><td>{kzt(p.amount_kzt)}</td><td>{fmtDate(p.period_start)} — {fmtDate(p.period_end)}</td><td>{METHODS[p.method] ?? p.method}</td>
+    {data && <Table head={['Дата', 'Организация', 'Сумма', 'Заявка', 'Период', 'Способ', 'Статус', 'Действия']}>{rows.map((p) => (
+      <tr key={p.id}><td>{fmtDate(p.received_at)}</td><td>{p.name ?? p.slug}</td><td>{kzt(p.amount_kzt)}</td><td>{p.plan_code ? `${p.plan_code} × ${p.period_months} мес.` : '—'}</td><td>{fmtDate(p.period_start)} — {fmtDate(p.period_end)}</td><td>{METHODS[p.method] ?? p.method}</td>
         <td><Badge phase={p.status} />{p.refund_reason && <div className="muted small">{p.refund_reason}</div>}</td>
         <td className="pf-actions">
-          {p.status === 'pending' && <button onClick={() => { if (window.confirm(`Подтвердить получение ${kzt(p.amount_kzt)}?`)) void act(() => call('payment_confirm', { payment_id: p.id })); }}>Подтвердить</button>}
+          {p.status === 'pending' && <button onClick={() => { if (window.confirm(p.plan_code ? `Подтвердить ${kzt(p.amount_kzt)} и активировать ${p.plan_code} на ${p.period_months} мес.?` : `Подтвердить получение ${kzt(p.amount_kzt)}?`)) void act(() => call('payment_confirm', { payment_id: p.id })); }}>{p.plan_code ? 'Подтвердить и активировать' : 'Подтвердить'}</button>}
           {p.status === 'pending' && <button onClick={() => act(() => call('payment_fail', { payment_id: p.id }))}>Не прошёл</button>}
           {p.status === 'paid' && <button onClick={() => { const r = window.prompt('Причина возврата (обязательно):'); if (r?.trim() && window.confirm('Подтвердить возврат ' + kzt(p.amount_kzt) + '?')) void act(() => call('payment_refund', { payment_id: p.id, reason: r.trim() })); }}>Возврат</button>}
         </td></tr>))}</Table>}{data&&(rows.length>0||page>0)&&<nav className='admin-service-pagination' aria-label='Платежи'><button className='admin-page-button' disabled={page===0||loading} onClick={()=>setPage(page-1)}>Назад</button><span className='muted small'>Страница <b>{page+1}</b></span><button className='admin-page-button' disabled={!hasNext||loading} onClick={()=>setPage(page+1)}>Далее</button></nav>}</>);

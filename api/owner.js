@@ -58,6 +58,8 @@ const OWNER_RPCS = new Set([
   'owner_respond_price_change',
   'owner_billing_documents',
   'owner_payments',
+  'owner_available_plans',
+  'owner_request_manual_payment',
   'owner_notification_templates',
   'owner_upsert_notification_template',
   'owner_notification_jobs',

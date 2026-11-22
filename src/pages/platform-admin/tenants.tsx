@@ -183,7 +183,7 @@ export function CreateTenant({ onCreated, prefill }: { onCreated: (id: string) =
       {input('Название студии или компании', 'name')}{input('Адрес страницы', 'slug', 'text', 'my-studio')}{input('Чем занимается организация', 'business_type')}
       {input('Имя владельца', 'owner_name')}{input('Почта владельца', 'owner_email', 'email')}{input('Телефон', 'phone', 'tel')}{input('БИН/ИИН', 'bin_iin')}{input('Адрес организации', 'address')}
       {input('Часовой пояс', 'timezone')}{input('Валюта', 'currency')}
-      <label className="pf-label">Тариф<select className="field" value={f.plan_code} onChange={(e) => set('plan_code', e.target.value)}><option>START</option><option>PRO</option></select></label>
+      <label className="pf-label">Тариф<select className="field" value={f.plan_code} onChange={(e) => set('plan_code', e.target.value)}><option>START</option><option>PRO</option><option>BUSINESS</option></select></label>
       <label className="pf-check"><input type="checkbox" checked={f.trial} onChange={(e) => set('trial', e.target.checked)} /> Пробный период (длительность из настроек)</label>
       {input('Дата старта подписки', 'start', 'date')}
       {!f.trial && input('Длительность, месяцев', 'months', 'number')}

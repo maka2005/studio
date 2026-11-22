@@ -25,3 +25,13 @@
     color: $color-primary;
   }
 }
+
+.legal-notice {
+  margin: 0 0 24px;
+  padding: 14px 16px;
+  border: 1px solid rgba(194, 65, 12, 0.35);
+  border-radius: 4px;
+  background: rgba(194, 65, 12, 0.06);
+  color: $color-primary;
+  font-size: 14px;
+}

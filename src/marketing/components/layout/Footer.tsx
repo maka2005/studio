@@ -60,6 +60,7 @@ export function Footer() {
           <Link to="/pricing">{t.pricing}</Link>
           <Link to="/contact">{t.contacts}</Link>
           <Link to="/privacy">{t.footerPrivacy}</Link>
+          <Link to="/offer">{t.footerOffer}</Link>
         </nav>
 
         <div className="footer__contacts">
