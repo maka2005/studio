@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useMarketingCopy } from '../../data/copy';
+import { Icon } from '../ui/Icon';
 import { Section, SectionHeader } from '../ui/Section';
 import './HomeSections.scss';
 
@@ -12,7 +13,7 @@ export function Audiences() {
         <div className="audience">
           {copy.audiences.map((a) => (
             <article key={a.id} id={a.id} className="audience__card">
-              <span className="audience__icon" aria-hidden="true">{a.icon}</span>
+              <span className="audience__icon"><Icon name={a.icon} /></span>
               <h3>{a.title}</h3>
               <p>{a.text}</p>
               <ul>

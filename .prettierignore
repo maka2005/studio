@@ -11,6 +11,8 @@ test-results
 *.timestamp-*.mjs
 package-lock.json
 *.min.*
+# Локально установленные скиллы — не исходники проекта.
+.agents/
 # Legacy/large areas not yet formatted; expand incrementally
 src/**
 api/**

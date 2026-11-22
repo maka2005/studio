@@ -1,5 +1,6 @@
 import { useMarketingCopy } from '../../data/copy';
 import { Button } from '../ui/Button';
+import { Icon } from '../ui/Icon';
 import { Section, SectionHeader } from '../ui/Section';
 import './HomeSections.scss';
 
@@ -13,7 +14,7 @@ export function Highlights() {
           <div className="highlights">
             {copy.highlights.map((h) => (
               <article key={h.title} className="highlights__item">
-                <span className="highlights__icon" aria-hidden="true">{h.icon}</span>
+                <span className="highlights__icon"><Icon name={h.icon} /></span>
                 <h3>{h.title}</h3>
                 <p>{h.text}</p>
               </article>

@@ -19,11 +19,15 @@ interface SliderProps {
 
 function Slider({ label, suffix, value, min, max, step, onChange }: SliderProps) {
   const id = useId();
+  // Пока поле редактируется, показываем сырой ввод: пустое значение не должно
+  // мгновенно превращаться в минимум и мешать набирать число.
+  const [draft, setDraft] = useState<string | null>(null);
+
   return (
     <div className="roi__field">
       <label htmlFor={id}>{label}</label>
       <div className="roi__control">
-        <input id={id} type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} />
+        <input id={id} type="range" min={min} max={max} step={step} value={value} onChange={(e) => { setDraft(null); onChange(Number(e.target.value)); }} />
         <span className="roi__input">
           <input
             type="number"
@@ -31,9 +35,16 @@ function Slider({ label, suffix, value, min, max, step, onChange }: SliderProps)
             min={min}
             max={max}
             step={step}
-            value={value}
+            value={draft ?? String(value)}
             aria-label={label}
-            onChange={(e) => onChange(clamp(Number(e.target.value), min, max))}
+            onChange={(e) => {
+              const raw = e.target.value;
+              setDraft(raw);
+              if (raw.trim() === '') return;
+              const next = Number(raw);
+              if (Number.isFinite(next)) onChange(clamp(next, min, max));
+            }}
+            onBlur={() => setDraft(null)}
           />
           <em>{suffix}</em>
         </span>

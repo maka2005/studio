@@ -68,6 +68,17 @@
     gap: 12px;
     margin-top: 20px;
 
+    .btn--secondary {
+      color: $color-paper;
+      border-color: rgba($color-paper, 0.6);
+
+      &:hover {
+        color: $color-dark;
+        background: $color-paper;
+        border-color: $color-paper;
+      }
+    }
+
     @include mobile {
       margin-top: 24px;
     }

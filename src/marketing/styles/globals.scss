@@ -50,7 +50,7 @@ body:has(.marketing-site) {
 }
 
 :where(.marketing-site) a {
-  color: $color-primary;
+  color: $color-primary-text;
 }
 
 :where(.marketing-site) ul,
@@ -65,12 +65,18 @@ body:has(.marketing-site) {
 :where(.marketing-site) select,
 :where(.marketing-site) textarea {
   font: inherit;
+  touch-action: manipulation;
 }
 
 :focus-visible {
   outline: 2px solid $color-primary;
   outline-offset: 3px;
   border-radius: 4px;
+}
+
+// На тёмных поверхностях оранжевый контур даёт < 3:1, поэтому используем светлый.
+:where(.final-cta, .trust, .roi__result, .work-order) :focus-visible {
+  outline-color: $color-paper;
 }
 
 .visually-hidden {

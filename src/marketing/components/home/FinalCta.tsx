@@ -49,6 +49,7 @@ export function FinalCta() {
             placeholder={PHONE_PLACEHOLDER}
             value={phone}
             aria-invalid={error}
+            aria-describedby={error ? 'cta-phone-error' : undefined}
             onChange={(e) => {
               setPhone(maskPhone(e.target.value, phone));
               setError(false);
@@ -59,7 +60,7 @@ export function FinalCta() {
           </button>
         </form>
         {error && (
-          <p className="final-cta__error" role="alert">
+          <p className="final-cta__error" id="cta-phone-error" role="alert">
             {t.finalCtaPhoneError.replace('{phone}', PHONE_PLACEHOLDER)}
           </p>
         )}
