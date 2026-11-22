@@ -33,6 +33,17 @@ test.describe('полная воронка публичной записи', () 
 
     await expect(dialog.getByRole('heading', { name: 'Проверьте запись' })).toBeVisible();
     await expect(dialog.getByText('Тестовая услуга').first()).toBeVisible();
+    // Название услуги и дата — отдельные строки с отступом.
+    const reviewGap = await dialog
+      .locator('.booking-review-row')
+      .first()
+      .evaluate((row) => {
+        const title = row.querySelector('b');
+        const date = row.querySelector('span');
+        if (!title || !date) return -1;
+        return date.getBoundingClientRect().top - title.getBoundingClientRect().bottom;
+      });
+    expect(reviewGap).toBeGreaterThanOrEqual(3);
     await dialog.getByRole('button', { name: /Подтвердить запись/ }).click();
 
     await expect(page.getByRole('heading', { name: 'Запись подтверждена' })).toBeVisible({

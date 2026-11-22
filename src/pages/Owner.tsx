@@ -10,6 +10,7 @@ import { Login, SetInitialPassword } from './owner/auth'
 import { Cabinet } from './owner/cabinet'
 import './owner-login.css'
 import './owner-media.css'
+import './platform.css'
 import './owner-admin.css'
 
 export function Owner() {

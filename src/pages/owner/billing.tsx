@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { errText, owner, type OwnerBillingDocument, type OwnerPayment } from '../../lib/api'
+import { planFeatureLabel } from '../../lib/planFeatures'
 
 const kzt = (n?: number | null) => `${(n ?? 0).toLocaleString('ru-RU')} ₸`
 const date = (v?: string | null) => v ? new Date(v).toLocaleDateString('ru-RU') : '—'
@@ -59,7 +60,7 @@ export function Billing({ slug, onOpenSupport }: { slug: string; onOpenSupport?:
             {near && <p className="err small">Лимит почти исчерпан. Увеличьте тариф через поддержку, чтобы продолжить работу без перерыва.</p>}
           </div>
         })}
-        <div className="row wrap">{Object.entries(usage.data.features).map(([key, enabled]) => <span key={key} className={`pf-badge ${enabled ? 'pf-active' : 'pf-expired'}`}>{key}: {enabled ? 'доступно' : 'не включено'}</span>)}</div>
+        <div className="row wrap">{Object.entries(usage.data.features).map(([key, enabled]) => <span key={key} className={`pf-badge ${enabled ? 'pf-active' : 'pf-expired'}`}>{planFeatureLabel(key)}: {enabled ? 'доступно' : 'не включено'}</span>)}</div>
       </div>}
     </section>
 

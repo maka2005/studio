@@ -188,7 +188,7 @@ export function BookingFlow({ b, initialService, bookingOpen, onClose }: {
         <span className="small">{m.booking.consentBefore}<a href={`/s/${b.slug}/legal/terms`} target="_blank" rel="noreferrer">{m.common.terms}</a>{m.booking.consentAnd}<a href={`/s/${b.slug}/legal/consent`} target="_blank" rel="noreferrer">{m.common.consent}</a>{m.booking.consentPrivacyLead}<a href={`/s/${b.slug}/legal/privacy`} target="_blank" rel="noreferrer">{m.common.privacy}</a>{m.booking.consentAfter}</span></label>)}
 
       {step === 4 && chosen.length > 0 && slot && <div className="card col">
-        {plan.map((p, i) => <div key={`${p.service.id}-${i}`}><b>{p.service.name}</b><span className="muted small">{fmt(p.start, "d MMMM 'в' HH:mm")} · {duration(p.service.duration_minutes)}</span></div>)}
+        {plan.map((p, i) => <div className="booking-review-row" key={`${p.service.id}-${i}`}><b>{p.service.name}</b><span className="muted small">{fmt(p.start, "d MMMM 'в' HH:mm")} · {duration(p.service.duration_minutes)}</span></div>)}
         <span className="muted">{form.name}, {form.phone}</span>{isAuto || form.car.trim() ? <span className="muted">{isAuto ? form.car : `${m.booking.wishLabel}: ${form.car.trim()}`}</span> : null}<b>{money(totalCents / 100, b.currency)}</b>
         <label className="muted small" htmlFor="promo-code">{m.booking.promoLabel}</label><input id="promo-code" className="field" maxLength={24} autoCapitalize="characters" placeholder={m.booking.promoPlaceholder} value={promo} onChange={(e) => setPromo(e.target.value.toUpperCase())} />
         <span className="muted small">{m.booking.promoHint}</span></div>}
