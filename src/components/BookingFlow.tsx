@@ -149,7 +149,7 @@ export function BookingFlow({ b, initialService, bookingOpen, onClose }: {
           <label className="sr-only" htmlFor={`booking-service-search-${b.slug}`}>{m.booking.searchLabel}</label>
           <input id={`booking-service-search-${b.slug}`} className="field" type="search" placeholder={m.booking.searchPlaceholder} value={serviceSearch} onChange={(e) => { setServiceSearch(e.target.value); setServiceIds([]); }} />
           {svcCategories.length > 1 && <div className="service-category-filter" aria-label={m.booking.categoriesLabel}>
-            {[allServicesCategory(locale), ...svcCategories].map((item) => <button key={item} className={`chip ${serviceCategory === item || (item === allServicesCategory(locale) && serviceCategory === ALL_SERVICES_CATEGORY) ? 'sel' : ''}`} aria-pressed={serviceCategory === item} onClick={() => { setServiceCategory(item); setServiceIds([]); }}>{item}</button>)}
+            {[allServicesCategory(locale), ...svcCategories].map((item) => <button key={item} className={`chip ${serviceCategory === item || (item === allServicesCategory(locale) && serviceCategory === ALL_SERVICES_CATEGORY) ? 'sel' : ''}`} aria-pressed={serviceCategory === item} onClick={() => setServiceCategory(item)}>{item}</button>)}
           </div>}
           <p className="muted small">{m.booking.selectHint}</p>
           {chosen.length > 0 && <div className="selection-bar">

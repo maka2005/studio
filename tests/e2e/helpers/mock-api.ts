@@ -36,7 +36,7 @@ const SERVICE: MockService = {
 const SECOND_SERVICE: MockService = {
   id: SECOND_SERVICE_ID,
   name: 'Вторая услуга',
-  category: 'Мойка',
+  category: 'Детейлинг',
   price_cents: 3000,
   duration_minutes: 30,
   active: true,

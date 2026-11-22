@@ -1,5 +1,6 @@
 /* Renvio PWA service worker. No inline eval, no dynamic code execution. */
-const CACHE_NAME = 'renvio-v1';
+// Смена версии сбрасывает застаревший кэш ассетов после деплоя.
+const CACHE_NAME = 'renvio-v2';
 const PRECACHE = ['/', '/servio-default.svg'];
 
 self.addEventListener('install', (event) => {
@@ -68,10 +69,15 @@ async function cacheFirstAsset(request) {
     if (cached) return cached;
     const response = await fetch(request);
     if (response && response.ok) {
-      try {
-        await cache.put(request, response.clone());
-      } catch {
-        // Best-effort cache fill only.
+      const type = response.headers.get('content-type') || '';
+      // Vercel отдаёт SPA-fallback как HTML с кодом 200: такой ответ нельзя
+      // кэшировать под адрес JS-чанка, иначе приложение надолго падает после деплоя.
+      if (!type.includes('text/html')) {
+        try {
+          await cache.put(request, response.clone());
+        } catch {
+          // Best-effort cache fill only.
+        }
       }
     }
     return response;

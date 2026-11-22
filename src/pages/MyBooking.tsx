@@ -10,14 +10,13 @@ import {
 } from '../lib/api';
 import { money, telHref } from '../lib/format';
 import { allTokens, allWaitlistTokens, saveToken } from '../lib/tokens';
-import { ArrowRight, Calendar, Car, Check, Clock, Copy, Phone, Pin } from '../lib/icons';
+import { Calendar, Check, Copy, Phone } from '../lib/icons';
 import { CustomerTelegramOptIn } from '../components/CustomerTelegramOptIn';
 import { PushOptIn } from '../components/PushOptIn';
 import { ReschedulePicker } from '../components/ReschedulePicker';
 import { LoadingScreen } from '../components/LoadingScreen';
 import { isAutoBusiness } from '../lib/businessTypes';
 import { clientDateLocale, clientErrText, useClientMessages } from '../lib/clientLocale';
-import './my-booking.css';
 
 // Токен берётся из приватной ссылки (#t=...) либо из хранилища этого устройства. Фрагмент не уходит на сервер.
 function readToken(slug: string): string | null {
@@ -110,62 +109,45 @@ export function MyBooking() {
   const showBookings = tokens.length > 0 || bookings.length > 0;
 
   return (
-    <section className="page my-bookings">
-      <header className="my-bookings__head">
-        <div>
-          <p className="my-bookings__eyebrow">{b.short_name}</p>
-          <h2>{m.my.title}</h2>
-        </div>
-        {showBookings && activeBookings.length > 0 && <div className="my-bookings__counter">
-          <b>{activeBookings.length}</b>
-          <span>{m.my.tabs.bookings}</span>
-        </div>}
-      </header>
-      <div className="my-tabs" role="tablist" aria-label={m.my.title}>
+    <section className="page">
+      <h2>{m.my.title}</h2>
+      <div className="tabs2" role="tablist" aria-label={m.my.title}>
         <button role="tab" aria-selected={tab === 'bookings'} onClick={() => setTab('bookings')}>{m.my.tabs.bookings}</button>
         <button role="tab" aria-selected={tab === 'archive'} onClick={() => setTab('archive')}>{m.my.tabs.archive}</button>
         <button role="tab" aria-selected={tab === 'waitlist'} onClick={() => setTab('waitlist')}>{m.my.tabs.waitlist}</button>
       </div>
 
       {tab === 'bookings' && (() => {
-        if (!showBookings) return <div className="mb-empty">
-          <span className="mb-empty__icon"><Calendar size={26} /></span>
+        if (!showBookings) return <section>
           <p className="muted">{m.my.empty}</p>
           <button className="btn" onClick={() => openBooking()}>{m.my.chooseService}</button>
-        </div>;
+        </section>;
         if (bookingsQ.isPending) return <LoadingScreen label={m.my.loading} compact />;
         if (bookingsQ.isError) return <p className="err">{m.my.loadError} <button className="link" onClick={() => void bookingsQ.refetch()}>{m.common.retry}</button></p>;
-        if (!activeBookings.length) return <div className="mb-empty">
-          <span className="mb-empty__icon"><Calendar size={26} /></span>
-          <p className="muted">{m.my.empty}</p>
-          <button className="btn" onClick={() => openBooking()}>{m.my.chooseService}</button>
-        </div>;
-        return <div className="mb-list">{activeBookings.map((row, index) => (
+        if (!activeBookings.length) return <><p className="muted">{m.my.empty}</p><button className="btn" onClick={() => openBooking()}>{m.my.chooseService}</button></>;
+        return activeBookings.map((row, index) => (
           <BookingCard key={row.id} b={b} d={row} m={m} index={activeFlags[index]!.index} total={activeFlags[index]!.total}
             visitActions={activeFlags[index]!.first} archived={false}
             openBooking={openBooking}
             confirming={confirmId === row.id} rescheduling={rescheduleId === row.id}
             onConfirm={(id) => setConfirmId(id)} onReschedule={(id) => setRescheduleId(id)}
             onChanged={() => void qc.invalidateQueries({ queryKey: ['my-bookings', b.slug] })} />
-        ))}</div>;
+        ));
       })()}
 
       {tab === 'archive' && (() => {
         if (!showBookings) return <p className="muted">{m.my.archiveEmpty}</p>;
         if (bookingsQ.isPending) return <LoadingScreen label={m.my.loading} compact />;
         if (bookingsQ.isError) return <p className="err">{m.my.loadError} <button className="link" onClick={() => void bookingsQ.refetch()}>{m.common.retry}</button></p>;
-        if (!archiveBookings.length) return <div className="mb-empty">
-          <span className="mb-empty__icon"><Calendar size={26} /></span>
-          <p className="muted">{m.my.archiveEmpty}</p>
-        </div>;
-        return <div className="mb-list">{archiveBookings.map((row, index) => (
+        if (!archiveBookings.length) return <p className="muted">{m.my.archiveEmpty}</p>;
+        return archiveBookings.map((row, index) => (
           <BookingCard key={row.id} b={b} d={row} m={m} index={archiveFlags[index]!.index} total={archiveFlags[index]!.total}
             visitActions={archiveFlags[index]!.first} archived
             openBooking={openBooking}
             confirming={false} rescheduling={false}
             onConfirm={() => {}} onReschedule={() => {}}
             onChanged={() => void qc.invalidateQueries({ queryKey: ['my-bookings', b.slug] })} />
-        ))}</div>;
+        ));
       })()}
 
       {tab === 'waitlist' && (() => {
@@ -173,15 +155,15 @@ export function MyBooking() {
         if (waitlistQ.isPending) return <LoadingScreen label={m.waitlist.loading} compact />;
         if (waitlistQ.isError) return <p className="err">{clientErrText(waitlistQ.error, m.errors)} <button className="link" onClick={() => void waitlistQ.refetch()}>{m.common.retry}</button></p>;
         if (!waitlistQ.data?.length) return <p className="muted">{m.my.waitlistEmpty}</p>;
-        return <div className="mb-list mb-list--waitlist">{waitlistQ.data.map(({ token, item }) => (
-          <div className="mb-wait" key={item.id}>
+        return waitlistQ.data.map(({ token, item }) => (
+          <div className="card col" key={item.id}>
             <div className="kv"><span className="muted">{m.waitlist.serviceLabel}</span><b>{item.service_name}</b></div>
             <div className="kv"><span className="muted">{m.waitlist.dayLabel}</span><b>{dayFmt(item.preferred_day)}</b></div>
             <div className="kv"><span className="muted">{m.waitlist.statusLabel}</span><b>{(m.waitlist.statuses as Record<string, string>)[item.status] ?? item.status}</b></div>
             {item.offer && <p className="note" role="status">{m.waitlist.offerTitle}: {formatInTimeZone(new Date(item.offer.slot), b.timezone, "d MMMM 'в' HH:mm", { locale: clientDateLocale(locale) })}</p>}
             <Link className="btn ghost" to={`/s/${b.slug}/waitlist#t=${token}`}>{m.my.waitlistOpen}</Link>
           </div>
-        ))}</div>;
+        ));
       })()}
     </section>
   );
@@ -202,10 +184,6 @@ function BookingCard({ b, d, m, index, total, visitActions, archived = false, op
   const isAuto = isAutoBusiness(b.business_type);
   const f = (s: string, p: string) => formatInTimeZone(new Date(s), b.timezone, p, { locale: clientDateLocale(locale) });
   const z = (s: string) => new Date(s).toISOString().replace(/[-:]|\.\d{3}/g, '');
-  const day = f(d.starts_at, 'd');
-  const month = f(d.starts_at, 'LLL');
-  const weekday = f(d.starts_at, 'EEEEEE');
-  const statusLabel = (m.my.status as Record<string, string>)[d.status] ?? d.status;
 
   const cancel = useMutation({
     mutationFn: () => cancelBooking(d.token),
@@ -233,75 +211,49 @@ function BookingCard({ b, d, m, index, total, visitActions, archived = false, op
   };
 
   return (
-    <article className={`mb-card${archived ? ' mb-card--archived' : ''}`}>
-      {total > 1 && <div className="mb-card__visit"><span className="mb-card__visit-dot" />{m.my.visit} {index} / {total}</div>}
-
-      <div className="mb-card__hero">
-        <div className="mb-card__date" aria-hidden="true">
-          <b>{day}</b>
-          <span>{month}</span>
-          <small>{weekday}</small>
-        </div>
-        <div className="mb-card__main">
-          <div className="mb-card__badges">
-            <span className="mb-card__brand">{b.short_name}</span>
-            <span className="mb-card__status"><Check size={13} />{statusLabel}</span>
-          </div>
-          <h3 className="mb-card__title">{d.service_name}</h3>
-          <p className="mb-card__when"><Calendar size={16} />{f(d.starts_at, "d MMMM 'в' HH:mm")}</p>
-        </div>
-        <div className="mb-card__price"><span>{m.my.cost}</span><b>{money(d.price_cents / 100, b.currency)}</b></div>
-      </div>
-
-      <div className="mb-card__details">
-        <div className="mb-detail">
-          <span className="mb-detail__ico"><Clock size={18} /></span>
-          <span className="mb-detail__text"><small>{isAuto ? m.my.readyAuto : m.my.readyOther}</small><b>{f(d.ends_at, "d MMMM 'в' HH:mm")}</b></span>
-        </div>
-        {d.car && d.car !== 'Без пожеланий' && <div className="mb-detail">
-          <span className="mb-detail__ico"><Car size={18} /></span>
-          <span className="mb-detail__text"><small>{m.my.carLabel}</small><b>{d.car}</b></span>
-        </div>}
-        <div className="mb-detail">
-          <span className="mb-detail__ico"><Pin size={18} /></span>
-          <span className="mb-detail__text"><small>{m.my.addressLabel}</small><b>{b.address}</b></span>
-        </div>
-      </div>
+    <div className="card status">
+      {total > 1 && <span className="muted small">{m.my.visit} {index} / {total}</span>}
+      <span className="okc"><Check size={18} /></span>
+      <span className="muted small">{b.short_name}</span>
+      <h3 style={{ margin: 0 }}>{(m.my.status as Record<string, string>)[d.status] ?? d.status}</h3>
+      <b>{f(d.starts_at, "d MMMM 'в' HH:mm")}</b>
+      <h2 style={{ fontSize: 22, marginTop: 20 }}>{d.service_name}</h2>
+      <div className="kv"><span className="muted">{m.my.cost}</span><b>{money(d.price_cents / 100, b.currency)}</b></div>
+      <div className="kv"><span className="muted">{isAuto ? m.my.readyAuto : m.my.readyOther}</span><b>{f(d.ends_at, "d MMMM 'в' HH:mm")}</b></div>
+      {isAuto || (d.car && d.car !== 'Без пожеланий') ? <p><b>{d.car}</b></p> : null}
+      <p className="muted">{b.address}</p>
 
       {!archived && b.client_telegram_enabled && d.status === 'booked' && new Date(d.starts_at).getTime() > Date.now()
-        && <div className="mb-card__reminder"><CustomerTelegramOptIn slug={b.slug} token={d.token} /></div>}
-
-      <a className="mb-contact" href={telHref(b.phone)}>
-        <span className="mb-contact__ico"><Phone size={20} /></span>
-        <span className="mb-contact__text"><b>{m.my.contact}</b><small>{b.phone}</small></span>
-        <ArrowRight className="mb-contact__arrow" size={18} />
+        && <CustomerTelegramOptIn slug={b.slug} token={d.token} />}
+      <a className="card contact" href={telHref(b.phone)}>
+        <span className="ico accent" style={{ width: 52, height: 52 }}><Phone /></span>
+        <span><b>{m.my.contact}</b><br /><span className="muted small">{b.phone}</span></span>
       </a>
-
-      <div className="mb-actions" role="group" aria-label={m.my.actionsLabel}>
-        <button className="mb-action" onClick={() => void copy()}><span className="mb-action__ico"><Copy size={17} /></span>{m.my.link}</button>
-        <button className="mb-action" disabled={d.status === 'cancelled'} onClick={download}><span className="mb-action__ico"><Calendar size={17} /></span>{m.my.calendar}</button>
+      <div className="acts">
+        <button className="act" onClick={() => void copy()}><span className="ico"><Copy size={16} /></span>{m.my.link}</button>
+        <button className="act" disabled={d.status === 'cancelled'} onClick={download}><span className="ico"><Calendar size={16} /></span>{m.my.calendar}</button>
         {!archived && d.status === 'booked' && new Date(d.starts_at).getTime() > Date.now()
           && <PushOptIn token={d.token} kind="booking" compact onNotice={setNote} />}
       </div>
       {!archived && d.status === 'booked' && new Date(d.starts_at).getTime() > Date.now()
-        && <p className="mb-card__beta">{m.push.beta}</p>}
-      {note && <p className="mb-note" role="status">{note}</p>}
+        && <p className="muted small">{m.push.beta}</p>}
+      {note && <p className="note" role="status">{note}</p>}
 
-      {(d.status === 'done' || d.status === 'cancelled') && <button className="btn ghost mb-full-btn" onClick={() => openBooking(d.service_id)}>{m.my.bookAgain}</button>}
-      {d.status === 'done' && new Date(d.starts_at).getTime() > Date.now() && <p className="mb-hint">{m.my.reviewLater}</p>}
-      {d.status === 'done' && new Date(d.starts_at).getTime() <= Date.now() && !d.reviewed && !reviewSaved && <div className="mb-review">
+      {(d.status === 'done' || d.status === 'cancelled') && <button className="btn ghost" onClick={() => openBooking(d.service_id)}>{m.my.bookAgain}</button>}
+      {d.status === 'done' && new Date(d.starts_at).getTime() > Date.now() && <p className="muted small">{m.my.reviewLater}</p>}
+      {d.status === 'done' && new Date(d.starts_at).getTime() <= Date.now() && !d.reviewed && !reviewSaved && <div className="card col">
         <b>{m.my.reviewTitle}</b>
-        <div className="row mb-review__stars" role="group" aria-label={m.my.reviewTitle}>
+        <div className="row" role="group" aria-label={m.my.reviewTitle}>
           {[1, 2, 3, 4, 5].map((n) => <button key={n} type="button" aria-pressed={rating === n} aria-label={m.my.ratingAria(n)} className="chip" onClick={() => setRating(n)}>{n} ★</button>)}
         </div>
         <textarea className="field" aria-label={m.my.reviewPlaceholder} maxLength={1000} rows={3} placeholder={m.my.reviewPlaceholder} value={reviewText} onChange={(e) => setReviewText(e.target.value)} />
         {reviewError && <p className="err small" role="alert">{reviewError}</p>}
         <button className="btn" disabled={rating === 0 || review.isPending} onClick={() => review.mutate()}>{review.isPending ? m.my.reviewSending : m.my.reviewSubmit}</button>
       </div>}
-      {(d.reviewed || reviewSaved) && <p className="mb-note" role="status">{m.my.thanks}</p>}
+      {(d.reviewed || reviewSaved) && <p className="note" role="status">{m.my.thanks}</p>}
 
       {!archived && visitActions && d.status === 'booked' && d.reschedule_hours > 0 && (
-        <button className="btn ghost mb-full-btn" disabled={!d.can_reschedule || rescheduling}
+        <button className="btn ghost" disabled={!d.can_reschedule || rescheduling}
           title={d.can_reschedule ? undefined : m.my.rescheduleHint(d.reschedule_hours)}
           onClick={() => onReschedule(d.id)}>{total > 1 ? m.my.rescheduleVisit : m.my.reschedule}</button>
       )}
@@ -313,11 +265,11 @@ function BookingCard({ b, d, m, index, total, visitActions, archived = false, op
           void qc.invalidateQueries({ queryKey: ['my-bookings', b.slug] });
         }} />}
       {!archived && visitActions && d.can_cancel && (confirming
-        ? <button className="btn danger mb-full-btn" disabled={cancel.isPending} onClick={() => cancel.mutate()}>{cancel.isPending ? m.my.cancelling : m.my.cancelConfirm}</button>
-        : <button className="btn ghost mb-full-btn" onClick={() => onConfirm(d.id)}>{total > 1 ? m.my.cancelVisit : m.my.cancel}</button>)}
-      {!archived && visitActions && !d.can_cancel && d.status === 'booked' && <p className="mb-hint">{m.my.cancelHint(d.cancel_hours ?? 24, b.phone)}</p>}
-      {!archived && visitActions && !d.can_reschedule && d.status === 'booked' && d.reschedule_hours > 0 && <p className="mb-hint">{m.my.rescheduleHint(d.reschedule_hours)}</p>}
+        ? <button className="btn danger" disabled={cancel.isPending} onClick={() => cancel.mutate()}>{cancel.isPending ? m.my.cancelling : m.my.cancelConfirm}</button>
+        : <button className="btn ghost" onClick={() => onConfirm(d.id)}>{total > 1 ? m.my.cancelVisit : m.my.cancel}</button>)}
+      {!archived && visitActions && !d.can_cancel && d.status === 'booked' && <p className="muted small">{m.my.cancelHint(d.cancel_hours ?? 24, b.phone)}</p>}
+      {!archived && visitActions && !d.can_reschedule && d.status === 'booked' && d.reschedule_hours > 0 && <p className="muted small">{m.my.rescheduleHint(d.reschedule_hours)}</p>}
       {!archived && cancel.isError && <p className="err">{m.my.cancelError}</p>}
-    </article>
+    </div>
   );
 }

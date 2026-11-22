@@ -64,7 +64,7 @@ const registerServiceWorker = () => {
   if (!('serviceWorker' in navigator)) return;
   const secure = window.location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(window.location.hostname);
   if (!secure) return;
-  void navigator.serviceWorker.register('/sw.js').catch(() => { /* SW может быть ещё не задеплоен */ });
+  void navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).catch(() => { /* SW может быть ещё не задеплоен */ });
 };
 if (document.readyState === 'complete') registerServiceWorker();
 else window.addEventListener('load', registerServiceWorker, { once: true });

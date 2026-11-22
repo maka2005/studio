@@ -95,6 +95,7 @@ test.describe('полная воронка публичной записи', () 
     await expect(dialog.getByRole('heading', { name: 'Выберите услугу' })).toBeVisible();
 
     await dialog.getByRole('button', { name: /Тестовая услуга/ }).click();
+    await dialog.getByRole('button', { name: 'Детейлинг', exact: true }).click();
     await dialog.getByRole('button', { name: /Вторая услуга/ }).click();
     await expect(dialog.getByText('Выбрано услуг: 2')).toBeVisible();
     await dialog.getByRole('button', { name: 'Продолжить' }).click();
@@ -246,7 +247,7 @@ test('service worker отдаётся как JavaScript и содержит ож
   expect(response.headers()['content-type'] ?? '').toMatch(/javascript/);
 
   const body = await response.text();
-  expect(body).toContain('renvio-v1');
+  expect(body).toContain('renvio-v2');
   expect(body).toMatch(/addEventListener\(\s*['"]push['"]/);
   expect(body).toMatch(/addEventListener\(\s*['"]notificationclick['"]/);
 });
