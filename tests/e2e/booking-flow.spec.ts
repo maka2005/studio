@@ -238,7 +238,7 @@ test.describe('полная воронка публичной записи', () 
     await expect(page.getByText('Моя запись', { exact: true })).toHaveCount(0);
   });
 
-  for (const width of [390, 360]) {
+  for (const width of [390, 360, 320]) {
     test(`выбор даты на ${width}px не выходит за экран`, async ({ page }) => {
       await page.setViewportSize({ width, height: 800 });
       await mockBookingFunnelApi(page);
@@ -252,22 +252,38 @@ test.describe('полная воронка публичной записи', () 
       await dialog.getByRole('button', { name: /Тестовая услуга/ }).click();
       await dialog.getByRole('button', { name: 'Продолжить' }).click();
       await expect(dialog.locator('.days')).toBeVisible();
+      await expect(dialog.locator('#other-date')).toBeVisible();
 
       const metrics = await page.evaluate(() => {
         const days = document.querySelector('.days') as HTMLElement;
+        const otherDate = document.querySelector('#other-date') as HTMLInputElement;
+        const sheet = document.querySelector('.sheet') as HTMLElement;
+        const box = otherDate.getBoundingClientRect();
         return {
           viewport: window.innerWidth,
           doc: document.documentElement.scrollWidth,
           daysScroll: days.scrollWidth,
           daysClient: days.clientWidth,
+          dateLeft: box.left,
+          dateRight: box.right,
+          dateScroll: otherDate.scrollWidth,
+          dateClient: otherDate.clientWidth,
+          sheetScroll: sheet.scrollWidth,
+          sheetClient: sheet.clientWidth,
+          sheetOverflowX: getComputedStyle(sheet).overflowX,
         };
       });
       expect(metrics.doc).toBeLessThanOrEqual(metrics.viewport);
       expect(metrics.daysScroll).toBeLessThanOrEqual(metrics.daysClient);
+      expect(metrics.dateLeft).toBeGreaterThanOrEqual(0);
+      expect(metrics.dateRight).toBeLessThanOrEqual(metrics.viewport);
+      expect(metrics.dateScroll).toBeLessThanOrEqual(metrics.dateClient);
+      expect(metrics.sheetScroll).toBeLessThanOrEqual(metrics.sheetClient);
+      expect(metrics.sheetOverflowX).toBe('hidden');
 
       const overflowing = await page.evaluate(() => {
         const out: string[] = [];
-        document.querySelectorAll('.days *').forEach((el) => {
+        document.querySelectorAll('.days *, #other-date').forEach((el) => {
           const r = el.getBoundingClientRect();
           if (r.left < 0 || r.right > window.innerWidth + 1) out.push(el.tagName);
         });
