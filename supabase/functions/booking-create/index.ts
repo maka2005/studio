@@ -101,6 +101,28 @@ Deno.serve(withEdgeObservability('booking-create', async (req) => {
   } catch (e) {
     console.error('booking job payload update failed:', (e as Error).message);
   }
+  // Returning customers already have a Telegram link (copied by the database
+  // trigger). Wake the dispatcher now instead of waiting for the next cron tick,
+  // so the confirmation arrives while the client is still on the page.
+  const cronSecret = Deno.env.get('CRON_SECRET') ?? '';
+  if (cronSecret.length >= 16 && ids.length) {
+    try {
+      const { data: linked, error: linkedError } = await admin.from('booking_telegram_links')
+        .select('booking_id').in('booking_id', ids).limit(1);
+      if (linkedError) throw linkedError;
+      if (linked?.length) {
+        const res = await fetch(`${Deno.env.get('SUPABASE_URL') ?? ''}/functions/v1/notify-dispatch`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-cron-secret': cronSecret },
+          body: '{}',
+          signal: AbortSignal.timeout(8000),
+        });
+        if (!res.ok) console.error('immediate notify failed:', res.status);
+      }
+    } catch (e) {
+      console.error('immediate notify failed:', (e as Error).message);
+    }
+  }
   const { data: pricing, error: pricingError } = await admin.from('bookings')
     .select('id,price_cents,discount_cents,promo_code').in('id', ids);
   if (pricingError) console.error('booking price lookup failed:', pricingError.message);

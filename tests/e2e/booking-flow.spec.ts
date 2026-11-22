@@ -133,6 +133,41 @@ test.describe('полная воронка публичной записи', () 
     await expect(page.getByText('Визит 2 / 2')).toBeVisible();
   });
 
+  test('вернувшийся клиент не видит повторное согласие Telegram', async ({ page }) => {
+    await mockBookingFunnelApi(page, { telegramConnected: true });
+
+    await page.goto('/s/graphite');
+    await expect(page.getByText('KostAutoHub', { exact: false }).first()).toBeVisible({
+      timeout: 15_000,
+    });
+    await page.getByRole('button', { name: 'Записаться' }).first().click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByRole('heading', { name: 'Выберите услугу' })).toBeVisible();
+    await dialog.getByRole('button', { name: /Тестовая услуга/ }).click();
+    await dialog.getByRole('button', { name: 'Продолжить' }).click();
+    await dialog.getByRole('button', { name: '10:00', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Продолжить' }).click();
+    await dialog.locator('#name').fill('Тест Клиент');
+    await dialog.locator('#phone').fill('+7 777 123 45 67');
+    await dialog.locator('#car').fill('Toyota Camry');
+    await dialog.getByRole('checkbox').check();
+    await dialog.getByRole('button', { name: 'Проверить запись' }).click();
+    await dialog.getByRole('button', { name: /Подтвердить запись/ }).click();
+
+    await expect(page.getByRole('heading', { name: 'Запись подтверждена' })).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(dialog.getByText('✅ Telegram подключён')).toBeVisible({ timeout: 10_000 });
+    await expect(dialog.getByText('Получать напоминания в Telegram?')).toHaveCount(0);
+
+    await dialog.getByRole('link', { name: /Моя запись/ }).click();
+    await expect(page.getByRole('heading', { name: 'Моя запись' }).first()).toBeVisible({
+      timeout: 10_000,
+    });
+    await expect(page.getByText('✅ Telegram подключён')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('Получать напоминания в Telegram?')).toHaveCount(0);
+  });
+
   test('активные записи отделены от архива, кнопки действия — только в активных', async ({
     page,
   }) => {

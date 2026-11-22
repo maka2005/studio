@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import type { Page, Route } from '@playwright/test';
 
 /** All external traffic of the booking funnel is stubbed: no real Supabase writes. */
@@ -61,6 +63,8 @@ type MockOptions = {
   freeSlots?: boolean;
   /** true — добавить прошедшую и отменённую записи для проверки архива. */
   history?: boolean;
+  /** true — вернувшийся клиент, Telegram уже подключён на прежней записи. */
+  telegramConnected?: boolean;
 };
 
 type MockHandle = {
@@ -145,7 +149,7 @@ export const isoInZone = (day: string, hhmm: string, timeZone = TIME_ZONE) => {
  */
 export async function mockBookingFunnelApi(
   page: Page,
-  { freeSlots = true, history = false }: MockOptions = {},
+  { freeSlots = true, history = false, telegramConnected = false }: MockOptions = {},
 ): Promise<MockHandle> {
   // Мок должен оставаться в будущем: прошедшие записи теперь уходят в архив.
   const today = dayInZone();
@@ -276,8 +280,15 @@ export async function mockBookingFunnelApi(
     if (route.request().method() === 'OPTIONS') return respondPreflight(route);
     const url = new URL(route.request().url());
     if (url.pathname.endsWith('/tenants')) {
-      // data:null makes loadBusiness() use /tenants/graphite.json.
-      return respondJson(route, null);
+      if (!telegramConnected) {
+        // data:null makes loadBusiness() use /tenants/graphite.json.
+        return respondJson(route, null);
+      }
+      const config = JSON.parse(
+        readFileSync(resolve(process.cwd(), 'tenants/graphite/business.json'), 'utf8'),
+      ) as JsonObject;
+      config.client_telegram_enabled = true;
+      return respondJson(route, { config });
     }
     if (url.pathname.endsWith('/services')) return respondJson(route, [SERVICE, SECOND_SERVICE]);
     return respondJson(route, []);
@@ -368,6 +379,10 @@ export async function mockBookingFunnelApi(
         });
       case 'push_subscribe':
         return respondJson(route, { ok: true });
+      case 'customer_telegram_status':
+        return respondJson(route, { connected: telegramConnected });
+      case 'customer_telegram_link':
+        return respondJson(route, { code: null });
       default:
         return respondJson(route, { ok: true });
     }

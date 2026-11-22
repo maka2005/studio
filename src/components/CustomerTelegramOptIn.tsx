@@ -10,6 +10,7 @@ export function CustomerTelegramOptIn({ slug, token }: { slug: string; token: st
   const [busy, setBusy] = useState(false);
   const [url, setUrl] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
+  const [checking, setChecking] = useState(true);
   const [waiting, setWaiting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const botReady = !!BOT && /^[A-Za-z0-9_]{5,32}$/.test(BOT);
@@ -29,7 +30,9 @@ export function CustomerTelegramOptIn({ slug, token }: { slug: string; token: st
       attempts++;
       if (attempts >= 40 && timer) { window.clearInterval(timer); if (active) setWaiting(false); }
     };
-    void check();
+    void check().finally(() => {
+      if (active) setChecking(false);
+    });
     if (url && !connected) timer = window.setInterval(() => void check(), 3000);
     return () => { active = false; if (timer) window.clearInterval(timer); };
   }, [token, url, connected]);
@@ -49,6 +52,12 @@ export function CustomerTelegramOptIn({ slug, token }: { slug: string; token: st
         : 'Не удалось подготовить ссылку. Попробуйте ещё раз.');
     } finally { setBusy(false); }
   };
+
+  // A returning customer is recognized before the first paint, so the consent
+  // form never flashes for someone who already opted in.
+  if (checking) return <div className="card col customer-telegram-opt-in">
+    <p className="muted small">Проверяем статус Telegram…</p>
+  </div>;
 
   return <div className="card col customer-telegram-opt-in">
     {connected ? <>
