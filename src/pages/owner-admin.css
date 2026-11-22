@@ -115,7 +115,8 @@
 .owner-subscription-details>div>b{overflow-wrap:anywhere}
 .owner-account-card,.owner-account-card+.card{gap:20px!important;padding:21px!important}
 .owner-account-grid{gap:12px!important}
-.owner-account-grid>div{gap:8px!important;padding:16px!important}
+.owner-account-grid>div{gap:8px!important;padding:16px!important;border:0!important;background:transparent!important}
+.pf-badge{border:0!important;background:#ffffff0f!important}
 @media(max-width:1099px){
   .admin-shell .admin-side{display:none!important}
   .admin-shell .admin-mobile-navigation{display:block;margin:0 0 20px}
