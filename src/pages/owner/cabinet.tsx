@@ -401,7 +401,7 @@ export function Cabinet({ b, onLogout, impersonation }: { b: Business; onLogout:
             );
           })}
         </nav>
-        <div className="admin-main">
+        <div className="admin-main" data-owner-tab={tab}>
           <Suspense fallback={<p className="muted" role="status" aria-busy="true">Загрузка раздела…</p>}>
             {tab === 'Записи' && <Bookings b={b} role={role??undefined} />}
             {tab === 'Сотрудники' && role === 'owner' && <TeamAccess b={b} />}

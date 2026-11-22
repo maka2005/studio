@@ -112,6 +112,11 @@ test('кабинет владельца: отступы карточек и ру
   expect(spacing.cellDisplay).toBe('grid');
   expect(spacing.cellPadding).toBeGreaterThan(0);
   expect(spacing.cardGap).toBeGreaterThan(0);
+  const accountBorders = await page
+    .locator('.admin-main[data-owner-tab] .card')
+    .evaluateAll((cards) => cards.map((card) => getComputedStyle(card).borderTopWidth));
+  expect(accountBorders.length).toBeGreaterThan(0);
+  expect(accountBorders.every((width) => parseFloat(width) === 0)).toBe(true);
 
   await page.getByRole('button', { name: 'Счета и оплата', exact: true }).first().click();
   await expect(page.getByRole('heading', { name: 'Счета и оплата' })).toBeVisible();
@@ -122,4 +127,9 @@ test('кабинет владельца: отступы карточек и ру
   const billingGrid = page.locator('.owner-account-grid').first();
   await expect(billingGrid).toBeVisible();
   expect(await billingGrid.evaluate((grid) => getComputedStyle(grid).display)).toBe('grid');
+  const billingBorders = await page
+    .locator('.admin-main[data-owner-tab] .card')
+    .evaluateAll((cards) => cards.map((card) => getComputedStyle(card).borderTopWidth));
+  expect(billingBorders.length).toBeGreaterThan(0);
+  expect(billingBorders.every((width) => parseFloat(width) === 0)).toBe(true);
 });

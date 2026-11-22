@@ -30,3 +30,27 @@ describe('owner_update_config media keys', () => {
     );
   });
 });
+
+describe('owner_update_config local asset paths', () => {
+  const localPaths = readFileSync(
+    resolve(process.cwd(), 'supabase/migrations/20261122180000_owner_config_local_asset_paths.sql'),
+    'utf8',
+  );
+
+  it('accepts static paths used by existing tenant configs', () => {
+    const pattern = localPaths.match(/!~ '\^\(([^']+)\)'/)?.[1];
+    expect(pattern).toBeTruthy();
+    const allowed = new RegExp(`^(${pattern})`);
+    expect(allowed.test('https://example.supabase.co/storage/v1/object/public/a/b.png')).toBe(true);
+    expect(allowed.test('images/logo.png')).toBe(true);
+    expect(allowed.test('/servio-default.svg')).toBe(true);
+    expect(allowed.test('/tenants/graphite/hero.jpg')).toBe(true);
+    expect(allowed.test('//evil.example/logo.png')).toBe(false);
+    expect(allowed.test('javascript:alert(1)')).toBe(false);
+  });
+
+  it('keeps the media keys while relaxing only the URL validation', () => {
+    expect(localPaths).toMatch(/e\.key in \('phone'[\s\S]{0,220}'images'/);
+    expect(localPaths).toContain('public.owner_tenant_owner(p_slug)');
+  });
+});

@@ -110,13 +110,16 @@
 .owner-subscription-heading{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
 .owner-subscription-heading>b{font-size:17px}
 .owner-subscription-details{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
-.owner-subscription-details>div{display:grid;gap:6px;min-width:0;padding:13px 15px;border:1px solid #272d37;border-radius:13px;background:#ffffff04}
+.owner-subscription-details>div{display:grid;gap:6px;min-width:0;padding:13px 15px}
 .owner-subscription-details>div>span{color:var(--muted);font-size:13px}
 .owner-subscription-details>div>b{overflow-wrap:anywhere}
 .owner-account-card,.owner-account-card+.card{gap:20px!important;padding:21px!important}
 .owner-account-grid{gap:12px!important}
 .owner-account-grid>div{gap:8px!important;padding:16px!important;border:0!important;background:transparent!important}
 .pf-badge{border:0!important;background:#ffffff0f!important}
+.admin-main[data-owner-tab='Личный кабинет'] .card,
+.admin-main[data-owner-tab='Личный кабинет'] .owner-subscription-summary,
+.admin-main[data-owner-tab='Счета и оплата'] .card{border:0!important;box-shadow:none!important;background:#101216!important}
 @media(max-width:1099px){
   .admin-shell .admin-side{display:none!important}
   .admin-shell .admin-mobile-navigation{display:block;margin:0 0 20px}
