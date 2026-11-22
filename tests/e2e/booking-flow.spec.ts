@@ -237,6 +237,45 @@ test.describe('полная воронка публичной записи', () 
     await expect(page.getByRole('link', { name: 'Менің жазылуым', exact: true })).toBeVisible();
     await expect(page.getByText('Моя запись', { exact: true })).toHaveCount(0);
   });
+
+  for (const width of [390, 360]) {
+    test(`выбор даты на ${width}px не выходит за экран`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await mockBookingFunnelApi(page);
+
+      await page.goto('/s/graphite');
+      await expect(page.getByText('KostAutoHub', { exact: false }).first()).toBeVisible({
+        timeout: 15_000,
+      });
+      await page.getByRole('button', { name: 'Записаться' }).first().click();
+      const dialog = page.getByRole('dialog');
+      await dialog.getByRole('button', { name: /Тестовая услуга/ }).click();
+      await dialog.getByRole('button', { name: 'Продолжить' }).click();
+      await expect(dialog.locator('.days')).toBeVisible();
+
+      const metrics = await page.evaluate(() => {
+        const days = document.querySelector('.days') as HTMLElement;
+        return {
+          viewport: window.innerWidth,
+          doc: document.documentElement.scrollWidth,
+          daysScroll: days.scrollWidth,
+          daysClient: days.clientWidth,
+        };
+      });
+      expect(metrics.doc).toBeLessThanOrEqual(metrics.viewport);
+      expect(metrics.daysScroll).toBeLessThanOrEqual(metrics.daysClient);
+
+      const overflowing = await page.evaluate(() => {
+        const out: string[] = [];
+        document.querySelectorAll('.days *').forEach((el) => {
+          const r = el.getBoundingClientRect();
+          if (r.left < 0 || r.right > window.innerWidth + 1) out.push(el.tagName);
+        });
+        return out;
+      });
+      expect(overflowing).toEqual([]);
+    });
+  }
 });
 
 test('service worker отдаётся как JavaScript и содержит ожидаемую версию кэша', async ({
