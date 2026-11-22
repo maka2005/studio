@@ -1,10 +1,10 @@
 import { useMarketingCopy } from '../../data/copy';
-import { SITE } from '../../config/site';
+import { usePlatformLegal } from '../../hooks/usePlatformLegal';
 import './ContactInfo.scss';
 
 export function ContactInfo() {
   const copy = useMarketingCopy().ui.contactInfo;
-  const { phone, whatsapp, email } = SITE.contacts;
+  const { phone, whatsapp, email } = usePlatformLegal().contacts;
   const telHref = `tel:${phone.replace(/[^+\d]/g, '')}`;
   const waHref = `https://wa.me/${whatsapp.replace(/\D/g, '')}`;
   const hasContacts = Boolean(phone || whatsapp || email);

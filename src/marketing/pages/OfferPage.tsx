@@ -1,6 +1,7 @@
 import { useMarketingCopy } from '../data/copy';
 import { useDocumentMeta } from '../hooks/useDocumentMeta';
-import { SITE, hasLegalPlaceholders } from '../config/site';
+import { SITE } from '../config/site';
+import { hasPlaceholders, usePlatformLegal } from '../hooks/usePlatformLegal';
 import { Section } from '../components/ui/Section';
 import './PrivacyPage.scss';
 
@@ -8,8 +9,9 @@ export function OfferPage() {
   const copy = useMarketingCopy();
   useDocumentMeta(copy.seo.offer);
   const offer = copy.ui.offer;
-  const { operator, bin, address } = SITE.legal;
-  const { email, phone } = SITE.contacts;
+  const { legal, contacts } = usePlatformLegal();
+  const { operator, bin, address } = legal;
+  const { email, phone } = contacts;
   const operatorFull = `${operator || SITE.name}${bin ? `, БИН ${bin}` : ''}${address ? `, ${address}` : ''}`;
   const hasContacts = Boolean(email || phone);
 
@@ -24,7 +26,7 @@ export function OfferPage() {
 
       <Section>
         <div className="privacy">
-          {hasLegalPlaceholders() && <p className="legal-notice">{offer.notice}</p>}
+          {hasPlaceholders(legal) && <p className="legal-notice">{offer.notice}</p>}
           {offer.sections.map((section) => {
             const body = section.body
               ?.replace('{operator}', operatorFull)

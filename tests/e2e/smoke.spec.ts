@@ -61,6 +61,36 @@ test('поле телефона в финальном CTA не сжимаетс�
   expect(sizes.gap).toBeGreaterThanOrEqual(12);
 });
 
+test('юридические страницы показывают реквизиты из админки', async ({ page }) => {
+  await page.route('**/api/platform?action=legal*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        legal: {
+          operator: 'ТОО «Тест Ренвио»',
+          bin: '123456789012',
+          address: 'г. Алматы, ул. Тестовая, 1',
+        },
+        contacts: {
+          phone: '+7 777 000 00 00',
+          whatsapp: '77770000000',
+          email: 'test@example.kz',
+        },
+      }),
+    }),
+  );
+
+  for (const route of ['/offer', '/privacy']) {
+    await page.goto(route);
+    await expect(page.locator('.legal-notice')).toHaveCount(0);
+    await expect(page.getByText(/ТОО «Тест Ренвио»/).first()).toBeVisible();
+  }
+
+  await page.goto('/');
+  await expect(page.locator('.footer__contacts a[href^="mailto:"]')).toHaveText('test@example.kz');
+});
+
 test('health endpoint возвращает JSON-контракт, когда доступен', async ({ request }) => {
   const res = await request.get(`${BASE}/api/health`);
   if (res.status() === 404) test.skip(true, 'API route not served by preview server');

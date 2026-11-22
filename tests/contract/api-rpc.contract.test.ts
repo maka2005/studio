@@ -100,4 +100,24 @@ describe('API / Edge / RPC contracts', () => {
       }
     }
   });
+
+  it('platform legal details are editable in admin and public to the site', () => {
+    const api = read('api/platform.js');
+    const edge = read('supabase/functions/platform-admin/index.ts');
+    const migration = read('supabase/migrations/20261123000000_platform_legal.sql');
+    const consoleSource = read('src/pages/platform-admin/console.tsx');
+    const legalForm = read('src/pages/platform-admin/legal.tsx');
+    const hook = read('src/marketing/hooks/usePlatformLegal.ts');
+
+    expect(api).toContain("action === 'legal'");
+    expect(api).toContain("action: 'public_legal'");
+    for (const action of ['public_legal', 'platform_legal_get', 'platform_legal_save']) {
+      expect(edge).toContain(`'${action}'`);
+    }
+    expect(migration).toContain('platform_get_legal');
+    expect(migration).toContain('platform_set_legal');
+    expect(consoleSource).toContain("'Реквизиты'");
+    expect(legalForm).toContain('platform_legal_save');
+    expect(hook).toContain('/api/platform?action=legal');
+  });
 });

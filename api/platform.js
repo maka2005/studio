@@ -281,6 +281,20 @@ async function handler(req, res) {
       );
     }
 
+    if (req.method === 'GET' && action === 'legal') {
+      const r = await fetch(`${cfg.url}/functions/v1/platform-admin`, {
+        method: 'POST',
+        headers: {
+          apikey: cfg.anon,
+          Authorization: `Bearer ${cfg.anon}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ action: 'public_legal' }),
+      });
+      const result = await r.json().catch(() => ({}));
+      return send(res, r.status, result);
+    }
+
     if (req.method === 'POST' && action === 'login') {
       const r = await fetch(`${cfg.url}/auth/v1/token?grant_type=password`, {
         method: 'POST',

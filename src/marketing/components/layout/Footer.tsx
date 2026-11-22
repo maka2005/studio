@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useLocale } from '../../../lib/locale';
-import { SITE } from '../../config/site';
+import { usePlatformLegal } from '../../hooks/usePlatformLegal';
 import { Logo } from '../../../components/BrandMark';
 import './Footer.scss';
 
@@ -36,6 +36,7 @@ function useHealth(): Health {
 export function Footer() {
   const health = useHealth();
   const { t } = useLocale();
+  const { contacts } = usePlatformLegal();
   const statusText: Record<Health, string> = {
     loading: t.footerStatusLoading,
     operational: t.footerStatusOperational,
@@ -67,11 +68,11 @@ export function Footer() {
           <b>{t.footerForBusiness}</b>
           <span>{t.footerLead}</span>
           <Link to="/contact">{t.footerRequest}</Link>
-          {SITE.contacts.phone && (
-            <a href={`tel:${SITE.contacts.phone.replace(/[^+\d]/g, '')}`}>{SITE.contacts.phone}</a>
+          {contacts.phone && (
+            <a href={`tel:${contacts.phone.replace(/[^+\d]/g, '')}`}>{contacts.phone}</a>
           )}
-          {SITE.contacts.email && (
-            <a href={`mailto:${SITE.contacts.email}`}>{SITE.contacts.email}</a>
+          {contacts.email && (
+            <a href={`mailto:${contacts.email}`}>{contacts.email}</a>
           )}
         </div>
       </div>

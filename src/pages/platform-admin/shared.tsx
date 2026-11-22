@@ -40,7 +40,7 @@ export const PAY: Record<string, string> = { pending: 'Ожидает', paid: '�
 export const METHODS: Record<string, string> = { kaspi: 'Kaspi', transfer: 'Перевод', cash: 'Наличные', card: 'Карта', other: 'Другое' };
 export const Badge = ({ phase }: { phase: string }) => <span className={`pf-badge pf-${phase}`}>{PHASE[phase] ?? PAY[phase] ?? 'Статус не распознан'}</span>;
 
-export const TABS = ['Главная', 'Организации', 'Поддержка', 'Заявки с сайта', 'Новая организация', 'Подписки', 'Тарифы', 'Платежи', 'Документы', 'Объявления и статус', 'Уведомления', 'Журнал', 'Администраторы', 'Настройки'] as const;
+export const TABS = ['Главная', 'Организации', 'Поддержка', 'Заявки с сайта', 'Новая организация', 'Подписки', 'Тарифы', 'Платежи', 'Документы', 'Реквизиты', 'Объявления и статус', 'Уведомления', 'Журнал', 'Администраторы', 'Настройки'] as const;
 export type Tab = (typeof TABS)[number];
 
 export const PLATFORM_ROLE_LABEL: Record<string, string> = { owner: 'Владелец', support: 'Поддержка', finance: 'Финансы', read_only: 'Только чтение' };

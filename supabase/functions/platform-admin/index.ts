@@ -277,6 +277,17 @@ Deno.serve(withEdgeObservability('platform-admin', async (req, { requestId }) =>
     return json({data:data??[],trial_days:await getTrialDays(admin)});
   }
 
+  if (action === 'public_legal') {
+    const admin=createClient(url,service,{auth:{persistSession:false,autoRefreshToken:false}});
+    const {data,error}=await admin.from('platform_settings').select('value').eq('key','legal').maybeSingle();
+    if(error){console.error('public legal failed:',redact(error.message));return json({error:'temporarily_unavailable'},503)}
+    const raw=obj((data as {value?:unknown}|null)?.value);
+    return json({
+      legal:{operator:str(raw.operator,200),bin:str(raw.bin,12),address:str(raw.address,250)},
+      contacts:{phone:str(raw.phone,40),whatsapp:str(raw.whatsapp,20),email:str(raw.email,120)},
+    });
+  }
+
   // --- 1. аутентификация
   const token = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '');
   if (!token) return json({ error: 'unauthorized' }, 401);
@@ -317,8 +328,8 @@ Deno.serve(withEdgeObservability('platform-admin', async (req, { requestId }) =>
   if (action === 'whoami') return json({ ok: true, email: user.email, role, aal: aalOf(token), mfa_required: mfaNeeded });
   if (mfaNeeded) return json({ error: 'mfa_required' }, 403);
 
-  const readActions = new Set(['whoami','admin_login_event','dashboard','tenants','tenant','tenant_events','subscriptions','plans','payments','audit','notifications','notification_delivery','notification_bounces','settings','admins','billing_documents']);
-  const financeActions = new Set(['whoami','admin_login_event','payments','payment_create','payment_confirm','payment_refund','payment_fail','subscriptions','dashboard','audit','notifications','notification_delivery','notification_bounces','tenants','tenant','tenant_events','plans','billing_documents','billing_document_save']);
+  const readActions = new Set(['whoami','admin_login_event','dashboard','tenants','tenant','tenant_events','subscriptions','plans','payments','audit','notifications','notification_delivery','notification_bounces','settings','platform_legal_get','admins','billing_documents']);
+  const financeActions = new Set(['whoami','admin_login_event','payments','payment_create','payment_confirm','payment_refund','payment_fail','subscriptions','dashboard','audit','notifications','notification_delivery','notification_bounces','tenants','tenant','tenant_events','plans','billing_documents','billing_document_save','platform_legal_get']);
   const supportActions = new Set(['whoami','admin_login_event','tenants','tenant','tenant_events','tenant_support','tenant_note_add','tenant_case_create','tenant_case_update','support_tickets','support_ticket_detail','support_ticket_update','business_leads','business_lead_update','resend_invite','impersonation_start','impersonation_check','impersonation_end','impersonation_log','notifications','notification_delivery','notification_bounces']);
   const allowedByRole = role === 'owner' ? null : role === 'read_only' ? readActions : role === 'finance' ? financeActions : supportActions;
   if (!['owner','support','finance','read_only'].includes(role) || (allowedByRole && !allowedByRole.has(action)))
@@ -631,6 +642,8 @@ Deno.serve(withEdgeObservability('platform-admin', async (req, { requestId }) =>
       }
       case 'settings': rpc = { name: 'platform_get_settings', args: { p_actor: actor } }; break;
       case 'settings_set': rpc = { name: 'platform_set_setting', args: { p_actor: actor, p_key: str(body.key, 40), p_value: body.value ?? null } }; break;
+      case 'platform_legal_get': rpc = { name: 'platform_get_legal', args: { p_actor: actor } }; break;
+      case 'platform_legal_save': rpc = { name: 'platform_set_legal', args: { p_actor: actor, p_value: obj(body.legal) } }; break;
       case 'sync': rpc = { name: 'platform_sync_subscriptions', args: {} }; break;
       case 'subscription_create': {
         const id = uuidOf(body.tenant_id); if (!id || !needKey()) return json({ error: 'bad_request' }, 400);

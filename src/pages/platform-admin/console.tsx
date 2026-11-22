@@ -8,6 +8,7 @@ const Payments = lazy(() => import('./billing').then((m) => ({ default: m.Paymen
 const Plans = lazy(() => import('./billing').then((m) => ({ default: m.Plans })));
 const Subscriptions = lazy(() => import('./billing').then((m) => ({ default: m.Subscriptions })));
 const Admins = lazy(() => import('./operations').then((m) => ({ default: m.Admins })));
+const PlatformLegal = lazy(() => import('./legal').then((m) => ({ default: m.PlatformLegal })));
 const Audit = lazy(() => import('./operations').then((m) => ({ default: m.Audit })));
 const BusinessLeads = lazy(() => import('./operations').then((m) => ({ default: m.BusinessLeads })));
 const PlatformNotifications = lazy(() => import('./operations').then((m) => ({ default: m.PlatformNotifications })));
@@ -27,6 +28,7 @@ export function Console({ onLogout, role, accountEmail }: { onLogout: () => void
   useEffect(()=>{const timer=window.setInterval(()=>void platformNotices.reload(),30_000);return()=>window.clearInterval(timer)},[platformNotices.reload])
   const visibleTabs = TABS.filter((t) => {
     if (role === 'owner') return true;
+    if (t === 'Реквизиты') return false;
     if (t === 'Поддержка') return role === 'support';
     if (t === 'Заявки с сайта') return role === 'support' || role === 'owner';
     if(t==='Объявления и статус')return false;
@@ -51,6 +53,7 @@ export function Console({ onLogout, role, accountEmail }: { onLogout: () => void
         : tab === 'Тарифы' ? <Plans />
         : tab === 'Платежи' ? <Payments />
         : tab === 'Документы' ? <BillingDocuments />
+        : tab === 'Реквизиты' ? <PlatformLegal />
         : tab === 'Объявления и статус' ? <PlatformServiceAdmin />
         : tab === 'Уведомления' ? <PlatformNotifications />
         : tab === 'Журнал' ? <Audit />
