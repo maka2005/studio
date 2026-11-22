@@ -9,6 +9,7 @@ import { duration, money, randomToken } from '../lib/format';
 import { isFullPhone, maskPhone, PHONE_PLACEHOLDER } from '../lib/phone';
 import { ArrowLeft, ArrowRight, Check, Close } from '../lib/icons';
 import { Sheet } from './Sheet';
+import { DateField } from './DateField';
 import { LEGAL_VERSION } from '../lib/legal';
 import { supabase } from '../lib/supabase';
 import { saveToken, saveWaitlistToken } from '../lib/tokens';
@@ -163,8 +164,7 @@ export function BookingFlow({ b, initialService, bookingOpen, onClose }: {
 
       {step === 2 && <>
         <div className="days">{days.map((d) => <button key={d.iso} className={`day ${d.iso === day ? 'sel' : ''}`} onClick={() => { setDay(d.iso); setSlot(null); }}><span>{d.wd}</span><b>{d.n}</b></button>)}</div>
-        <label className="muted small" htmlFor="other-date">{m.booking.otherDate}</label>
-        <input id="other-date" className="field" type="date" min={today} value={day} onChange={(e) => { if (e.target.value >= today) { setDay(e.target.value); setSlot(null); } }} />
+        <DateField id="other-date" label={m.booking.otherDate} value={day} min={today} onChange={(next) => { setDay(next); setSlot(null); }} />
         {slotsQ.isPending ? <p className="muted">{m.booking.loadSlots}</p> : slotsQ.isError ? <p className="err">{m.booking.slotsError} <button className="link" onClick={() => slotsQ.refetch()}>{m.common.retry}</button></p>
           : slotsQ.data.length === 0 ? <p className="muted">{m.booking.noSlots}</p>
           : !slotsQ.data.some((s) => s.free) ? <><p className="muted">{m.booking.noFree}</p><WaitlistForm slug={b.slug} service={serviceIds[0]!} day={day} isAuto={isAuto} onClose={onClose} /></>

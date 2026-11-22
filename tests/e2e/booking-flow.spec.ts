@@ -239,7 +239,7 @@ test.describe('полная воронка публичной записи', () 
   });
 
   for (const width of [390, 360, 320]) {
-    test(`выбор даты на ${width}px не выходит за экран`, async ({ page }) => {
+    test(`календарь даты на ${width}px не выходит за экран`, async ({ page }) => {
       await page.setViewportSize({ width, height: 800 });
       await mockBookingFunnelApi(page);
 
@@ -252,25 +252,43 @@ test.describe('полная воронка публичной записи', () 
       await dialog.getByRole('button', { name: /Тестовая услуга/ }).click();
       await dialog.getByRole('button', { name: 'Продолжить' }).click();
       await expect(dialog.locator('.days')).toBeVisible();
-      await expect(dialog.locator('#other-date')).toBeVisible();
+
+      const trigger = dialog.locator('#other-date');
+      await expect(trigger).toBeVisible();
+      expect(await dialog.locator('input[type="date"]').count()).toBe(0);
+      await trigger.click();
+      const pop = dialog.locator('.date-field__pop');
+      await expect(pop).toBeVisible();
+      const before = await trigger.textContent();
 
       const metrics = await page.evaluate(() => {
         const days = document.querySelector('.days') as HTMLElement;
-        const otherDate = document.querySelector('#other-date') as HTMLInputElement;
+        const otherDate = document.querySelector('#other-date') as HTMLElement;
+        const calendar = document.querySelector('.date-field__pop') as HTMLElement;
         const sheet = document.querySelector('.sheet') as HTMLElement;
-        const box = otherDate.getBoundingClientRect();
+        const box = (el: HTMLElement) => el.getBoundingClientRect();
+        const cells = Array.from(document.querySelectorAll('.date-field__day'));
         return {
           viewport: window.innerWidth,
           doc: document.documentElement.scrollWidth,
           daysScroll: days.scrollWidth,
           daysClient: days.clientWidth,
-          dateLeft: box.left,
-          dateRight: box.right,
+          dateLeft: box(otherDate).left,
+          dateRight: box(otherDate).right,
           dateScroll: otherDate.scrollWidth,
           dateClient: otherDate.clientWidth,
+          popLeft: box(calendar).left,
+          popRight: box(calendar).right,
+          popScroll: calendar.scrollWidth,
+          popClient: calendar.clientWidth,
           sheetScroll: sheet.scrollWidth,
           sheetClient: sheet.clientWidth,
           sheetOverflowX: getComputedStyle(sheet).overflowX,
+          bodyOverflow: document.body.style.overflow,
+          cellsOutside: cells.filter((el) => {
+            const r = el.getBoundingClientRect();
+            return r.left < 0 || r.right > window.innerWidth + 1;
+          }).length,
         };
       });
       expect(metrics.doc).toBeLessThanOrEqual(metrics.viewport);
@@ -278,18 +296,22 @@ test.describe('полная воронка публичной записи', () 
       expect(metrics.dateLeft).toBeGreaterThanOrEqual(0);
       expect(metrics.dateRight).toBeLessThanOrEqual(metrics.viewport);
       expect(metrics.dateScroll).toBeLessThanOrEqual(metrics.dateClient);
+      expect(metrics.popLeft).toBeGreaterThanOrEqual(0);
+      expect(metrics.popRight).toBeLessThanOrEqual(metrics.viewport);
+      expect(metrics.popScroll).toBeLessThanOrEqual(metrics.popClient);
       expect(metrics.sheetScroll).toBeLessThanOrEqual(metrics.sheetClient);
       expect(metrics.sheetOverflowX).toBe('hidden');
+      expect(metrics.bodyOverflow).toBe('hidden');
+      expect(metrics.cellsOutside).toBe(0);
 
-      const overflowing = await page.evaluate(() => {
-        const out: string[] = [];
-        document.querySelectorAll('.days *, #other-date').forEach((el) => {
-          const r = el.getBoundingClientRect();
-          if (r.left < 0 || r.right > window.innerWidth + 1) out.push(el.tagName);
-        });
-        return out;
-      });
-      expect(overflowing).toEqual([]);
+      const scrollBefore = await page.evaluate(() => window.scrollY);
+      await pop.hover();
+      await page.mouse.wheel(0, 200);
+      expect(await page.evaluate(() => window.scrollY)).toBe(scrollBefore);
+
+      await pop.locator('.date-field__day:not([disabled]):not(.sel)').first().click();
+      await expect(pop).toHaveCount(0);
+      expect(await trigger.textContent()).not.toBe(before);
     });
   }
 });

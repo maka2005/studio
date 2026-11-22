@@ -4,6 +4,7 @@ import { formatInTimeZone } from 'date-fns-tz';
 import { fetchSlots, rescheduleBooking, type RescheduleResult } from '../lib/api';
 import type { Business } from '../lib/tenant';
 import { clientDateLocale, clientErrText, useClientMessages } from '../lib/clientLocale';
+import { DateField } from './DateField';
 
 export function ReschedulePicker({ b, token, serviceId, serviceName, currentStart, rescheduleHours, onDone, onClose }: {
   b: Business; token: string; serviceId: string; serviceName: string; currentStart: string; rescheduleHours: number;
@@ -39,8 +40,7 @@ export function ReschedulePicker({ b, token, serviceId, serviceName, currentStar
           </button>
         ))}
       </div>
-      <label className="muted small" htmlFor="reschedule-date">{m.reschedule.dateLabel}</label>
-      <input id="reschedule-date" className="field" type="date" min={today} value={day} onChange={(e) => { if (e.target.value) { setDay(e.target.value); setSlot(null); setError(null); } }} />
+      <DateField id="reschedule-date" label={m.reschedule.dateLabel} value={day} min={today} onChange={(next) => { setDay(next); setSlot(null); setError(null); }} />
       <span className="muted small">{m.reschedule.slotsLabel}</span>
       {slotsQ.isPending ? <p className="muted">{m.reschedule.loading}</p>
         : slotsQ.isError ? <p className="err">{m.reschedule.slotsError} <button className="link" onClick={() => void slotsQ.refetch()}>{m.common.retry}</button></p>
